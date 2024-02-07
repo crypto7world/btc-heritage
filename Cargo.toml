@@ -1,0 +1,23 @@
+[package]
+name = "btc-heritage"
+version = "0.5.0"
+edition = "2021"
+authors = ["Crypto7 <john@crypto7.world>"]
+description = "A Rust library implementing primitives for a Bitcoin Taproot wallet managing on-chain inheritance of bitcoins"
+repository = "https://github.com/crypto7world/btc-heritage.git"
+license = "MIT"
+rust-version = "1.74.1"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bdk = { version = "0.29", default-features = false, features = ["std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+anyhow = "1.0"
+
+[features]
+default = []
+online = ["bdk/electrum", "bdk/rpc"]
+database-tests = []
