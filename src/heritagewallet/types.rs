@@ -149,7 +149,7 @@ pub struct HeritageUtxo {
     pub amount: Amount,
     /// The [BlockTime] of the block that contains the Tx referenced by the [OutPoint]
     /// Can be None if the UTXO is for a unconfirmed TX
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
     pub confirmation_time: Option<BlockTime>,
     /// The [HeritageConfig] of the subwallet that owns this UTXO
     pub heritage_config: HeritageConfig,
@@ -192,7 +192,7 @@ pub struct TransactionSummary {
     pub txid: Txid,
     /// If the transaction is confirmed, contains height and Unix timestamp of the block containing the
     /// transaction, unconfirmed transaction contains `None`.
-    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
     pub confirmation_time: Option<BlockTime>,
     /// Received value (sats)
     /// Sum of owned outputs of this transaction.
