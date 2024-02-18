@@ -39,11 +39,11 @@ impl SpendConditions {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct HeritageConfig(InnerHeritageConfig);
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "version", rename_all = "lowercase")]
 enum InnerHeritageConfig {
     V1(v1::HeritageConfig),
@@ -58,6 +58,34 @@ impl HeritageConfig {
     /// Return a builder for [HeritageConfig::V1]
     pub fn builder_v1() -> v1::HeritageConfigBuilder {
         v1::HeritageConfig::builder()
+    }
+
+    /// Return the version number as an u8, V1 => 1, V2 => 2, etc...
+    pub fn version(&self) -> u8 {
+        match self.0 {
+            InnerHeritageConfig::V1(_) => 1,
+        }
+    }
+
+    /// Return `true` if this is an [HeritageConfig::V1]
+    pub fn is_v1(&self) -> bool {
+        #[allow(unreachable_patterns)]
+        match self.0 {
+            InnerHeritageConfig::V1(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Borrow the specific, inner, [v1::HeritageConfig] encapsulated in this [HeritageConfig]
+    ///
+    /// # Errors
+    /// Return an error if the inner object is not V1
+    pub fn heritage_config_v1(&self) -> anyhow::Result<&v1::HeritageConfig> {
+        #[allow(unreachable_patterns)]
+        match &self.0 {
+            InnerHeritageConfig::V1(hc) => Ok(hc),
+            _ => Err(anyhow::anyhow!("Wrong variant!")),
+        }
     }
 
     /// Returns the miniscript expression representing the TapTree generated
@@ -146,6 +174,10 @@ impl<'a> HeritageExplorerTrait for HeritageExplorer<'a> {
 #[cfg(test)]
 mod tests {
     use core::panic;
+    use std::collections::HashSet;
+
+    use crate::tests::get_test_heritage;
+    use crate::tests::TestHeritage;
 
     use super::HeritageConfig;
     use super::InnerHeritageConfig;
@@ -157,5 +189,79 @@ mod tests {
         let HeritageConfig(InnerHeritageConfig::V1(_)) = HeritageConfig::builder().build() else {
             panic!();
         };
+    }
+
+    // Just a reminder to extra-check things if the default version is changed in the future
+    #[test]
+    fn heritage_config_hash_eq() {
+        let reference = HeritageConfig::builder_v1()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(get_test_heritage(TestHeritage::Wife))
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072000)
+            .minimum_lock_time(90)
+            .build();
+        // Add order of Heritage(s) does not count
+        let same1 = HeritageConfig::builder_v1()
+            .add_heritage(get_test_heritage(TestHeritage::Wife))
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072000)
+            .minimum_lock_time(90)
+            .build();
+        // different reference_time
+        let different1 = HeritageConfig::builder_v1()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(get_test_heritage(TestHeritage::Wife))
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072001)
+            .minimum_lock_time(90)
+            .build();
+        // different minimum_lock_time
+        let different2 = HeritageConfig::builder_v1()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(get_test_heritage(TestHeritage::Wife))
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072000)
+            .minimum_lock_time(91)
+            .build();
+        // Different heritage timelock
+        let different3 = HeritageConfig::builder_v1()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(
+                super::v1::Heritage::new(get_test_heritage(TestHeritage::Wife).heir_config.clone())
+                    .time_lock(900),
+            )
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072000)
+            .minimum_lock_time(91)
+            .build();
+
+        assert_eq!(reference, same1);
+        assert_ne!(reference, different1);
+        assert_ne!(reference, different2);
+        assert_ne!(reference, different3);
+        assert_ne!(same1, different1);
+        assert_ne!(same1, different2);
+        assert_ne!(same1, different3);
+        assert_ne!(different1, different2);
+        assert_ne!(different1, different3);
+        assert_ne!(different2, different3);
+
+        // Hash should follow the EQ/NEQ tests
+        let (mut set1, mut set2) = (HashSet::new(), HashSet::new());
+        // In set1 we insert everything
+        set1.insert(reference.clone());
+        set1.insert(same1.clone());
+        set1.insert(different1.clone());
+        set1.insert(different2.clone());
+        set1.insert(different3.clone());
+        // In Set2 we do not insert same1
+        set2.insert(reference);
+        set2.insert(different1);
+        set2.insert(different2);
+        set2.insert(different3);
+        // The two sets should be equals
+        assert_eq!(set1, set2);
     }
 }

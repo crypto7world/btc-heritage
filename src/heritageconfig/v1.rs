@@ -6,9 +6,9 @@ use super::{heirtypes::HeirConfig, SpendConditions};
 
 const SEC_IN_A_DAY: u64 = 24 * 60 * 60;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
-struct Days(u16);
+pub struct Days(u16);
 impl Default for Days {
     fn default() -> Self {
         Self(365)
@@ -43,18 +43,20 @@ days_mul_impl!(u64);
 days_mul_impl!(usize);
 
 impl Days {
-    fn as_seconds(self) -> u64 {
-        // One block every 10min on average
-        // 24 hours in a day, 6 blocks per hour
+    pub fn as_seconds(self) -> u64 {
         self.0 as u64 * SEC_IN_A_DAY
+    }
+
+    pub fn as_u16(self) -> u16 {
+        self.0
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct Heritage {
-    heir_config: HeirConfig,
+    pub heir_config: HeirConfig,
     // For this heritage, how many days from the reference time of the HeritageConfig?
-    time_lock: Days,
+    pub time_lock: Days,
 }
 
 impl PartialEq for Heritage {
@@ -101,9 +103,9 @@ impl Heritage {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
-struct ReferenceTimestamp(u64);
+pub struct ReferenceTimestamp(u64);
 impl Default for ReferenceTimestamp {
     fn default() -> Self {
         // Compute the reference_timestamp by taking the current timestamp and rounding it to today at noon
@@ -115,9 +117,14 @@ impl Default for ReferenceTimestamp {
         Self(reference_timestamp)
     }
 }
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+impl ReferenceTimestamp {
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+#[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
-struct MinimumLockTime(Days);
+pub struct MinimumLockTime(Days);
 impl Default for MinimumLockTime {
     fn default() -> Self {
         Self(Days(30))
@@ -147,14 +154,20 @@ where
     }
 }
 impl MinimumLockTime {
-    fn as_blocks(&self) -> u16 {
+    pub fn as_blocks(&self) -> u16 {
+        // One block every 10min on average
+        // 24 hours in a day, 6 blocks per hour
         u16::try_from(self.0 .0 * 24 * 6).unwrap_or(u16::MAX)
+    }
+
+    pub fn as_days(&self) -> &Days {
+        &self.0
     }
 }
 // There are only two ways of creating this Struct:
 //  - through the HeritageConfigBuilder -> it will create a sorted Vec
 //  - through Deserializing -> the custom Deserializer ensure the Vec is sorted
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Serialize, PartialEq, Eq)]
 #[serde(transparent)]
 struct Heritages(Vec<Heritage>);
 impl<'de> Deserialize<'de> for Heritages {
@@ -193,24 +206,28 @@ impl Heritages {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct HeritageConfig {
+#[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HeritageConfig {
     /// The deduplicated, ordered list of [Heritage] for this [HeritageConfig].
     heritages: Heritages,
     /// This is the reference timestamp that is used to compute the LockTime(s)
     #[serde(default)]
-    reference_timestamp: ReferenceTimestamp,
+    pub reference_timestamp: ReferenceTimestamp,
     /// This is the number of days we want to enforce before an heir can consumme an input.
     /// It exist in case an old address with an old absolute locktime is used
     #[serde(default)]
-    minimum_lock_time: MinimumLockTime,
+    pub minimum_lock_time: MinimumLockTime,
 }
 
 impl HeritageConfig {
+    pub fn heritages(&self) -> &Vec<Heritage> {
+        &self.heritages.0
+    }
+
     pub(crate) fn builder() -> HeritageConfigBuilder {
         HeritageConfigBuilder::default()
     }
-    pub(crate) fn descriptor_taptree_miniscript_expression(&self) -> Option<String> {
+    pub fn descriptor_taptree_miniscript_expression(&self) -> Option<String> {
         if self.heritages.0.len() == 0 {
             return None;
         }
