@@ -41,7 +41,7 @@ pub trait PartitionableDatabase {
 // Operations that can be run in a single transaction to ensure their consistency
 pub trait TransacHeritageOperation {
     /// Put a new `SubwalletConfig` at `SubwalletConfigId::Id`.
-    /// The function ensure that the new value do not override
+    /// The function **MUST** ensure that the new value do not override
     /// a previously stored value
     fn put_subwallet_config(
         &mut self,
@@ -77,11 +77,24 @@ pub trait HeritageDatabase: PartitionableDatabase + TransacHeritageOperation {
     fn list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>>;
 
     /// Return all the [AccountXPub] affected to the `HeritageWalet`
-    /// that have already been used
+    /// that have already been used by a [SubwalletConfig].
     fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>>;
 
-    /// Add available [AccountXPub] to the [HeritageWallet](crate::HeritageWallet)
-    /// Cannot replace [AccountXPub] that are already used
+    /// Add new, available [AccountXPub] to the [HeritageWallet](crate::HeritageWallet).
+    ///
+    /// # Important
+    /// You can **NEVER** reuse the same [AccountXPub::descriptor_id()] as an [AccountXPub]
+    /// that have already been used and you **MUST** use [AccountXPub::descriptor_id()] as a
+    /// unicity discriminent or it will break the [HeritageWallet](crate::HeritageWallet)
+    /// functional design and could lead to a loss of coins.
+    ///
+    /// The reason for that is that the [AccountXPub::descriptor_id()] is used as the [SubwalletConfig::subwallet_id]
+    /// for new [SubwalletConfig] of an [HeritageWallet](crate::HeritageWallet). Reusing an ID means
+    /// overwritting an old [SubwalletConfig] and forgetting its descriptors and addresses: you would not
+    /// be able to spend the coins anymore.
+    ///
+    /// Test your implementation of the trait against the test module provided with this lib
+    /// and publicly usable with the feature `database-tests`
     fn add_unused_account_xpubs(&mut self, account_xpubs: &Vec<AccountXPub>) -> Result<()>;
 
     /// Add new [HeritageUtxo] in the database, overriding existing ones if any.

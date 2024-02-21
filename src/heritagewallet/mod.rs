@@ -14,7 +14,7 @@ use bdk::{
     bitcoin::{
         absolute::LockTime,
         psbt::{Input, Output, Psbt},
-        OutPoint, Script, Sequence, TxOut, Weight,
+        Amount, OutPoint, Script, Sequence, TxOut, Weight,
     },
     database::Database,
     miniscript::{Miniscript, Tap},
@@ -184,6 +184,22 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(false)
     }
 
+    /// Try to add new [AccountXPub] to this [HeritageWallet].
+    ///
+    /// Note that the ID of an [AccountXPub] is determined by the 3rd node of the derivation path,
+    /// usually called "account", irrespective of the fingerprint. It means that if you try to add
+    /// an [AccountXPub] with the same ID (3rd node of the derivation path) than an existing one but
+    /// another fingerprint, the API will consider those [AccountXPub] are the same. If the existing
+    /// [AccountXPub] has already been used, the new one will be discarded, else the new one will replace
+    /// the existing one.
+    ///
+    /// While this does not prevent the usage of [AccountXPub] of mixed origin (different
+    /// fingerprints) as long as the 3rd node of the derivation paths are all unique, you
+    /// are strongly discouraged to do this. A different fingerprint means a different root
+    /// master key and, ultimatly, a different wallet.
+    ///
+    /// # Errors
+    /// This function will return an error if there are problems with the database.
     pub fn append_account_xpubs(
         &self,
         account_xpubs: impl IntoIterator<Item = AccountXPub>,
@@ -331,7 +347,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .set_block_inclusion_objective(new_bio)
     }
 
-    pub fn create_owner_psbt(&self, spending_config: SpendingConfig) -> anyhow::Result<Psbt> {
+    pub fn create_owner_psbt(
+        &self,
+        spending_config: SpendingConfig,
+    ) -> anyhow::Result<(Psbt, TransactionSummary)> {
         log::debug!("HeritageWallet::create_owner_psbt - spending_config={spending_config:?}");
         self.create_psbt(Spender::Owner, spending_config, None)
     }
@@ -341,7 +360,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         heir_config: HeirConfig,
         spending_config: SpendingConfig,
         assume_blocktime: Option<BlockTime>,
-    ) -> anyhow::Result<Psbt> {
+    ) -> anyhow::Result<(Psbt, TransactionSummary)> {
         log::debug!("HeritageWallet::create_heir_psbt - heir_config={heir_config:?} spending_config={spending_config:?}");
         self.create_psbt(
             Spender::Heir(heir_config),
@@ -355,7 +374,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         spender: Spender,
         spending_config: SpendingConfig,
         assume_blocktime: Option<BlockTime>,
-    ) -> anyhow::Result<Psbt> {
+    ) -> anyhow::Result<(Psbt, TransactionSummary)> {
         log::debug!(
             "HeritageWallet::create_psbt - spender={spender:?} spending_config={spending_config:?} assume_blocktime={assume_blocktime:?}"
         );
@@ -630,15 +649,17 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Adjust the fee because BDK computes it with laaaaaarge margin
         // As we are only using TapRoot inputs, we can do a lot better withtout too much difficulties
         // We just have to find the "change" output
-        let adjustable_output_index = if let Some(adjustable_output_index) = psbt
+        let (adjustable_output_index, mut adjustment) = if let Some(adjustable_output_index) = psbt
             .unsigned_tx
             .output
             .iter()
             .position(|o| o.script_pubkey == drain_script)
         {
             log::debug!("HeritageWallet::create_psbt - adjust_with_real_fee(psbt, {fee_rate:?}, {adjustable_output_index})");
-            adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index);
-            adjustable_output_index
+            (
+                adjustable_output_index,
+                adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index),
+            )
         } else {
             log::info!("HeritageWallet::create_psbt - This psbt does not have change, which is unusual: {psbt:?}");
             // We are in the remote possibility where we try to send exactly the right amount
@@ -652,21 +673,64 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             psbt.outputs.push(Output::default());
             let adjustable_output_index = psbt.unsigned_tx.output.len() - 1;
             log::debug!("HeritageWallet::create_psbt - adjust_with_real_fee(psbt, {fee_rate:?}, {adjustable_output_index})");
-            adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index);
-            adjustable_output_index
+            (
+                adjustable_output_index,
+                adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index),
+            )
         };
-        // If the resulting amount is below dust treshold, just pop the output
+        // If the resulting amount is below dust treshold, just pop the output (and therefor give that amount to the miners)
         if psbt.unsigned_tx.output[adjustable_output_index]
             .value
             .is_dust(&drain_script)
         {
-            psbt.unsigned_tx.output.pop();
-            psbt.outputs.pop();
+            // In that case, the adjustment is 0 because the only way we are here
+            // is that we where in the case "remote possibility where we try to send exactly the right amount"
+            // and we added the output drain and it happens to be too small so we just go back to the old fee.
+            // The `adjustment` in that case was exactly the amount in the output
+            adjustment =
+                adjustment - (psbt.unsigned_tx.output[adjustable_output_index].value as i64);
+            psbt.unsigned_tx.output.remove(adjustable_output_index);
+            psbt.outputs.remove(adjustable_output_index);
         }
 
+        let mut received = Amount::from_sat(transaction_details.received);
+        // If there was indeed an adjustment
+        if adjustment != 0 {
+            let must_adjust_received = match &spending_config {
+                // In this case, the drain_output MAY be ours
+                SpendingConfig::DrainTo(_) => self.is_mine(&drain_script)?,
+                // In this case, the drain_output IS ours and we must adjust `received`
+                SpendingConfig::Recipients(_) => true,
+            };
+            if must_adjust_received {
+                // And we will receive more \o/
+                if adjustment > 0 {
+                    received += Amount::from_sat(adjustment as u64);
+                }
+                // And we will receive less ...
+                else {
+                    // Received contains AT LEAST the amount sent to the drain_script
+                    // And the adjustment is AT MOST the amount sent to the drain_script
+                    // So the worst case is that received goes to exactly 0
+                    received = received
+                        .checked_sub(Amount::from_sat(-adjustment as u64))
+                        .expect("should never fail");
+                }
+            }
+        }
+
+        let sent = Amount::from_sat(transaction_details.sent);
+        let tx_summary = TransactionSummary {
+            txid: psbt.unsigned_tx.txid(),
+            confirmation_time: None,
+            received,
+            sent,
+            fee: psbt.fee().expect("our psbt is fresh and sound"),
+        };
+
         log::debug!("HeritageWallet::create_psbt - psbt={psbt:?}");
-        log::debug!("HeritageWallet::create_psbt - transaction_details={transaction_details:?}");
-        Ok(psbt)
+        log::debug!("HeritageWallet::create_psbt - tx_summary={tx_summary:?}");
+        Ok((psbt, tx_summary))
     }
 
     fn get_conditions_and_utxos_for_subwallet(
@@ -980,10 +1044,17 @@ fn minimize_psbt_input_for_spender(
 ///
 /// All in all, that makes the TX weight often wrong and thus the Fee too.
 ///
+/// # Returns
+/// Return an i64 telling the amount of adjustment made to the adjustable_output
+///
 /// # Panics
 /// Panics if the [Psbt] contains [Input] that are not Taproot, or if the Psbt Inputs where
 /// not minimized (see [minimize_psbt_input_for_spender])
-fn adjust_with_real_fee(psbt: &mut Psbt, fee_rate: &FeeRate, adjustable_output_index: usize) {
+fn adjust_with_real_fee(
+    psbt: &mut Psbt,
+    fee_rate: &FeeRate,
+    adjustable_output_index: usize,
+) -> i64 {
     log::debug!(
         "adjust_with_real_fee - psbt={psbt:?} fee_rate={fee_rate:?} \
         adjustable_output_index={adjustable_output_index}"
@@ -1022,8 +1093,10 @@ fn adjust_with_real_fee(psbt: &mut Psbt, fee_rate: &FeeRate, adjustable_output_i
                 new_fee={new_fee} but the resulting new_amount {new_amount} for the \
                 adjustable_output would be dust. Do nothing."
                 );
+                0
             } else {
                 psbt.unsigned_tx.output[adjustable_output_index].value = new_amount;
+                -(adjustment as i64)
             }
         } else {
             log::warn!(
@@ -1031,10 +1104,13 @@ fn adjust_with_real_fee(psbt: &mut Psbt, fee_rate: &FeeRate, adjustable_output_i
             new_fee={new_fee} but the resulting new_amount for the adjustable_output \
             would be negative. Do nothing."
             );
+            0
         }
     } else {
-        psbt.unsigned_tx.output[adjustable_output_index].value += current_fee - new_fee;
-    };
+        let adjustment = current_fee - new_fee;
+        psbt.unsigned_tx.output[adjustable_output_index].value += adjustment;
+        adjustment as i64
+    }
 }
 
 fn get_expected_tx_weight(psbt: &Psbt) -> Weight {
@@ -1769,7 +1845,7 @@ mod tests {
     #[test]
     fn create_owner_psbt_recipient() {
         let wallet = setup_wallet();
-        let psbt = wallet
+        let (psbt, _) = wallet
             .create_owner_psbt(SpendingConfig::Recipients(vec![
                 Recipient::from((
                     string_to_address(PKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
@@ -1925,7 +2001,7 @@ mod tests {
     #[test]
     fn create_owner_psbt_drains_to() {
         let wallet = setup_wallet();
-        let psbt = wallet
+        let (psbt, _) = wallet
             .create_owner_psbt(SpendingConfig::DrainTo(
                 string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
             ))
@@ -2043,7 +2119,7 @@ mod tests {
                 Some(get_present())
             )
             .is_err());
-        let psbt = wallet
+        let (psbt, _) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2178,7 +2254,7 @@ mod tests {
                 Some(get_present())
             )
             .is_err());
-        let psbt = wallet
+        let (psbt, _) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2310,7 +2386,7 @@ mod tests {
         let heir_config = get_test_heritage(TestHeritage::Backup)
             .get_heir_config()
             .clone();
-        let psbt = wallet
+        let (psbt, _) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2450,7 +2526,7 @@ mod tests {
         let heir_config = get_test_heritage(TestHeritage::Wife)
             .get_heir_config()
             .clone();
-        let psbt = wallet
+        let (psbt, _) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2590,7 +2666,7 @@ mod tests {
         let heir_config = get_test_heritage(TestHeritage::Brother)
             .get_heir_config()
             .clone();
-        let psbt = wallet
+        let (psbt, _) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
