@@ -1,6 +1,6 @@
+use crate::errors::Error;
 use std::{fmt::Write, str::FromStr, sync::OnceLock};
 
-use anyhow::{bail, Error};
 use bdk::{
     bitcoin::{
         psbt::PartiallySignedTransaction, secp256k1::Secp256k1, Address, Network, Transaction,
@@ -43,7 +43,13 @@ pub fn bitcoin_network_from_env() -> &'static Network {
 }
 
 pub fn string_to_address(s: &str) -> Result<Address, Error> {
-    Ok(Address::from_str(s)?.require_network(*bitcoin_network_from_env())?)
+    Ok(Address::from_str(s)
+        .map_err(|e| {
+            log::error!("Could not parse {s}: {e:#}");
+            Error::InvalidAddressString(s.to_owned(), *bitcoin_network_from_env())
+        })?
+        .require_network(*bitcoin_network_from_env())
+        .map_err(|_| Error::InvalidAddressString(s.to_owned(), *bitcoin_network_from_env()))?)
 }
 
 /// Returns the current timestamp, as the number of seconds since UNIX_EPOCH
@@ -61,18 +67,19 @@ pub fn extract_tx(psbt: PartiallySignedTransaction) -> Result<Transaction, Error
         for e in errors {
             log::error!("finalize psbt error: {e:#}");
         }
-        anyhow::anyhow!("Could not finalize PSBT")
+        Error::UnfinalizablePsbt(psbt)
     })?;
     log::debug!("extract_tx - final psbt: {}", json!(psbt));
 
     let tx_inputs_len = psbt.unsigned_tx.input.len();
     let psbt_inputs_len = psbt.inputs.len();
     if tx_inputs_len != psbt_inputs_len {
-        bail!(
+        log::error!(
             "Malformed PSBT, {} unsigned tx inputs and {} psbt inputs.",
             tx_inputs_len,
             psbt_inputs_len
         );
+        return Err(Error::UnfinalizablePsbt(psbt));
     }
     let signed_tx_inputs_len = psbt.inputs.iter().fold(0, |count, input| {
         if input.final_script_sig.is_some() || input.final_script_witness.is_some() {
@@ -82,7 +89,8 @@ pub fn extract_tx(psbt: PartiallySignedTransaction) -> Result<Transaction, Error
         }
     });
     if tx_inputs_len != signed_tx_inputs_len {
-        bail!("The PSBT is not finalized, inputs are not fully signed.");
+        log::error!("The PSBT is not finalized, inputs are not fully signed.");
+        return Err(Error::UnfinalizablePsbt(psbt));
     }
 
     let raw_tx = psbt.extract_tx();
@@ -159,13 +167,14 @@ mod tests {
     // Make sure sur PSBT encoder/decoder is working as expected
     // For a valid PSBT, we should be able to decode and re-encode to fall back on the same initial string
     #[test]
-    fn psbt_decode_encode() -> anyhow::Result<()> {
+    fn psbt_decode_encode() {
         let psbt = "cHNidP8BAH0BAAAAAcaB48e7y2VbIMLS6Yzx5Z3JUcxaXwBcFRE/nURtzt3yAAAAAAD+////AugDAAAAAAAAFgAUBTcYDfDSjHWzO4fLKmjVEt4mrFr6HQAAAAAAACJRICchM4h1J7JjLAF+h1R217ztsnzmSuwR//HAV8gzNMGiMqkmAAABASuFIgAAAAAAACJRIJtNiZBebBFRj78UlqpUkT9Rd+jrPKOBWF/BPrw5bCQCIhXAavT/+hsR7JA6/BtVihyUkONUcEd3JeABo1TD/cWDem4uIEI90EDRPmmkjWAJlq5gU9pfBS4dsIWQHqyg/QV9RysBrQKgMrJpBEDAimWxwCEWQj3QQNE+aaSNYAmWrmBT2l8FLh2whZAerKD9BX1HKwE5AW7HBCrqauSJY+xub80rLxpnTHoLSwglCgA+5yUEcK4mc8XaClYAAIABAACAcmll6AAAAAAAAAAAIRZq9P/6GxHskDr8G1WKHJSQ41RwR3cl4AGjVMP9xYN6bhkAc8XaClYAAIABAACAAAAAgAEAAAAKAAAAARcgavT/+hsR7JA6/BtVihyUkONUcEd3JeABo1TD/cWDem4BGCBuxwQq6mrkiWPsbm/NKy8aZ0x6C0sIJQoAPuclBHCuJgAAAQUgYi+I/4VbEFhAzNw/lEMWrZ46UAGY+mF/L6GPtoZn2sYBBjAAwC0gQj3QQNE+aaSNYAmWrmBT2l8FLh2whZAerKD9BX1HKwGtAqAysmkEQMCKZbEhB0I90EDRPmmkjWAJlq5gU9pfBS4dsIWQHqyg/QV9RysBOQFuxwQq6mrkiWPsbm/NKy8aZ0x6C0sIJQoAPuclBHCuJnPF2gpWAACAAQAAgHJpZegAAAAAAAAAACEHYi+I/4VbEFhAzNw/lEMWrZ46UAGY+mF/L6GPtoZn2sYZAHPF2gpWAACAAQAAgAAAAIABAAAACwAAAAA=";
         assert_eq!(
-            &PartiallySignedTransaction::from_str(psbt)?.to_string(),
+            &PartiallySignedTransaction::from_str(psbt)
+                .unwrap()
+                .to_string(),
             psbt
         );
-        Ok(())
     }
 
     // Invalid PSBT

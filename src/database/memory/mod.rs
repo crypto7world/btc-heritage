@@ -10,18 +10,18 @@ use ::bdk::{
     BlockTime,
 };
 
-use crate::{accountxpub::AccountAccountXPubId, heritagewallet::SubwalletConfigId};
+use crate::{accountxpub::AccountXPubId, heritagewallet::SubwalletConfigId};
 
 use self::bdk::HeritageBdkMemoryDatabaseWrapper;
 
-use super::{PartitionableDatabase, SubdatabaseId};
+use super::{PartitionableDatabase, Result, SubdatabaseId};
 
 mod bdk;
 mod heritage;
 
 enum HeritageMonoItemKeyMapper<'a> {
     WalletConfig(Option<SubwalletConfigId>),
-    UnusedAccountXPub(Option<AccountAccountXPubId>),
+    UnusedAccountXPub(Option<AccountXPubId>),
     HeritageUtxo(Option<&'a OutPoint>),
     TxSummary(Option<(&'a Txid, Option<&'a BlockTime>)>),
     WalletBalance,
@@ -89,7 +89,7 @@ impl HeritageMemoryDatabase {
 impl PartitionableDatabase for HeritageMemoryDatabase {
     type SubDatabase = HeritageBdkMemoryDatabaseWrapper;
 
-    fn get_subdatabase(&self, subdatabase_id: SubdatabaseId) -> anyhow::Result<Self::SubDatabase> {
+    fn get_subdatabase(&self, subdatabase_id: SubdatabaseId) -> Result<Self::SubDatabase> {
         Ok(self
             .subdatabases
             .borrow_mut()

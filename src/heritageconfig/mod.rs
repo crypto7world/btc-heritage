@@ -1,3 +1,4 @@
+use crate::errors::{Error, Result};
 use std::{collections::HashSet, fmt::Debug, str::FromStr};
 
 use bdk::{
@@ -80,11 +81,11 @@ impl HeritageConfig {
     ///
     /// # Errors
     /// Return an error if the inner object is not V1
-    pub fn heritage_config_v1(&self) -> anyhow::Result<&v1::HeritageConfig> {
+    pub fn heritage_config_v1(&self) -> Result<&v1::HeritageConfig> {
         #[allow(unreachable_patterns)]
         match &self.0 {
             InnerHeritageConfig::V1(hc) => Ok(hc),
-            _ => Err(anyhow::anyhow!("Wrong variant!")),
+            _ => Err(Error::InvalidHeritageConfigVersion("v1")),
         }
     }
 

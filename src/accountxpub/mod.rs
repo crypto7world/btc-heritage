@@ -1,15 +1,14 @@
 use std::{fmt::Display, str::FromStr};
 
-use anyhow::{bail, Error};
 use bdk::{
     bitcoin::{bip32::ChildNumber, Network},
     miniscript::DescriptorPublicKey,
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils;
+use crate::{errors::Error, utils};
 
-pub type AccountAccountXPubId = u32;
+pub type AccountXPubId = u32;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountXPub(DescriptorPublicKey);
 
@@ -48,7 +47,7 @@ impl<'de> Deserialize<'de> for AccountXPub {
 
 impl AccountXPub {
     /// Return the ID, which is the last number from the [bdk::bitcoin::bip32::DerivationPath] (the hardened account_id)
-    pub fn descriptor_id(&self) -> AccountAccountXPubId {
+    pub fn descriptor_id(&self) -> AccountXPubId {
         let derivation_path = self
             .0
             .full_derivation_path()
@@ -77,8 +76,16 @@ impl TryFrom<DescriptorPublicKey> for AccountXPub {
 
     fn try_from(descriptor: DescriptorPublicKey) -> Result<Self, Self::Error> {
         // If the DescriptorPublicKey is not XPub, bail
-        let DescriptorPublicKey::XPub(_) = descriptor else {
-            bail!("AccountXPub must contain a DescriptorPublicKey::XPub")
+        if let DescriptorPublicKey::XPub(xpub) = &descriptor {
+            xpub.origin
+                .as_ref()
+                .ok_or(Error::InvalidDescriptorPublicKey(
+                    "XPub must have origin information",
+                ))?;
+        } else {
+            return Err(Error::InvalidDescriptorPublicKey(
+                "Must be a DescriptorPublicKey::XPub variant",
+            ));
         };
 
         // If the derivation path is not m/86'/[0,1]'/i'/*, bail
@@ -99,7 +106,8 @@ impl TryFrom<DescriptorPublicKey> for AccountXPub {
             && derivation_path[2].is_hardened()
             && descriptor.has_wildcard())
         {
-            bail!("AccountXPub must contain a derivable DescriptorPublicKey like m/86'/{cointype_path_segment}'/<account>'/*")
+            log::error!("DescriptorPublicKey must have a Derivation Path like m/86'/{cointype_path_segment}'/<account>'/*");
+            return Err(Error::InvalidDescriptorPublicKey("Wrong derivation path"));
         }
 
         Ok(Self(descriptor))
@@ -110,7 +118,10 @@ impl TryFrom<&str> for AccountXPub {
     type Error = Error;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let descriptor = DescriptorPublicKey::from_str(value)?;
+        let descriptor = DescriptorPublicKey::from_str(value).map_err(|e| {
+            log::error!("Error parsing DescriptorPublicKey string: {e:#}");
+            Error::InvalidDescriptorPublicKey("Parse error")
+        })?;
         AccountXPub::try_from(descriptor)
     }
 }

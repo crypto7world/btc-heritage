@@ -5,18 +5,18 @@ use std::{
     option::Option,
 };
 
-use anyhow::{bail, Result};
 use bdk::{
     bitcoin::{OutPoint, Txid},
     BlockTime, FeeRate,
 };
 
 use crate::{
-    accountxpub::AccountAccountXPubId,
+    accountxpub::AccountXPubId,
     database::{
         paginate::{ContinuationToken, Paginated},
         HeritageDatabase, TransacHeritageDatabase, TransacHeritageOperation,
     },
+    errors::DatabaseError,
     heritagewallet::{
         BlockInclusionObjective, HeritageUtxo, HeritageWalletBalance, SubwalletConfigId,
         TransactionSummary,
@@ -25,13 +25,13 @@ use crate::{
     AccountXPub,
 };
 
-use super::{HeritageMemoryDatabase, HeritageMonoItemKeyMapper};
+use super::{HeritageMemoryDatabase, HeritageMonoItemKeyMapper, Result};
 
 #[derive(Debug)]
 enum TransacOp {
     PutSubwalletConfig(SubwalletConfigId, SubwalletConfig),
     SafeUpdateCurrentSubwalletConfig(SubwalletConfig, Option<SubwalletConfig>),
-    DeleteUnusedAccountXPub(AccountAccountXPubId),
+    DeleteUnusedAccountXPub(AccountXPubId),
 }
 impl TransacOp {
     fn condition_check(&self, table: &BTreeMap<String, Box<dyn Any + Send + Sync>>) -> bool {
@@ -140,7 +140,7 @@ impl TransacHeritageOperation for HeritageMemoryDatabase {
         let op = TransacOp::PutSubwalletConfig(index, subwallet_config.clone());
         let mut table = self.table.write().unwrap();
         if !op.condition_check(table.deref()) {
-            bail!("Subwallet config already present at index={index:?}")
+            return Err(DatabaseError::SubwalletConfigAlreadyExist(index));
         }
         op.do_op(table.deref_mut());
         Ok(())
@@ -158,7 +158,7 @@ impl TransacHeritageOperation for HeritageMemoryDatabase {
         );
         let mut table = self.table.write().unwrap();
         if !op.condition_check(table.deref()) {
-            bail!("Unexpected values for the current SubwalletConfig")
+            return Err(DatabaseError::UnexpectedCurrentSubwalletConfig);
         }
         op.do_op(table.deref_mut());
         Ok(())
@@ -171,7 +171,9 @@ impl TransacHeritageOperation for HeritageMemoryDatabase {
         let op = TransacOp::DeleteUnusedAccountXPub(account_xpub.descriptor_id());
         let mut table = self.table.write().unwrap();
         if !op.condition_check(table.deref()) {
-            bail!("AccountXPub {account_xpub:?} is no longer in the database")
+            return Err(DatabaseError::AccountXPubInexistant(
+                account_xpub.descriptor_id(),
+            ));
         }
         op.do_op(table.deref_mut());
         Ok(())
@@ -191,7 +193,17 @@ impl TransacHeritageDatabase for HeritageMemoryDatabase {
         let mut table = self.table.write().unwrap();
         for op in &transac.0 {
             if !op.condition_check(table.deref()) {
-                bail!("ConditionCheck failed for op={op:?}")
+                return Err(match op {
+                    TransacOp::PutSubwalletConfig(id, _) => {
+                        DatabaseError::SubwalletConfigAlreadyExist(*id)
+                    }
+                    TransacOp::SafeUpdateCurrentSubwalletConfig(_, _) => {
+                        DatabaseError::UnexpectedCurrentSubwalletConfig
+                    }
+                    TransacOp::DeleteUnusedAccountXPub(xpubid) => {
+                        DatabaseError::AccountXPubInexistant(*xpubid)
+                    }
+                });
             }
         }
         for op in transac.0 {

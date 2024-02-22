@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use anyhow::Result;
 use bdk::{
     bitcoin::{Amount, OutPoint, Txid},
     blockchain::{log_progress, Blockchain, BlockchainFactory},
@@ -10,7 +9,11 @@ use bdk::{
 use super::{
     HeritageUtxo, HeritageWallet, HeritageWalletBalance, SubwalletConfigId, TransactionSummary,
 };
-use crate::{database::TransacHeritageDatabase, subwalletconfig::SubwalletConfig};
+use crate::{
+    database::TransacHeritageDatabase,
+    errors::{DatabaseError, Error, Result},
+    subwalletconfig::SubwalletConfig,
+};
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn sync<T: BlockchainFactory>(&self, blockchain_factory: T) -> Result<()> {
@@ -151,16 +154,23 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 progress: Some(Box::new(log_progress())),
             };
 
-            blockchain_factory.sync_wallet(&subwallet, None, sync_options)?;
+            blockchain_factory
+                .sync_wallet(&subwallet, None, sync_options)
+                .map_err(|e| Error::SyncError(e.to_string()))?;
 
             // Update the balance
-            *balance_acc = balance_acc.clone() + subwallet.get_balance()?;
+            *balance_acc = balance_acc.clone()
+                + subwallet
+                    .get_balance()
+                    .map_err(|e| DatabaseError::Generic(e.to_string()))?;
 
             // ################
             // # HeritageUtxo #
             // ################
             // Retrieve UTXOs
-            let mut subwallet_utxos = subwallet.list_unspent()?;
+            let mut subwallet_utxos = subwallet
+                .list_unspent()
+                .map_err(|e| DatabaseError::Generic(e.to_string()))?;
             // We don't want spent unspent TX Output, whatever the fuck this means
             subwallet_utxos.retain(|lu| !lu.is_spent);
             // Extract the HeritageConfig of this wallet
@@ -192,7 +202,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 } else {
                     // We need to add this
                     let block_time = subwallet
-                        .get_tx(&subwallet_utxo.outpoint.txid, false)?
+                        .get_tx(&subwallet_utxo.outpoint.txid, false)
+                        .map_err(|e| DatabaseError::Generic(e.to_string()))?
                         .expect("its present unless DB is inconsistent")
                         .confirmation_time;
                     utxos_to_add.push(HeritageUtxo {
@@ -219,7 +230,9 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             // # TransactionSummary #
             // ######################
             // Retrieve the subwallet tx
-            let subwallet_txs = subwallet.list_transactions(false)?;
+            let subwallet_txs = subwallet
+                .list_transactions(false)
+                .map_err(|e| DatabaseError::Generic(e.to_string()))?;
             for subwallet_tx in subwallet_txs {
                 txsum_to_add
                     .entry(subwallet_tx.txid)
@@ -256,8 +269,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
         // The RPC method "estimatesmartfee" returns a result in BTC/kvB
         let fee_rate = blockchain_factory
-            .build("unimportant", None)?
-            .estimate_fee(block_inclusion_objective.0 as usize)?;
+            .build("unimportant", None)
+            .map_err(|e| Error::BlockchainProviderError(e.to_string()))?
+            .estimate_fee(block_inclusion_objective.0 as usize)
+            .map_err(|e| Error::BlockchainProviderError(e.to_string()))?;
 
         self.database.borrow_mut().set_fee_rate(&fee_rate)?;
         Ok(fee_rate)

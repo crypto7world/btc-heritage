@@ -9,7 +9,6 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
 };
 
-use anyhow::{anyhow, bail};
 use bdk::{
     bitcoin::{
         absolute::LockTime,
@@ -27,6 +26,7 @@ use crate::{
     database::{
         PartitionableDatabase, SubdatabaseId, TransacHeritageDatabase, TransacHeritageOperation,
     },
+    errors::{DatabaseError, Error, Result},
     heritageconfig::{HeritageConfig, HeritageExplorer, HeritageExplorerTrait},
     subwalletconfig::SubwalletConfig,
     HeirConfig,
@@ -50,7 +50,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         }
     }
 
-    pub fn get_descriptors_backup(&self) -> anyhow::Result<Vec<DescriptorsBackup>> {
+    pub fn get_descriptors_backup(&self) -> Result<Vec<DescriptorsBackup>> {
         Ok(self
             .database
             .borrow()
@@ -69,8 +69,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 let change_descriptor = sw
                     .get_descriptor_for_keychain(KeychainKind::Internal)
                     .to_string();
-                let last_external_index = sw.database().get_last_index(KeychainKind::External)?;
-                let last_change_index = sw.database().get_last_index(KeychainKind::Internal)?;
+                let last_external_index = sw
+                    .database()
+                    .get_last_index(KeychainKind::External)
+                    .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+                let last_change_index = sw
+                    .database()
+                    .get_last_index(KeychainKind::Internal)
+                    .map_err(|e| DatabaseError::Generic(e.to_string()))?;
 
                 Ok(DescriptorsBackup {
                     external_descriptor,
@@ -80,7 +86,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     last_change_index,
                 })
             })
-            .collect::<anyhow::Result<_>>()?)
+            .collect::<Result<_>>()?)
     }
 
     /// Return an immutable reference to the internal database
@@ -88,21 +94,21 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         self.database.borrow()
     }
 
-    pub fn list_used_account_xpubs(&self) -> anyhow::Result<Vec<AccountXPub>> {
+    pub fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWallet::list_used_account_xpubs");
         let res = self.database.borrow().list_used_account_xpubs()?;
         log::debug!("HeritageWallet::list_used_account_xpubs - res={res:?}");
         Ok(res)
     }
 
-    pub fn list_unused_account_xpubs(&self) -> anyhow::Result<Vec<AccountXPub>> {
+    pub fn list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWallet::list_unused_account_xpubs");
         let res = self.database.borrow().list_unused_account_xpubs()?;
         log::debug!("HeritageWallet::list_unused_account_xpubs - res={res:?}");
         Ok(res)
     }
 
-    pub fn get_sync_time(&self) -> anyhow::Result<Option<BlockTime>> {
+    pub fn get_sync_time(&self) -> Result<Option<BlockTime>> {
         if let Some(current_subwalletconfig) = self
             .database
             .borrow()
@@ -111,7 +117,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             if let Some(sync_time) = self
                 .get_subwallet(&current_subwalletconfig)?
                 .database()
-                .get_sync_time()?
+                .get_sync_time()
+                .map_err(|e| DatabaseError::Generic(e.to_string()))?
             {
                 return Ok(Some(sync_time.block_time));
             }
@@ -121,7 +128,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 if let Some(sync_time) = self
                     .get_subwallet(&obsolete_subwalletconfig)?
                     .database()
-                    .get_sync_time()?
+                    .get_sync_time()
+                    .map_err(|e| DatabaseError::Generic(e.to_string()))?
                 {
                     return Ok(Some(sync_time.block_time));
                 }
@@ -136,13 +144,16 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     /// # Errors
     ///
     /// This function will return an error if there are problems with the database.
-    pub fn is_mine_and_current(&self, script: &Script) -> anyhow::Result<bool> {
+    pub fn is_mine_and_current(&self, script: &Script) -> Result<bool> {
         match self
             .database
             .borrow()
             .get_subwallet_config(SubwalletConfigId::Current)?
         {
-            Some(subwalletconfig) => Ok(self.get_subwallet(&subwalletconfig)?.is_mine(script)?),
+            Some(subwalletconfig) => Ok(self
+                .get_subwallet(&subwalletconfig)?
+                .is_mine(script)
+                .map_err(|e| DatabaseError::Generic(e.to_string()))?),
             None => Ok(false),
         }
     }
@@ -157,7 +168,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     /// # Errors
     ///
     /// This function will return an error if there are problems with the database.
-    pub fn is_mine(&self, script: &Script) -> anyhow::Result<bool> {
+    pub fn is_mine(&self, script: &Script) -> Result<bool> {
         if let Some(current_subwalletconfig) = self
             .database
             .borrow()
@@ -165,7 +176,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         {
             if self
                 .get_subwallet(&current_subwalletconfig)?
-                .is_mine(script)?
+                .is_mine(script)
+                .map_err(|e| DatabaseError::Generic(e.to_string()))?
             {
                 return Ok(true);
             }
@@ -175,7 +187,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             for obsolete_subwalletconfig in obsolete_subwalletconfigs {
                 if self
                     .get_subwallet(&obsolete_subwalletconfig)?
-                    .is_mine(script)?
+                    .is_mine(script)
+                    .map_err(|e| DatabaseError::Generic(e.to_string()))?
                 {
                     return Ok(true);
                 }
@@ -203,19 +216,17 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn append_account_xpubs(
         &self,
         account_xpubs: impl IntoIterator<Item = AccountXPub>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         log::debug!("HeritageWallet::append_account_xpubs");
         let account_xpubs = account_xpubs.into_iter().collect::<Vec<_>>();
         log::debug!("HeritageWallet::append_account_xpubs - account_xpubs={account_xpubs:?}");
         self.database
             .borrow_mut()
             .add_unused_account_xpubs(&account_xpubs)
+            .map_err(Into::into)
     }
 
-    pub fn update_heritage_config(
-        &self,
-        new_heritage_config: HeritageConfig,
-    ) -> anyhow::Result<()> {
+    pub fn update_heritage_config(&self, new_heritage_config: HeritageConfig) -> Result<()> {
         log::debug!(
             "HeritageWallet::update_heritage_config - new_heritage_config={new_heritage_config:?}"
         );
@@ -228,7 +239,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .any(|previous| previous == new_heritage_config)
         {
             log::error!("Cannot re-use an old HeritageConfig");
-            bail!("Cannot re-use an old HeritageConfig");
+            return Err(Error::HeritageConfigAlreadyUsed);
         }
 
         // Get the current subwallet_config if any
@@ -279,6 +290,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     &new_subwallet_config,
                     Some(&old_subwallet_config),
                 )
+                .map_err(Into::into)
         } else {
             // If it has been used, call the full update procedue
             log::debug!(
@@ -288,7 +300,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         }
     }
 
-    pub fn get_current_heritage_config(&self) -> anyhow::Result<Option<HeritageConfig>> {
+    pub fn get_current_heritage_config(&self) -> Result<Option<HeritageConfig>> {
         log::debug!("HeritageWallet::get_current_heritage_config");
         // Get the current subwallet_config
         // return the HeritageConfig
@@ -301,7 +313,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
-    pub fn list_obsolete_heritage_configs(&self) -> anyhow::Result<Vec<HeritageConfig>> {
+    pub fn list_obsolete_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {
         log::debug!("HeritageWallet::list_obsolete_heritage_configs");
         // Get the obsolete subwallet_configs
         // return the HeritageConfigs
@@ -316,21 +328,21 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
-    pub fn get_balance(&self) -> anyhow::Result<HeritageWalletBalance> {
+    pub fn get_balance(&self) -> Result<HeritageWalletBalance> {
         log::debug!("HeritageWallet::get_balance");
         let res = self.database.borrow().get_balance()?.unwrap_or_default();
         log::debug!("HeritageWallet::get_balance - res={res:?}");
         Ok(res)
     }
 
-    pub fn get_new_address(&self) -> anyhow::Result<String> {
+    pub fn get_new_address(&self) -> Result<String> {
         log::info!("HeritageWallet::get_new_address - Called for a new Bitcoin address");
         let address = self.internal_get_new_address(None)?.to_string();
         log::info!("HeritageWallet::get_new_address - address={address}");
         Ok(address)
     }
 
-    pub fn get_block_inclusion_objective(&self) -> anyhow::Result<BlockInclusionObjective> {
+    pub fn get_block_inclusion_objective(&self) -> Result<BlockInclusionObjective> {
         Ok(self
             .database
             .borrow()
@@ -338,19 +350,17 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .unwrap_or_default())
     }
 
-    pub fn set_block_inclusion_objective(
-        &self,
-        new_bio: BlockInclusionObjective,
-    ) -> anyhow::Result<()> {
+    pub fn set_block_inclusion_objective(&self, new_bio: BlockInclusionObjective) -> Result<()> {
         self.database
             .borrow_mut()
             .set_block_inclusion_objective(new_bio)
+            .map_err(|e| DatabaseError::Generic(e.to_string()).into())
     }
 
     pub fn create_owner_psbt(
         &self,
         spending_config: SpendingConfig,
-    ) -> anyhow::Result<(Psbt, TransactionSummary)> {
+    ) -> Result<(Psbt, TransactionSummary)> {
         log::debug!("HeritageWallet::create_owner_psbt - spending_config={spending_config:?}");
         self.create_psbt(Spender::Owner, spending_config, None)
     }
@@ -360,7 +370,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         heir_config: HeirConfig,
         spending_config: SpendingConfig,
         assume_blocktime: Option<BlockTime>,
-    ) -> anyhow::Result<(Psbt, TransactionSummary)> {
+    ) -> Result<(Psbt, TransactionSummary)> {
         log::debug!("HeritageWallet::create_heir_psbt - heir_config={heir_config:?} spending_config={spending_config:?}");
         self.create_psbt(
             Spender::Heir(heir_config),
@@ -374,7 +384,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         spender: Spender,
         spending_config: SpendingConfig,
         assume_blocktime: Option<BlockTime>,
-    ) -> anyhow::Result<(Psbt, TransactionSummary)> {
+    ) -> Result<(Psbt, TransactionSummary)> {
         log::debug!(
             "HeritageWallet::create_psbt - spender={spender:?} spending_config={spending_config:?} assume_blocktime={assume_blocktime:?}"
         );
@@ -402,7 +412,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // For now, we only accept SpendingConfig::DrainTo if it is an Heir spender
         if heir_spending {
             let SpendingConfig::DrainTo(_) = spending_config else {
-                bail!("An Heir can only use SpendingConfig::DrainTo(...)")
+                log::error!("An Heir can only use SpendingConfig::DrainTo(...)");
+                return Err(Error::InvalidSpendingConfigForHeir);
             };
         };
 
@@ -411,7 +422,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .database
             .borrow()
             .get_subwallet_config(SubwalletConfigId::Current)?
-            .ok_or(anyhow!("No current SubWallet to create a PSBT from"))?;
+            .ok_or(Error::MissingCurrentSubwalletConfig)?;
         log::debug!(
             "HeritageWallet::create_psbt - current_subwallet_config={current_subwallet_config:?}"
         );
@@ -428,9 +439,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         let block_time = match assume_blocktime {
             Some(block_time) => block_time,
             None => {
-                let mut bt = self
-                    .get_sync_time()?
-                    .ok_or(anyhow!("HeritageWallet was never synced"))?;
+                let mut bt = self.get_sync_time()?.ok_or(Error::UnsyncedWallet)?;
                 bt.timestamp = crate::utils::timestamp_now();
                 bt
             }
@@ -539,7 +548,9 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Include all the obsolete_wallet_outputs
         log::debug!("HeritageWallet::create_psbt - tx_builder.add_foreign_utxo - foreing_utxos={foreign_utxos:?}");
         for (outpoint, psbt_input, satisfaction_weight) in foreign_utxos {
-            tx_builder.add_foreign_utxo(outpoint, psbt_input, satisfaction_weight)?;
+            tx_builder
+                .add_foreign_utxo(outpoint, psbt_input, satisfaction_weight)
+                .expect("Parameters are under our control and correct");
         }
 
         // Set FeeRate
@@ -569,7 +580,17 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         log::debug!("HeritageWallet::create_psbt - policy_index={policy_index}");
         let keychains = [KeychainKind::External, KeychainKind::Internal];
         for kc in keychains {
-            if let Some(pol) = current_subwallet.policies(kc)? {
+            if let Some(pol) = current_subwallet.policies(kc).map_err(|e| match e {
+                bdk::Error::InvalidPolicyPathError(e) => Error::FailToExtractPolicy(e),
+                _ => {
+                    log::error!(
+                        "Unknown error while extracting policies from the current SubwalletConfig: {e:#}"
+                    );
+                    panic!(
+                        "Unknown error while extracting policies from the current SubwalletConfig: {e:#}"
+                    )
+                }
+            })? {
                 let bt = BTreeMap::from([(pol.id, vec![policy_index])]);
                 log::debug!(
                     "HeritageWallet::create_psbt - tx_builder.policy_path - bt={bt:?}, kc={kc:?}"
@@ -605,14 +626,46 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                         outpoint,
                         o_sequence.unwrap_or(Sequence::ENABLE_LOCKTIME_NO_RBF),
                     );
-                    tx_builder.add_utxo(outpoint)?;
+                    tx_builder.add_utxo(outpoint).map_err(|e| match e {
+                        bdk::Error::UnknownUtxo => {
+                            log::error!("Unexpected UnknownUtxo error: {e:#}");
+                            panic!("Unexpected UnknownUtxo error: {e:#}")
+                        }
+                        _ => Error::DatabaseError(DatabaseError::Generic(e.to_string())),
+                    })?;
                 }
             }
         }
 
         // Create the PSBT
         log::debug!("HeritageWallet::create_psbt - tx_builder.finish()");
-        let (mut psbt, transaction_details) = tx_builder.finish()?;
+        let (mut psbt, transaction_details) = tx_builder.finish().map_err(|e| match e {
+            bdk::Error::InvalidPolicyPathError(e) => Error::FailToExtractPolicy(e),
+            bdk::Error::UnknownUtxo
+            | bdk::Error::FeeRateTooLow { .. }
+            | bdk::Error::FeeTooLow { .. }
+            | bdk::Error::ScriptDoesntHaveAddressForm
+            | bdk::Error::InsufficientFunds { .. }
+            | bdk::Error::NoRecipients
+            | bdk::Error::NoUtxosSelected
+            | bdk::Error::OutputBelowDustLimit(_)
+            | bdk::Error::BnBTotalTriesExceeded
+            | bdk::Error::BnBNoExactMatch
+            | bdk::Error::FeeRateUnavailable
+            | bdk::Error::SpendingPolicyRequired(_)
+            | bdk::Error::TransactionNotFound
+            | bdk::Error::Psbt(_)
+            | bdk::Error::Miniscript(_)
+            | bdk::Error::MiniscriptPsbt(_)
+            | bdk::Error::InvalidOutpoint(_)
+            | bdk::Error::InvalidNetwork { .. }
+            | bdk::Error::Descriptor(_)
+            | bdk::Error::ChecksumMismatch => Error::PsbtCreationError(e.to_string()),
+            _ => {
+                log::error!("Unknown error while creating PSBT: {e:#}");
+                Error::Unknown(e.to_string())
+            }
+        })?;
 
         // Post-process the PSBT
         // We want to:
@@ -719,7 +772,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             }
         }
 
-        let sent = Amount::from_sat(transaction_details.sent);
+        // Our PSBT only contains owned inputs
+        let sent = Amount::from_sat(psbt.iter_funding_utxos().fold(0, |acc, utxo| {
+            acc + utxo.expect("funding info present").value
+        }));
         let tx_summary = TransactionSummary {
             txid: psbt.unsigned_tx.txid(),
             confirmation_time: None,
@@ -728,6 +784,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             fee: psbt.fee().expect("our psbt is fresh and sound"),
         };
 
+        println!("{transaction_details:?}");
         log::debug!("HeritageWallet::create_psbt - psbt={psbt:?}");
         log::debug!("HeritageWallet::create_psbt - tx_summary={tx_summary:?}");
         Ok((psbt, tx_summary))
@@ -739,7 +796,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         spender: &Spender,
         assume_blocktime: &BlockTime,
         include_foreign_utxo: bool,
-    ) -> anyhow::Result<
+    ) -> Result<
         Option<(
             Option<LockTime>,
             Option<Sequence>,
@@ -780,9 +837,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
         let (o_lock_time, o_sequence) = match &spend_condition {
             Some(sc) => (
-                sc.get_spendable_timestamp()
-                    .map(|ts| LockTime::from_time(ts as u32))
-                    .transpose()?,
+                sc.get_spendable_timestamp().map(|ts| {
+                    LockTime::from_time(ts as u32)
+                        .expect("comes from HeritageConfig which check the value")
+                }),
                 sc.get_relative_block_lock()
                     .map(|h| Sequence::from_height(h)),
             ),
@@ -790,7 +848,9 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         };
 
         let subwallet = self.get_subwallet(&subwallet_config)?;
-        let unspent = subwallet.list_unspent()?;
+        let unspent = subwallet
+            .list_unspent()
+            .map_err(|e| DatabaseError::Generic(e.to_string()))?;
 
         // Manually select UTXOs
         let utxos_and_inputs = unspent
@@ -836,7 +896,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         .map(|utxo|{
             if include_foreign_utxo {
                 let outpoint = utxo.outpoint;
-                let mut input = subwallet.get_psbt_input(utxo.clone(), None, true)?;
+                let mut input = subwallet.get_psbt_input(utxo.clone(), None, true).map_err(|e| match e {
+                    bdk::Error::UnknownUtxo => {
+                        log::error!("Unexpected UnknownUtxo error: {e:#}");
+                        panic!("Unexpected UnknownUtxo error: {e:#}")
+                    }
+                    bdk::Error::MiniscriptPsbt(_) => Error::PsbtCreationError(e.to_string()),
+                    _ => DatabaseError::Generic(e.to_string()).into(),
+                })?;
                 minimize_psbt_input_for_spender(&mut input, heritage_explorer.as_ref());
                 let satisfaction_weight = subwallet
                 .get_descriptor_for_keychain(utxo.keychain)
@@ -846,7 +913,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             } else {
                 Ok((utxo, None))
             }
-        }).filter_map(|r: Result<_, anyhow::Error>|{
+        }).filter_map(|r: Result<_>|{
             match r {
                 Ok(v) => Some(v),
                 Err(e) => {
@@ -871,7 +938,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         &self,
         heritage_config: HeritageConfig,
         old_subwallet_config: Option<SubwalletConfig>,
-    ) -> anyhow::Result<()> {
+    ) -> Result<()> {
         log::debug!(
             "HeritageWallet::create_new_subwallet_config - old_subwallet_config={old_subwallet_config:?}"
         );
@@ -881,7 +948,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .database
             .borrow()
             .get_unused_account_xpub()?
-            .ok_or(anyhow!("No unused AccountXPub found"))?;
+            .ok_or(Error::MissingUnusedAccountXPub)?;
         log::debug!(
             "HeritageWallet::update_heritage_config - new_account_xpub={new_account_xpub:?}"
         );
@@ -913,7 +980,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     fn get_subwallet(
         &self,
         subwalletconfig: &SubwalletConfig,
-    ) -> anyhow::Result<Wallet<<D as PartitionableDatabase>::SubDatabase>> {
+    ) -> Result<Wallet<<D as PartitionableDatabase>::SubDatabase>> {
         log::debug!("HeritageWallet::get_subwallet - Opening subwallet database");
         let subdatabase = self
             .database
@@ -923,17 +990,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(subwalletconfig.get_subwallet(subdatabase))
     }
 
-    fn internal_get_new_address(
-        &self,
-        keychain_kind: Option<KeychainKind>,
-    ) -> anyhow::Result<AddressInfo> {
+    fn internal_get_new_address(&self, keychain_kind: Option<KeychainKind>) -> Result<AddressInfo> {
         log::debug!("HeritageWallet::internal_get_new_address - keychain_kind={keychain_kind:?}");
 
         let current_subwallet_config = self
             .database
             .borrow()
             .get_subwallet_config(SubwalletConfigId::Current)?
-            .ok_or(anyhow!("No current Subwallet to generate addresses from"))?;
+            .ok_or(Error::MissingCurrentSubwalletConfig)?;
         log::debug!("HeritageWallet::internal_get_new_address - current_subwallet_config={current_subwallet_config:?}");
 
         // Verify if the subwallet_config has not already been used, just override it
@@ -960,13 +1024,29 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         let address = match keychain_kind {
             Some(KeychainKind::External) | None => {
                 log::debug!("HeritageWallet::internal_get_new_address - subwallet.get_address");
-                subwallet.get_address(bdk::wallet::AddressIndex::New)?
+                subwallet
+                    .get_address(bdk::wallet::AddressIndex::New)
+                    .map_err(|e| match e {
+                        bdk::Error::ScriptDoesntHaveAddressForm => Error::Unknown(
+                            "ScriptDoesntHaveAddressForm: Invalid script retrieved from database"
+                                .to_owned(),
+                        ),
+                        _ => DatabaseError::Generic(e.to_string()).into(),
+                    })?
             }
             Some(KeychainKind::Internal) => {
                 log::debug!(
                     "HeritageWallet::internal_get_new_address - subwallet.get_internal_address"
                 );
-                subwallet.get_internal_address(bdk::wallet::AddressIndex::New)?
+                subwallet
+                    .get_internal_address(bdk::wallet::AddressIndex::New)
+                    .map_err(|e| match e {
+                        bdk::Error::ScriptDoesntHaveAddressForm => Error::Unknown(
+                            "ScriptDoesntHaveAddressForm: Invalid script retrieved from database"
+                                .to_owned(),
+                        ),
+                        _ => DatabaseError::Generic(e.to_string()).into(),
+                    })?
             }
         };
         log::debug!("HeritageWallet::internal_get_new_address - address={address:?}");
@@ -1845,7 +1925,7 @@ mod tests {
     #[test]
     fn create_owner_psbt_recipient() {
         let wallet = setup_wallet();
-        let (psbt, _) = wallet
+        let (psbt, tx_sum) = wallet
             .create_owner_psbt(SpendingConfig::Recipients(vec![
                 Recipient::from((
                     string_to_address(PKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
@@ -1996,12 +2076,18 @@ mod tests {
         (expected_psbt.unsigned_tx.output, expected_psbt.outputs) = tmp.into_iter().unzip();
 
         assert_eq!(psbt, expected_psbt);
+
+        assert_eq!(tx_sum.confirmation_time, None);
+        assert_eq!(tx_sum.received, Amount::from_btc(3.39996080).unwrap());
+        // Uses all "old" UTXO
+        assert_eq!(tx_sum.sent, Amount::from_btc(4.0).unwrap());
+        assert_eq!(tx_sum.fee, Amount::from_btc(0.00003920).unwrap());
     }
 
     #[test]
     fn create_owner_psbt_drains_to() {
         let wallet = setup_wallet();
-        let (psbt, _) = wallet
+        let (psbt, tx_sum) = wallet
             .create_owner_psbt(SpendingConfig::DrainTo(
                 string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
             ))
@@ -2100,6 +2186,13 @@ mod tests {
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::OwnerDrain));
+
+        assert_eq!(tx_sum.confirmation_time, None);
+        // Receive nothing, draining
+        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        // Uses all "old" UTXO
+        assert_eq!(tx_sum.sent, Amount::from_btc(5.0).unwrap());
+        assert_eq!(tx_sum.fee, Amount::from_btc(0.00003410).unwrap());
     }
 
     #[test]
@@ -2119,7 +2212,7 @@ mod tests {
                 Some(get_present())
             )
             .is_err());
-        let (psbt, _) = wallet
+        let (psbt, tx_sum) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2235,6 +2328,13 @@ mod tests {
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::BackupPresent));
+
+        assert_eq!(tx_sum.confirmation_time, None);
+        // Receive nothing, heir is draining
+        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        // Uses all "old" UTXO
+        assert_eq!(tx_sum.sent, Amount::from_btc(4.0).unwrap());
+        assert_eq!(tx_sum.fee, Amount::from_btc(0.00003960).unwrap());
     }
 
     #[test]
@@ -2254,7 +2354,7 @@ mod tests {
                 Some(get_present())
             )
             .is_err());
-        let (psbt, _) = wallet
+        let (psbt, tx_sum) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2340,6 +2440,13 @@ mod tests {
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::WifePresent));
+
+        assert_eq!(tx_sum.confirmation_time, None);
+        // Receive nothing, heir is draining
+        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        // Uses only the eligible UTXO
+        assert_eq!(tx_sum.sent, Amount::from_btc(1.0).unwrap());
+        assert_eq!(tx_sum.fee, Amount::from_btc(0.00001390).unwrap());
     }
 
     #[test]
@@ -2386,7 +2493,7 @@ mod tests {
         let heir_config = get_test_heritage(TestHeritage::Backup)
             .get_heir_config()
             .clone();
-        let (psbt, _) = wallet
+        let (psbt, tx_sum) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2511,6 +2618,13 @@ mod tests {
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::BackupFuture));
+
+        assert_eq!(tx_sum.confirmation_time, None);
+        // Receive nothing, heir is draining
+        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        // Uses only the eligible UTXO
+        assert_eq!(tx_sum.sent, Amount::from_btc(5.0).unwrap());
+        assert_eq!(tx_sum.fee, Amount::from_btc(0.00004810).unwrap());
     }
 
     #[test]
@@ -2526,7 +2640,7 @@ mod tests {
         let heir_config = get_test_heritage(TestHeritage::Wife)
             .get_heir_config()
             .clone();
-        let (psbt, _) = wallet
+        let (psbt, tx_sum) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2651,6 +2765,13 @@ mod tests {
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::WifeFuture));
+
+        assert_eq!(tx_sum.confirmation_time, None);
+        // Receive nothing, heir is draining
+        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        // Uses only the eligible UTXO
+        assert_eq!(tx_sum.sent, Amount::from_btc(5.0).unwrap());
+        assert_eq!(tx_sum.fee, Amount::from_btc(0.00004890).unwrap());
     }
 
     #[test]
@@ -2666,7 +2787,7 @@ mod tests {
         let heir_config = get_test_heritage(TestHeritage::Brother)
             .get_heir_config()
             .clone();
-        let (psbt, _) = wallet
+        let (psbt, tx_sum) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
@@ -2751,6 +2872,13 @@ mod tests {
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::BrotherFuture));
+
+        assert_eq!(tx_sum.confirmation_time, None);
+        // Receive nothing, heir is draining
+        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        // Uses only the eligible UTXO
+        assert_eq!(tx_sum.sent, Amount::from_btc(1.0).unwrap());
+        assert_eq!(tx_sum.fee, Amount::from_btc(0.00001480).unwrap());
     }
 
     fn _tx_weight_prediction(tp: TestPsbt) {

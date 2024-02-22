@@ -1,5 +1,6 @@
 pub mod accountxpub;
 pub mod database;
+pub mod errors;
 pub mod heritageconfig;
 pub mod heritagewallet;
 pub mod subwalletconfig;

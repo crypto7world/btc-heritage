@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use bdk::bitcoin::absolute::LOCK_TIME_THRESHOLD;
 use serde::{Deserialize, Serialize};
 
 use super::{heirtypes::HeirConfig, SpendConditions};
@@ -281,8 +282,8 @@ impl HeritageConfig {
         else {
             unreachable!("In this version of the software, there is always Some(...) values for an Heir in the SpendConditionTester");
         };
-        // No matter what, this should always be greater than 500_000_000
-        assert!(absolute_lock_time > 500_000_000, "absolute_lock_time cannot be less or equal to 500_000_000 because it changes its meaning");
+        // No matter what, this should always be greater than LOCK_TIME_THRESHOLD (500_000_000)
+        assert!(absolute_lock_time > LOCK_TIME_THRESHOLD as u64, "absolute_lock_time cannot be less or equal to {LOCK_TIME_THRESHOLD} because it changes its meaning");
         // No matter what, this should always be > 1440 blocks = 10 days
         assert!(
             rel_lock_time >= 1440,

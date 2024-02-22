@@ -7,7 +7,8 @@ use bdk::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    heritageconfig::HeritageExplorerTrait, subwalletconfig::SubwalletId, HeirConfig, HeritageConfig,
+    errors::Error, heritageconfig::HeritageExplorerTrait, subwalletconfig::SubwalletId, HeirConfig,
+    HeritageConfig,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq)]
@@ -54,7 +55,7 @@ impl From<(Address, Amount)> for Recipient {
     }
 }
 impl TryFrom<(&str, Amount)> for Recipient {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(value: (&str, Amount)) -> Result<Self, Self::Error> {
         let (addr_str, amount) = value;
@@ -63,7 +64,7 @@ impl TryFrom<(&str, Amount)> for Recipient {
     }
 }
 impl TryFrom<(String, Amount)> for Recipient {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(value: (String, Amount)) -> Result<Self, Self::Error> {
         let (addr_str, amount) = value;
@@ -77,7 +78,7 @@ pub enum SpendingConfig {
     Recipients(Vec<Recipient>),
 }
 impl SpendingConfig {
-    pub fn drain_to_address_str(addr: &str) -> anyhow::Result<SpendingConfig> {
+    pub fn drain_to_address_str(addr: &str) -> crate::errors::Result<SpendingConfig> {
         Ok(SpendingConfig::DrainTo(crate::utils::string_to_address(
             addr,
         )?))
@@ -92,7 +93,7 @@ impl From<Vec<(Address, Amount)>> for SpendingConfig {
     }
 }
 impl TryFrom<Vec<(String, Amount)>> for SpendingConfig {
-    type Error = anyhow::Error;
+    type Error = Error;
 
     fn try_from(value: Vec<(String, Amount)>) -> Result<Self, Self::Error> {
         Ok(SpendingConfig::Recipients(

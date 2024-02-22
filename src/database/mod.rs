@@ -1,7 +1,6 @@
 pub mod memory;
 pub mod paginate;
 
-use anyhow::Result;
 use bdk::{
     bitcoin::{OutPoint, Txid},
     database::BatchDatabase,
@@ -11,6 +10,7 @@ use std::fmt::Display;
 
 use crate::{
     accountxpub::AccountXPub,
+    errors::DatabaseError,
     heritagewallet::{
         BlockInclusionObjective, HeritageUtxo, HeritageWalletBalance, SubwalletConfigId,
         TransactionSummary,
@@ -19,6 +19,8 @@ use crate::{
 };
 
 use self::paginate::{ContinuationToken, Paginated};
+
+type Result<T> = std::result::Result<T, DatabaseError>;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SubdatabaseId(String);

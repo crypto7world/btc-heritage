@@ -1,4 +1,9 @@
-use crate::{accountxpub::AccountXPub, heritageconfig::HeritageConfig, utils};
+use crate::{
+    accountxpub::AccountXPub,
+    errors::{Error, Result},
+    heritageconfig::HeritageConfig,
+    utils,
+};
 
 use bdk::{
     bitcoin::{
@@ -13,7 +18,6 @@ use bdk::{
 
 pub use bdk::{bitcoin::psbt::PartiallySignedTransaction, FeeRate};
 
-use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -123,7 +127,8 @@ impl SubwalletConfig {
 
     pub fn mark_subwallet_firstuse(&mut self) -> Result<()> {
         if self.subwallet_firstuse_time.is_some() {
-            bail!("Subwallet has already been used")
+            log::error!("Subwallet has already been used");
+            return Err(Error::SubwalletConfigAlreadyMarkedUsed);
         }
         self.subwallet_firstuse_time = Some(SubwalletFirstUseTime::default());
         Ok(())
