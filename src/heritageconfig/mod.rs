@@ -50,6 +50,11 @@ enum InnerHeritageConfig {
     V1(v1::HeritageConfig),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeritageConfigVersion {
+    V1 = 1,
+}
+
 impl HeritageConfig {
     /// Return a builder for the default [HeritageConfig] version
     pub fn builder() -> v1::HeritageConfigBuilder {
@@ -61,10 +66,10 @@ impl HeritageConfig {
         v1::HeritageConfig::builder()
     }
 
-    /// Return the version number as an u8, V1 => 1, V2 => 2, etc...
-    pub fn version(&self) -> u8 {
+    /// Return the version
+    pub fn version(&self) -> HeritageConfigVersion {
         match self.0 {
-            InnerHeritageConfig::V1(_) => 1,
+            InnerHeritageConfig::V1(_) => HeritageConfigVersion::V1,
         }
     }
 
@@ -95,6 +100,14 @@ impl HeritageConfig {
     pub fn descriptor_taptree_miniscript_expression(&self) -> Option<String> {
         match &self.0 {
             InnerHeritageConfig::V1(hc) => hc.descriptor_taptree_miniscript_expression(),
+        }
+    }
+
+    /// Returns an iterator over references to the [HeirConfig]s present in the [HeritageConfig].
+    /// No particular order is guaranteed.
+    pub fn iter_heir_configs(&self) -> impl Iterator<Item = &HeirConfig> {
+        match &self.0 {
+            InnerHeritageConfig::V1(hc) => hc.iter_heritages().map(|h| h.get_heir_config()),
         }
     }
 

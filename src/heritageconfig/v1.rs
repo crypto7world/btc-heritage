@@ -221,6 +221,11 @@ pub struct HeritageConfig {
 }
 
 impl HeritageConfig {
+    pub fn iter_heritages(&self) -> impl Iterator<Item = &Heritage> {
+        self.heritages.0.iter()
+    }
+
+    #[deprecated(since = "0.9.0", note = "Prefer using iter_heritages instead")]
     pub fn heritages(&self) -> &Vec<Heritage> {
         &self.heritages.0
     }

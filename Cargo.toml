@@ -1,6 +1,6 @@
 [package]
 name = "btc-heritage"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 authors = ["Crypto7 <john@crypto7.world>"]
 description = "A Rust library implementing primitives for a Bitcoin Taproot wallet managing on-chain inheritance of bitcoins"
