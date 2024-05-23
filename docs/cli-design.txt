@@ -1,0 +1,49 @@
+# Login/Logout
+heritage-cli login [--url <service_URL>]
+heritage-cli logout
+
+# Discover and List compatible hardware-wallet devices
+heritage-cli hardware-device list
+
+
+# Wallet New (if --service, pushes the XPubs?)
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> new [--generate <12|18|24> | --seed <mnemonic> | --hardware-device <hardware-device>]
+
+heritage-cli local-wallet <wallet-name> new [--generate <12|18|24> | --seed <mnemonic> | --hardware-device <hardware-device>]
+
+heritage-cli wallet MyWallet new
+heritage-cli wallet MyWallet new --service --hardware-device <hardware-device>
+heritage-cli wallet MyWallet new --local --seed abort abort abort abort abort abort abort abort abort abort abort about
+
+# Wallet setup
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config set <...>
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config get
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config history
+
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs display
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs feed
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs list
+
+heritage-cli local-wallet <wallet-name> heritage-config set <...>
+heritage-cli local-wallet <wallet-name> heritage-config get
+heritage-cli local-wallet <wallet-name> heritage-config history
+
+heritage-cli local-wallet <wallet-name> account-xpubs display
+heritage-cli local-wallet <wallet-name> account-xpubs feed
+heritage-cli local-wallet <wallet-name> account-xpubs status
+
+# Wallet sync
+heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> sync
+heritage-cli local-wallet <wallet-name> sync [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ]
+
+# Wallet addresses
+heritage-cli service-wallet <wallet-name> get-address
+heritage-cli local-wallet <wallet-name> get-address
+
+# Wallet PSBT/Sign/Broadcast
+# Will generate the PSBT, present it for validation to the user, then sign and broadcast it
+heritage-cli wallet <wallet-name> get-psbt --recipient <address>,<amount> [--url <service_URL> | --bitcoin-url <btc_url> | --electrum-url <electrum_url> ] [--sign] [--broadcast]
+heritage-cli wallet <wallet-name> sign-psbt [--broadcast] [--url <service_URL> | --bitcoin-url <btc_url> | --electrum-url <electrum_url> ]
+
+heritage-cli service-wallet <wallet-name> broadcast-psbt [--url <service_URL>]
+heritage-cli local-wallet <wallet-name> broadcast-tx [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ]

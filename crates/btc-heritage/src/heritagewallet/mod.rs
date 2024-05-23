@@ -1194,7 +1194,7 @@ fn adjust_with_real_fee(
 }
 
 fn get_expected_tx_weight(psbt: &Psbt) -> Weight {
-    log::debug!("get_expected_tx_weight - psbt=...");
+    log::debug!("get_expected_tx_weight - psbt={psbt}");
     // Put some barriers so we do not misuses this
     // Ensure this is a pure Taproot Psbt
     assert!(psbt
