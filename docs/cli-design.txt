@@ -40,11 +40,9 @@ heritage-cli local-wallet [--network <network>] <wallet-name> heritage-config re
 heritage-cli local-wallet [--network <network>] <wallet-name> heritage-config ledger-register
 
 # Account eXtended Public Keys
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs display
 heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs feed
 heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs list
 
-heritage-cli local-wallet [--network <network>] <wallet-name> account-xpubs display
 heritage-cli local-wallet [--network <network>] <wallet-name> account-xpubs feed
 heritage-cli local-wallet [--network <network>] <wallet-name> account-xpubs list
 
