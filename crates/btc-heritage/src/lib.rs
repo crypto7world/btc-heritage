@@ -1,15 +1,15 @@
-pub mod accountxpub;
+pub mod account_xpub;
 pub mod database;
 pub mod errors;
-pub mod heritageconfig;
-pub mod heritagewallet;
-pub mod subwalletconfig;
+pub mod heritage_config;
+pub mod heritage_wallet;
+pub mod subwallet_config;
 pub mod utils;
 
-pub use accountxpub::AccountXPub;
+pub use account_xpub::AccountXPub;
 pub use bdk::bitcoin::{psbt::PartiallySignedTransaction, Amount};
-pub use heritageconfig::{heirtypes::*, HeritageConfig};
-pub use heritagewallet::{
+pub use heritage_config::{heirtypes::*, HeritageConfig};
+pub use heritage_wallet::{
     BlockInclusionObjective, HeritageWallet, HeritageWalletBalance, Recipient, SpendingConfig,
 };
 
@@ -30,7 +30,7 @@ mod tests {
         use serde_json::Value;
         use std::str::FromStr;
 
-        use crate::{heritageconfig::HeritageExplorerTrait, subwalletconfig::SubwalletConfig};
+        use crate::{heritage_config::HeritageExplorerTrait, subwallet_config::SubwalletConfig};
 
         use super::{
             get_test_heritage, get_test_heritage_config, get_test_subwallet_config, TestHeritage,
@@ -211,8 +211,8 @@ mod tests {
     pub use notdbtests::*;
 
     use crate::{
-        heritageconfig::{v1::Heritage, HeritageConfig},
-        subwalletconfig::SubwalletConfig,
+        heritage_config::{v1::Heritage, HeritageConfig},
+        subwallet_config::SubwalletConfig,
         AccountXPub,
     };
 

@@ -12,7 +12,7 @@ use super::{
 use crate::{
     database::TransacHeritageDatabase,
     errors::{DatabaseError, Error, Result},
-    subwalletconfig::SubwalletConfig,
+    subwallet_config::SubwalletConfig,
 };
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {

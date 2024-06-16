@@ -11,17 +11,17 @@ use bdk::{
 };
 
 use crate::{
-    accountxpub::AccountXPubId,
+    account_xpub::AccountXPubId,
     database::{
         paginate::{ContinuationToken, Paginated},
         HeritageDatabase, TransacHeritageDatabase, TransacHeritageOperation,
     },
     errors::DatabaseError,
-    heritagewallet::{
+    heritage_wallet::{
         BlockInclusionObjective, HeritageUtxo, HeritageWalletBalance, SubwalletConfigId,
         TransactionSummary,
     },
-    subwalletconfig::SubwalletConfig,
+    subwallet_config::SubwalletConfig,
     AccountXPub,
 };
 

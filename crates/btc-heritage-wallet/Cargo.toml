@@ -11,7 +11,11 @@ repository.workspace = true
 
 [dependencies]
 btc-heritage = { path = "../btc-heritage" }
-btc-heritage-keys = { path = "../btc-heritage-keys" }
+bip39 = "2.0.0"
+ledger_bitcoin_client = "0.4.1"
+ledger-transport-hid = "0.11"
+ledger-apdu = "0.11"
+serde = { workspace = true }
 sled = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }

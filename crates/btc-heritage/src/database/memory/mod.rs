@@ -10,7 +10,7 @@ use ::bdk::{
     BlockTime,
 };
 
-use crate::{accountxpub::AccountXPubId, heritagewallet::SubwalletConfigId};
+use crate::{account_xpub::AccountXPubId, heritage_wallet::SubwalletConfigId};
 
 use self::bdk::HeritageBdkMemoryDatabaseWrapper;
 

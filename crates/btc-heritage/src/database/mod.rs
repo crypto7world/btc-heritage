@@ -9,13 +9,13 @@ use bdk::{
 use std::fmt::Display;
 
 use crate::{
-    accountxpub::AccountXPub,
+    account_xpub::AccountXPub,
     errors::DatabaseError,
-    heritagewallet::{
+    heritage_wallet::{
         BlockInclusionObjective, HeritageUtxo, HeritageWalletBalance, SubwalletConfigId,
         TransactionSummary,
     },
-    subwalletconfig::SubwalletConfig,
+    subwallet_config::SubwalletConfig,
 };
 
 use self::paginate::{ContinuationToken, Paginated};

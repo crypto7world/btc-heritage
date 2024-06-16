@@ -7,8 +7,8 @@ use bdk::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    errors::Error, heritageconfig::HeritageExplorerTrait, subwalletconfig::SubwalletId, HeirConfig,
-    HeritageConfig,
+    errors::Error, heritage_config::HeritageExplorerTrait, subwallet_config::SubwalletId,
+    HeirConfig, HeritageConfig,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq)]

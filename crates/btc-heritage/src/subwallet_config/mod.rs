@@ -1,7 +1,7 @@
 use crate::{
-    accountxpub::AccountXPub,
+    account_xpub::AccountXPub,
     errors::{Error, Result},
-    heritageconfig::HeritageConfig,
+    heritage_config::HeritageConfig,
     utils,
 };
 

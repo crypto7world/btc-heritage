@@ -22,13 +22,13 @@ use bdk::{
 };
 
 use crate::{
-    accountxpub::AccountXPub,
+    account_xpub::AccountXPub,
     database::{
         PartitionableDatabase, SubdatabaseId, TransacHeritageDatabase, TransacHeritageOperation,
     },
     errors::{DatabaseError, Error, Result},
-    heritageconfig::{HeritageConfig, HeritageExplorer, HeritageExplorerTrait},
-    subwalletconfig::SubwalletConfig,
+    heritage_config::{HeritageConfig, HeritageExplorer, HeritageExplorerTrait},
+    subwallet_config::SubwalletConfig,
     HeirConfig,
 };
 
@@ -1296,7 +1296,7 @@ mod tests {
 
     use crate::{
         database::{memory::HeritageMemoryDatabase, HeritageDatabase, TransacHeritageOperation},
-        heritagewallet::{
+        heritage_wallet::{
             get_expected_tx_weight, BlockInclusionObjective, DescriptorsBackup, HeritageWallet,
             HeritageWalletBalance, Recipient, SpendingConfig, SubwalletConfigId,
         },
