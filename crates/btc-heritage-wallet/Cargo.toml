@@ -17,5 +17,6 @@ ledger-transport-hid = "0.11"
 ledger-apdu = "0.11"
 serde = { workspace = true }
 sled = { workspace = true }
+dirs-next = "2.0"
 log = { workspace = true }
 thiserror = { workspace = true }

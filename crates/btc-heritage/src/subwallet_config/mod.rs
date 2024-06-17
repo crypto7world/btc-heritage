@@ -52,10 +52,10 @@ impl SubwalletConfig {
     ) -> Self {
         let secp = Secp256k1::new();
 
-        log::debug!("Wallet::new - wallet_id={subwallet_id}");
+        log::debug!("SubwalletConfig::new - wallet_id={subwallet_id}");
 
         let descriptor = account_xpub.descriptor_public_key();
-        log::debug!("account descriptor={descriptor}");
+        log::debug!("SubwalletConfig::new - account descriptor={descriptor}");
         let (fingerprint, derivation_path, account_xpub_key) = match descriptor {
             DescriptorPublicKey::XPub(DescriptorXKey {
                 origin: Some((fingerprint, path)),
@@ -64,9 +64,9 @@ impl SubwalletConfig {
             }) => (fingerprint, path, xkey),
             _ => panic!("Invalid key variant"),
         };
-        log::debug!("Wallet::new - fingerprint={fingerprint}");
-        log::debug!("Wallet::new - derivation_path={derivation_path}");
-        log::debug!("Wallet::new - account_xpub_key={account_xpub_key}");
+        log::debug!("SubwalletConfig::new - fingerprint={fingerprint}");
+        log::debug!("SubwalletConfig::new - derivation_path={derivation_path}");
+        log::debug!("SubwalletConfig::new - account_xpub_key={account_xpub_key}");
 
         let mut descriptor_iterator = derivation_path.normal_children().take(2).map(|child_path| {
             let deriv_path = DerivationPath::from(
@@ -94,8 +94,8 @@ impl SubwalletConfig {
             descriptor_iterator.next().unwrap(),
             descriptor_iterator.next().unwrap(),
         );
-        log::debug!("Wallet::new - ext_descriptor={ext_descriptor}");
-        log::debug!("Wallet::new - change_descriptor={change_descriptor}");
+        log::debug!("SubwalletConfig::new - ext_descriptor={ext_descriptor}");
+        log::debug!("SubwalletConfig::new - change_descriptor={change_descriptor}");
 
         Self {
             subwallet_id,

@@ -1,6 +1,28 @@
 # Login/Logout
-heritage-cli service [--url <service_URL>] login
-heritage-cli service [--url <service_URL>] logout
+heritage-cli [--datadir <datadir>] service [--url <service_URL>] login
+heritage-cli [--datadir <datadir>] service [--url <service_URL>] logout
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] list-wallets
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] list-heirs
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] list-heritages
+
+
+heritage-cli [--datadir <datadir>] list-wallets
+heritage-cli [--datadir <datadir>] wallet <wallet-name> create [--generate <12|18|24> | --seed <mnemonic> [--with-password] | --ledger] [--service | --local] [--service-url <service_URL>] [--network <network>]
+
+heritage-cli [--datadir <datadir>] wallet <wallet-name> bind-to-service [--service-url <service_URL>] [--existing-wallet-name <existing-wallet-name>]
+heritage-cli [--datadir <datadir>] wallet <wallet-name> bind-to-local [--existing-wallet-name <existing-wallet-name>]
+
+
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name> restore <JSON-backup-file> [--seed <mnemonic> [--with-password] | --ledger]
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name> rebind [--seed <mnemonic> [--with-password] | --ledger]
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name>
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name>
+heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name>
+
+
+
+heritage-cli [--datadir <datadir>] local [--network <network>] wallet <wallet-name> restore <JSON-backup-file> [--seed <mnemonic> [--with-password] | --ledger]
+heritage-cli [--datadir <datadir>] local [--network <network>] wallet
 
 # Wallets sometime need to be restored, there is 2 fundamentaly different part to restore
 # - the seed; for all things related to private keys

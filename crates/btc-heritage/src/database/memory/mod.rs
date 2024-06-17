@@ -5,19 +5,19 @@ use std::{
     sync::RwLock,
 };
 
-use ::bdk::{
+use crate::bdk::{
     bitcoin::{OutPoint, Txid},
     BlockTime,
 };
 
 use crate::{account_xpub::AccountXPubId, heritage_wallet::SubwalletConfigId};
 
-use self::bdk::HeritageBdkMemoryDatabaseWrapper;
-
 use super::{PartitionableDatabase, Result, SubdatabaseId};
 
 mod bdk;
 mod heritage;
+
+use bdk::HeritageBdkMemoryDatabaseWrapper;
 
 enum HeritageMonoItemKeyMapper<'a> {
     WalletConfig(Option<SubwalletConfigId>),

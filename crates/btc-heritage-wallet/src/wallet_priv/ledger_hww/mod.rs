@@ -1,16 +1,13 @@
 use crate::errors::Result;
-use btc_heritage::{miniscript::DescriptorPublicKey, PartiallySignedTransaction};
-
-use crate::local_key::LocalKey;
 
 use ledger_bitcoin_client::{
     apdu::{APDUCommand, StatusWord},
     BitcoinClient, Transport,
 };
-use ledger_transport_hid::TransportNativeHID;
+use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
 
 /// Transport with the Ledger device.
-pub struct TransportHID(TransportNativeHID);
+struct TransportHID(TransportNativeHID);
 
 impl TransportHID {
     pub fn new(t: TransportNativeHID) -> Self {
@@ -39,17 +36,12 @@ impl Transport for TransportHID {
     }
 }
 
-/// This trait regroup the functions of an Heritage wallet that need
-/// access to the private keys and that should be operated in an offline environment or using
-/// a hardware-wallet device.
-trait HeritageWalletPriv {
-    fn sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<bool>;
-    fn derive_accounts_xpubs(&self, count: usize) -> Result<Vec<DescriptorPublicKey>>;
-    fn derive_heir_xpub(&self) -> Result<DescriptorPublicKey>;
-}
+pub struct LedgerDevice(BitcoinClient<TransportHID>);
 
-pub enum AnyHeritageWalletPriv {
-    None,
-    LocalKey(LocalKey),
-    Ledger(BitcoinClient<TransportHID>),
+impl Default for LedgerDevice {
+    fn default() -> Self {
+        Self(BitcoinClient::new(TransportHID::new(
+            TransportNativeHID::new(&HidApi::new().expect("unable to get HIDAPI")).unwrap(),
+        )))
+    }
 }
