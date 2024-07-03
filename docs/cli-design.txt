@@ -14,19 +14,16 @@ heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url 
 heritage-cli [--datadir <datadir>] [--network <network>] list-wallets
 
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> create \
-    --online-wallet <none | service | electrum | bitcoin> [--url <service_url | electrum_url | btc_url>] \
-    --offline-wallet <none | local | ledger> [--word-count <12|18|24>] [--with-password] \
-    --no-account-xpubs-auto-feed
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> restore \
-    --online-wallet <none | service | electrum | bitcoin> [--url <service_url | electrum_url | btc_url>] [--existing-service-wallet <wallet_name>] \
-    --offline-wallet <none | local | ledger> --seed <mnemonic> [--with-password] \
-    --no-account-xpubs-auto-feed
+    --online-wallet <none | service | electrum | bitcoin> [--existing-service-wallet <wallet_name>] \
+    --offline-wallet <none | local | ledger> [--word-count <12|18|24>] [--seed <mnemonic>] [--with-password] \
+    --auto-feed-xpubs <true | false>
+
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> backup-online-wallet <backup-file-path>
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> restore-online-wallet <backup-file-path>
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> backup-offline-wallet <backup-file-path>
 
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> balance
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> sync
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> status
 
 
 
