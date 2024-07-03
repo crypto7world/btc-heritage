@@ -1,0 +1,132 @@
+use btc_heritage::{
+    bitcoin::{bip32::Fingerprint, Network},
+    heritage_wallet::{DescriptorsBackup, TransactionSummary},
+    miniscript::DescriptorPublicKey,
+    AccountXPub, HeritageConfig, HeritageWalletBalance, PartiallySignedTransaction, SpendingConfig,
+};
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    database::Database,
+    errors::{Error, Result},
+    wallet_offline::{AnyWalletOffline, WalletOffline},
+    wallet_online::{AnyWalletOnline, WalletOnline},
+};
+
+pub trait WalletCommons {
+    /// Return the [Fingerprint] of the underlying wallets
+    fn fingerprint(&self) -> Result<Fingerprint>;
+    /// Return the intended [Network] of the underlying wallets
+    fn network(&self) -> Result<Network>;
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Wallet {
+    name: String,
+    offline_wallet: AnyWalletOffline,
+    online_wallet: AnyWalletOnline,
+}
+
+impl Wallet {
+    pub fn new(
+        name: String,
+        offline_wallet: AnyWalletOffline,
+        online_wallet: AnyWalletOnline,
+    ) -> Result<Self> {
+        if online_wallet.is_none() && offline_wallet.is_none() {
+            Err(Error::NoComponent)
+        } else if !offline_wallet.is_none()
+            && !online_wallet.is_none()
+            && offline_wallet.fingerprint()? != online_wallet.fingerprint()?
+        {
+            Err(Error::IncoherentFingerprints)
+        } else {
+            Ok(Self {
+                name,
+                offline_wallet,
+                online_wallet,
+            })
+        }
+    }
+
+    fn name_to_key(name: &str) -> String {
+        format!("wallet#{name}")
+    }
+
+    pub fn create(&self, db: &mut Database) -> Result<()> {
+        db.put_item(&Self::name_to_key(&self.name), self)?;
+        Ok(())
+    }
+
+    pub fn save(&self, db: &mut Database) -> Result<()> {
+        db.update_item(&Self::name_to_key(&self.name), self)?;
+        Ok(())
+    }
+
+    pub fn load(db: &Database, name: &str) -> Result<Self> {
+        db.get_item(&Self::name_to_key(name))?
+            .ok_or(Error::InexistantWallet(name.to_owned()))
+    }
+
+    pub fn auto_feed_xpubs(&mut self) -> Result<()> {
+        todo!()
+    }
+}
+
+impl WalletCommons for Wallet {
+    fn fingerprint(&self) -> Result<Fingerprint> {
+        if !self.offline_wallet.is_none() {
+            return self.offline_wallet.fingerprint();
+        }
+        if !self.online_wallet.is_none() {
+            return self.online_wallet.fingerprint();
+        }
+        unreachable!("Having both part at None is not allowed")
+    }
+
+    fn network(&self) -> Result<Network> {
+        todo!()
+    }
+}
+
+macro_rules! impl_wallet_offline_fn {
+    ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
+            $self.offline_wallet.$fn_name($($a),*)
+        }
+    };
+    ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+            $self.offline_wallet.$fn_name($($a),*)
+        }
+    };
+}
+impl WalletOffline for Wallet {
+    impl_wallet_offline_fn!(sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<usize>);
+    impl_wallet_offline_fn!(derive_accounts_xpubs(&self, count: usize) -> Result<Vec<DescriptorPublicKey>>);
+    impl_wallet_offline_fn!(derive_heir_xpub(&self) -> Result<DescriptorPublicKey>);
+}
+macro_rules! impl_wallet_online_fn {
+    ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
+            $self.online_wallet.$fn_name($($a),*)
+        }
+    };
+    ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+            $self.online_wallet.$fn_name($($a),*)
+        }
+    };
+}
+impl WalletOnline for Wallet {
+    impl_wallet_online_fn!(backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>);
+    impl_wallet_online_fn!(get_address(&self) -> Result<String>);
+    impl_wallet_online_fn!(list_account_xpubs(&self) -> Result<Vec<AccountXPub>>);
+    impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: &[AccountXPub]) -> Result<()>);
+    impl_wallet_online_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
+    impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: &HeritageConfig) -> Result<()>);
+    impl_wallet_online_fn!(sync(&mut self) -> Result<()>);
+    impl_wallet_online_fn!(get_balance(&self) -> Result<HeritageWalletBalance>);
+    impl_wallet_online_fn!(last_sync_ts(&self) -> Result<u64>);
+    impl_wallet_online_fn!(create_psbt(&self, spending_config: SpendingConfig) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
+}

@@ -1,23 +1,38 @@
 # Login/Logout
-heritage-cli [--datadir <datadir>] service [--url <service_URL>] login
-heritage-cli [--datadir <datadir>] service [--url <service_URL>] logout
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] list-wallets
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] list-heirs
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] list-heritages
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] login
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] logout
+
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] list-wallets
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] list-heirs
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] list-heritages
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] 
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] 
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] 
+heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] 
 
 
-heritage-cli [--datadir <datadir>] list-wallets
-heritage-cli [--datadir <datadir>] wallet <wallet-name> create [--generate <12|18|24> | --seed <mnemonic> [--with-password] | --ledger] [--service | --local] [--service-url <service_URL>] [--network <network>]
+heritage-cli [--datadir <datadir>] [--network <network>] list-wallets
 
-heritage-cli [--datadir <datadir>] wallet <wallet-name> bind-to-service [--service-url <service_URL>] [--existing-wallet-name <existing-wallet-name>]
-heritage-cli [--datadir <datadir>] wallet <wallet-name> bind-to-local [--existing-wallet-name <existing-wallet-name>]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> create \
+    --online-wallet <none | service | electrum | bitcoin> [--url <service_url | electrum_url | btc_url>] \
+    --offline-wallet <none | local | ledger> [--word-count <12|18|24>] [--with-password] \
+    --no-account-xpubs-auto-feed
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> restore \
+    --online-wallet <none | service | electrum | bitcoin> [--url <service_url | electrum_url | btc_url>] [--existing-service-wallet <wallet_name>] \
+    --offline-wallet <none | local | ledger> --seed <mnemonic> [--with-password] \
+    --no-account-xpubs-auto-feed
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> backup-online-wallet <backup-file-path>
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> restore-online-wallet <backup-file-path>
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> backup-offline-wallet <backup-file-path>
+
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> balance
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> sync
 
 
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name> restore <JSON-backup-file> [--seed <mnemonic> [--with-password] | --ledger]
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name> rebind [--seed <mnemonic> [--with-password] | --ledger]
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name>
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name>
-heritage-cli [--datadir <datadir>] service [--service-url <service_URL>] wallet <wallet-name>
+
+
+
+
 
 
 
@@ -38,55 +53,31 @@ heritage-cli local-wallet <wallet-name> restore <JSON-backup-file> [--seed <mnem
 heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> rebind [--seed <mnemonic> [--with-password] | --ledger]
 
 
-# Wallet New
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> create [--generate <12|18|24> | --seed <mnemonic> [--with-password] | --ledger]
-heritage-cli local-wallet [--network <network>] <wallet-name> create [--generate <12|18|24> | --seed <mnemonic> [--with-password] | --ledger]
-
-# Wallet backup
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> backup-descriptors
-heritage-cli local-wallet [--network <network>] <wallet-name> backup-descriptors
-
-
 # Wallet setup
 # Heritage configuration
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config set <...>
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config get
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config history
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config renew
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> heritage-config ledger-register
-
-heritage-cli local-wallet [--network <network>] <wallet-name> heritage-config set <...>
-heritage-cli local-wallet [--network <network>] <wallet-name> heritage-config get
-heritage-cli local-wallet [--network <network>] <wallet-name> heritage-config history
-heritage-cli local-wallet [--network <network>] <wallet-name> heritage-config renew
-heritage-cli local-wallet [--network <network>] <wallet-name> heritage-config ledger-register
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config set <...>
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config list
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config renew
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config ledger-register-current
 
 # Account eXtended Public Keys
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs feed
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> account-xpubs list
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs feed
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs list
 
-heritage-cli local-wallet [--network <network>] <wallet-name> account-xpubs feed
-heritage-cli local-wallet [--network <network>] <wallet-name> account-xpubs list
+
 
 
 # Wallet sync
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> sync
-heritage-cli local-wallet [--network <network>] <wallet-name> sync [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> sync
 
 # Wallet addresses
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> get-address
-heritage-cli local-wallet [--network <network>] <wallet-name> get-address
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> get-address
 
 # Wallet PSBT/Sign/Broadcast
 # Will generate the PSBT, present it for validation to the user, then sign and broadcast it
 
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> get-psbt --recipient <address>,<amount> [--sign] [--broadcast]
-heritage-cli local-wallet [--network <network>] [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ] <wallet-name> get-psbt --recipient <address>,<amount> [--sign] [--broadcast]
+heritage-cli wallet [--service-url <service_URL>] <wallet-name> get-psbt --recipient <address>,<amount> [--sign] [--broadcast]
+heritage-cli wallet [--service-url <service_URL>] <wallet-name> sign-psbt [--broadcast]
+heritage-cli wallet [--service-url <service_URL>] <wallet-name> broadcast-psbt
 
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> sign-psbt [--broadcast]
-heritage-cli local-wallet [--network <network>] [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ] <wallet-name> sign-psbt [--broadcast]
-
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> broadcast-psbt
 heritage-cli local-wallet [--network <network>] [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ] <wallet-name> broadcast-psbt
-
-heritage-cli local-wallet [--network <network>] [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ] <wallet-name> broadcast-tx

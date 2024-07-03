@@ -11,7 +11,8 @@ use crate::{
     HeirConfig, HeritageConfig,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
 pub struct HeritageWalletBalance {
     uptodate_balance: Balance,
     obsolete_balance: Balance,
@@ -109,7 +110,8 @@ impl TryFrom<Vec<(String, Amount)>> for SpendingConfig {
 /// from BitcoinCore RPC. It represents the number of blocks we are willing to wait before a
 /// transaction is included in the blockchain. Per https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
 /// it must be between 1 and 1008.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
 #[serde(transparent)]
 pub struct BlockInclusionObjective(pub(crate) u16);
 impl Default for BlockInclusionObjective {
@@ -141,7 +143,8 @@ pub enum SubwalletConfigId {
     Id(SubwalletId),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
 pub struct HeritageUtxo {
     /// [OutPoint] of this UTXO
     pub outpoint: OutPoint,
@@ -221,7 +224,8 @@ impl Ord for TransactionSummary {
 }
 
 /// A descriptors backup to export an HeritageWallet configuration
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
 pub struct DescriptorsBackup {
     pub external_descriptor: String,
     pub change_descriptor: String,

@@ -6,9 +6,9 @@ pub enum ServiceWalletSubcmd {
     /// Logout from the Heritage service
     Logout,
     /// Bind an existing Heritage wallet on the service with a seed or an hardware wallet
-    Bind(super::subcmd_wallet_commons::KeySourceRestoreArgs),
+    Bind(super::subcmd_wallet::KeySourceRestoreArgs),
     #[clap(flatten)]
-    Common(super::subcmd_wallet_commons::WalletSubcmd),
+    Common(super::subcmd_wallet::WalletSubcmd),
 }
 
 /// Common options for service related commands.
