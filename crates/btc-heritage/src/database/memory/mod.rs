@@ -4,13 +4,14 @@ use std::{
     collections::{BTreeMap, HashMap},
     sync::RwLock,
 };
+extern crate bdk as crate_bdk;
+use crate_bdk::BlockTime;
 
-use crate::bdk::{
+use crate::{
+    account_xpub::AccountXPubId,
     bitcoin::{OutPoint, Txid},
-    BlockTime,
+    heritage_wallet::SubwalletConfigId,
 };
-
-use crate::{account_xpub::AccountXPubId, heritage_wallet::SubwalletConfigId};
 
 use super::{PartitionableDatabase, Result, SubdatabaseId};
 

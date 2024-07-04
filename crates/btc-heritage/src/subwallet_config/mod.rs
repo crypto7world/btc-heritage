@@ -16,7 +16,7 @@ use bdk::{
     Wallet,
 };
 
-pub use bdk::{bitcoin::psbt::PartiallySignedTransaction, FeeRate};
+pub use bdk::bitcoin::psbt::PartiallySignedTransaction;
 
 use serde::{Deserialize, Serialize};
 

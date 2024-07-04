@@ -13,7 +13,6 @@ pub use heritage_wallet::{
     BlockInclusionObjective, HeritageWallet, HeritageWalletBalance, Recipient, SpendingConfig,
 };
 
-pub use bdk;
 pub use bdk::bitcoin;
 pub use bdk::miniscript;
 

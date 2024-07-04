@@ -1,13 +1,13 @@
 use std::fmt::Display;
 
-use bdk::{
-    bitcoin::{Address, Amount, OutPoint, Txid},
-    Balance, BlockTime,
-};
+use bdk::{Balance, BlockTime};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    errors::Error, heritage_config::HeritageExplorerTrait, subwallet_config::SubwalletId,
+    bitcoin::{Address, Amount, OutPoint, Txid},
+    errors::Error,
+    heritage_config::HeritageExplorerTrait,
+    subwallet_config::SubwalletId,
     HeirConfig, HeritageConfig,
 };
 
@@ -106,7 +106,7 @@ impl TryFrom<Vec<(String, Amount)>> for SpendingConfig {
     }
 }
 
-/// An [HeritageWallet] configuration used to query the appropriate [bdk::types::FeeRate]
+/// An [HeritageWallet] configuration used to query the appropriate [crate::bitcoin::FeeRate]
 /// from BitcoinCore RPC. It represents the number of blocks we are willing to wait before a
 /// transaction is included in the blockchain. Per https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
 /// it must be between 1 and 1008.

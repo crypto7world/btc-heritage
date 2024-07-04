@@ -10,19 +10,19 @@ use std::{
 };
 
 use bdk::{
-    bitcoin::{
-        absolute::LockTime,
-        psbt::{Input, Output, Psbt},
-        Amount, OutPoint, Script, Sequence, TxOut, Weight,
-    },
     database::Database,
     miniscript::{Miniscript, Tap},
     wallet::{AddressInfo, IsDust},
-    BlockTime, FeeRate, KeychainKind, LocalUtxo, Wallet,
+    BlockTime, FeeRate as BdkFeeRate, KeychainKind, LocalUtxo, Wallet,
 };
 
 use crate::{
     account_xpub::AccountXPub,
+    bitcoin::{
+        absolute::LockTime,
+        psbt::{Input, Output, Psbt},
+        Amount, FeeRate, OutPoint, Script, Sequence, TxOut, Weight,
+    },
     database::{
         PartitionableDatabase, SubdatabaseId, TransacHeritageDatabase, TransacHeritageOperation,
     },
@@ -556,8 +556,9 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Set FeeRate
         let fee_rate = self.database.borrow().get_fee_rate()?.unwrap_or_else(||{
             log::warn!("HeritageWallet::create_psbt - No FeeRate in the database. Maybe call sync_fee_rate");
-            FeeRate::default()
+            FeeRate::BROADCAST_MIN
         });
+        let fee_rate = BdkFeeRate::from_sat_per_kwu(fee_rate.to_sat_per_kwu() as f32);
         log::debug!("HeritageWallet::create_psbt - tx_builder.fee_rate - fee_rate={fee_rate:?}");
         tx_builder.fee_rate(fee_rate);
 
@@ -1132,7 +1133,7 @@ fn minimize_psbt_input_for_spender(
 /// not minimized (see [minimize_psbt_input_for_spender])
 fn adjust_with_real_fee(
     psbt: &mut Psbt,
-    fee_rate: &FeeRate,
+    fee_rate: &BdkFeeRate,
     adjustable_output_index: usize,
 ) -> i64 {
     log::debug!(

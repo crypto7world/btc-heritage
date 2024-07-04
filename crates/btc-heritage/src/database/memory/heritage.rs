@@ -5,13 +5,11 @@ use std::{
     option::Option,
 };
 
-use bdk::{
-    bitcoin::{OutPoint, Txid},
-    BlockTime, FeeRate,
-};
+use bdk::BlockTime;
 
 use crate::{
     account_xpub::AccountXPubId,
+    bitcoin::{FeeRate, OutPoint, Txid},
     database::{
         paginate::{ContinuationToken, Paginated},
         HeritageDatabase, TransacHeritageDatabase, TransacHeritageOperation,

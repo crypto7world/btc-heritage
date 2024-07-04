@@ -39,6 +39,7 @@ impl CliParser {
 pub struct CliGlobalArgs {
     #[arg(
         short, long,
+        env="HERITAGE_NETWORK",
         default_value_t = Network::Bitcoin,
         global = true
     )]
@@ -60,21 +61,24 @@ pub struct ServiceGlobalArgs {
     #[arg(
         long,
         value_hint = clap::ValueHint::Url,
+        env="HERITAGE_SERVICE_API_URL",
         default_value = "https://api.btcherit.com/v1",
         global = true
     )]
     /// Set the URL of the Heritage service API.
-    pub service_url: String,
+    pub service_api_url: String,
     #[arg(
         long,
         value_hint = clap::ValueHint::Url,
-        default_value = "https://device.crypto7.world",
+        env="HERITAGE_AUTH_URL",
+        default_value = "https://device.crypto7.world/token",
         global = true
     )]
-    /// Set the URL of the Heritage service OAUTH authentication endpoint for the CLI.
+    /// Set the URL of the Heritage service OAUTH token endpoint for the CLI.
     pub auth_url: String,
     #[arg(
         long,
+        env = "HERITAGE_AUTH_CLIENT_ID",
         default_value = "cda6031ca00d09d66c2b632448eb8fef",
         global = true
     )]

@@ -1,15 +1,15 @@
 use std::collections::{HashMap, HashSet};
 
 use bdk::{
-    bitcoin::{Amount, OutPoint, Txid},
     blockchain::{log_progress, Blockchain, BlockchainFactory},
-    Balance, FeeRate, SyncOptions,
+    Balance, SyncOptions,
 };
 
 use super::{
     HeritageUtxo, HeritageWallet, HeritageWalletBalance, SubwalletConfigId, TransactionSummary,
 };
 use crate::{
+    bitcoin::{Amount, FeeRate, OutPoint, Txid},
     database::TransacHeritageDatabase,
     errors::{DatabaseError, Error, Result},
     subwallet_config::SubwalletConfig,
@@ -268,12 +268,13 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         );
 
         // The RPC method "estimatesmartfee" returns a result in BTC/kvB
-        let fee_rate = blockchain_factory
+        let bdk_fee_rate = blockchain_factory
             .build("unimportant", None)
             .map_err(|e| Error::BlockchainProviderError(e.to_string()))?
             .estimate_fee(block_inclusion_objective.0 as usize)
             .map_err(|e| Error::BlockchainProviderError(e.to_string()))?;
 
+        let fee_rate = FeeRate::from_sat_per_vb_unchecked(bdk_fee_rate.as_sat_per_vb() as u64);
         self.database.borrow_mut().set_fee_rate(&fee_rate)?;
         Ok(fee_rate)
     }

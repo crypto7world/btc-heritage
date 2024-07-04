@@ -26,12 +26,20 @@ impl super::CommandExecutor for ServiceSubcmd {
             .save(&mut db),
             ServiceSubcmd::Logout => todo!(),
             ServiceSubcmd::ListWallets => HeritageServiceClient::new(
-                cli_parser.service_gargs.service_url.clone(),
+                cli_parser.service_gargs.service_api_url.clone(),
                 Tokens::load(&mut db)?,
             )
             .list_wallets(),
-            ServiceSubcmd::ListHeirs => todo!(),
-            ServiceSubcmd::ListHeritages => todo!(),
+            ServiceSubcmd::ListHeirs => HeritageServiceClient::new(
+                cli_parser.service_gargs.service_api_url.clone(),
+                Tokens::load(&mut db)?,
+            )
+            .list_heirs(),
+            ServiceSubcmd::ListHeritages => HeritageServiceClient::new(
+                cli_parser.service_gargs.service_api_url.clone(),
+                Tokens::load(&mut db)?,
+            )
+            .list_heritages(),
         }
     }
 }

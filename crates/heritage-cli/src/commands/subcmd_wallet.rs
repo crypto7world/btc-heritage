@@ -151,6 +151,3 @@ pub enum OfflineComponentType {
     /// Use a Ledger hardware-wallet device
     Ledger,
 }
-
-#[derive(Debug, Clone, clap::Args)]
-pub struct CreateRestoreCommonArgs {}

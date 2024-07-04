@@ -1,15 +1,12 @@
 pub mod memory;
 pub mod paginate;
 
-use bdk::{
-    bitcoin::{OutPoint, Txid},
-    database::BatchDatabase,
-    BlockTime, FeeRate,
-};
+use bdk::{database::BatchDatabase, BlockTime};
 use std::fmt::Display;
 
 use crate::{
     account_xpub::AccountXPub,
+    bitcoin::{FeeRate, OutPoint, Txid},
     errors::DatabaseError,
     heritage_wallet::{
         BlockInclusionObjective, HeritageUtxo, HeritageWalletBalance, SubwalletConfigId,
@@ -179,14 +176,16 @@ pub mod tests {
     use std::str::FromStr;
 
     use bdk::{
-        bitcoin::{Amount, Txid},
         database::{BatchOperations, Database},
-        Balance, BlockTime, FeeRate, KeychainKind,
+        Balance, BlockTime, KeychainKind,
     };
 
-    use crate::tests::{
-        get_test_account_xpub, get_test_heritage_config, get_test_subwallet_config,
-        TestHeritageConfig,
+    use crate::{
+        bitcoin::{Amount, FeeRate, Txid},
+        tests::{
+            get_test_account_xpub, get_test_heritage_config, get_test_subwallet_config,
+            TestHeritageConfig,
+        },
     };
 
     use super::*;
@@ -746,7 +745,7 @@ pub mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         assert!(res.unwrap().is_none());
 
-        let fee_rate = FeeRate::from_sat_per_vb(10f32);
+        let fee_rate = FeeRate::from_sat_per_vb_unchecked(10);
         // Insert work
         let res = db.set_fee_rate(&fee_rate);
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
@@ -755,7 +754,7 @@ pub mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         assert!(res.unwrap().is_some_and(|fr| fr == fee_rate));
 
-        let fee_rate = FeeRate::from_sat_per_vb(5f32);
+        let fee_rate = FeeRate::from_sat_per_vb_unchecked(5);
         // Update works
         let res = db.set_fee_rate(&fee_rate);
         assert!(res.is_ok(), "{:#}", res.unwrap_err());

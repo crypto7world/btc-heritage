@@ -30,11 +30,10 @@ impl Tokens {
     pub fn new(auth_url: &str, client_id: &str) -> Result<Self> {
         log::debug!("Tokens::new - auth_url={auth_url} client_id={client_id}");
         let client = Client::new();
-        let token_endpoint = format!("{auth_url}/token");
 
         log::debug!("Initiating Device Authentication flow");
         let req: reqwest::blocking::RequestBuilder = client
-            .post(&token_endpoint)
+            .post(auth_url)
             .form(&[("client_id", client_id), ("scope", "openid profile email")]);
         let body = super::req_builder_to_body(req)?;
 
@@ -59,7 +58,7 @@ impl Tokens {
             }
 
             log::debug!("Trying to retrieve tokens");
-            let req = client.post(&token_endpoint).form(&[
+            let req = client.post(auth_url).form(&[
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                 ("device_code", &device_auth_response.device_code),
                 ("client_id", client_id),
@@ -76,7 +75,7 @@ impl Tokens {
                             .refresh_token
                             .ok_or_else(|| Error::Generic("Missing refresh token".to_owned()))?,
                         expiration_ts: timestamp_now() + tokens.expires_in as u64,
-                        token_endpoint,
+                        token_endpoint: auth_url.to_owned(),
                         client_id: client_id.to_owned(),
                     });
                 }
