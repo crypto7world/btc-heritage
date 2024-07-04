@@ -1,22 +1,19 @@
 use crate::{
     account_xpub::AccountXPub,
+    bitcoin::bip32::ChildNumber,
     errors::{Error, Result},
     heritage_config::HeritageConfig,
+    miniscript::{descriptor::DescriptorXKey, DescriptorPublicKey, Tap},
     utils,
 };
 
 use bdk::{
-    bitcoin::{
-        bip32::{ChildNumber, DerivationPath},
-        secp256k1::Secp256k1,
-    },
     database::BatchDatabase,
     keys::{DerivableKey, DescriptorKey},
-    miniscript::{descriptor::DescriptorXKey, DescriptorPublicKey, Tap},
     Wallet,
 };
 
-pub use bdk::bitcoin::psbt::PartiallySignedTransaction;
+pub use crate::bitcoin::psbt::PartiallySignedTransaction;
 
 use serde::{Deserialize, Serialize};
 
@@ -50,8 +47,6 @@ impl SubwalletConfig {
         account_xpub: AccountXPub,
         heritage_config: HeritageConfig,
     ) -> Self {
-        let secp = Secp256k1::new();
-
         log::debug!("SubwalletConfig::new - wallet_id={subwallet_id}");
 
         let descriptor = account_xpub.descriptor_public_key();
@@ -68,20 +63,23 @@ impl SubwalletConfig {
         log::debug!("SubwalletConfig::new - derivation_path={derivation_path}");
         log::debug!("SubwalletConfig::new - account_xpub_key={account_xpub_key}");
 
+        let descriptor_taptree_miniscript_expression =
+            heritage_config.descriptor_taptree_miniscript_expression();
+
         let mut descriptor_iterator = derivation_path.normal_children().take(2).map(|child_path| {
-            let deriv_path = DerivationPath::from(
-                &child_path
-                    .into_iter()
-                    .cloned()
-                    .collect::<Vec<ChildNumber>>()[derivation_path.len()..],
-            );
-            let xpub = account_xpub_key.derive_pub(&secp, &deriv_path).unwrap();
-            let origin = Some((*fingerprint, child_path));
-            let descriptor: DescriptorKey<Tap> = xpub
-                .into_descriptor_key(origin, DerivationPath::default())
+            let child_path = child_path
+                .into_iter()
+                .cloned()
+                .collect::<Vec<ChildNumber>>();
+            let orig_deriv_part = child_path[..derivation_path.len()].into();
+            let child_deriv_part = child_path[derivation_path.len()..].into();
+
+            let origin = Some((*fingerprint, orig_deriv_part));
+            let descriptor: DescriptorKey<Tap> = account_xpub_key
+                .into_descriptor_key(origin, child_deriv_part)
                 .unwrap();
             if let DescriptorKey::Public(desc_pubkey, ..) = descriptor {
-                match heritage_config.descriptor_taptree_miniscript_expression() {
+                match &descriptor_taptree_miniscript_expression {
                     Some(script_paths) => format!("tr({desc_pubkey},{script_paths})"),
                     None => format!("tr({desc_pubkey})"),
                 }
@@ -169,18 +167,13 @@ impl SubwalletConfig {
 #[cfg(test)]
 mod tests {
 
-    use std::{collections::BTreeMap, str::FromStr};
-
-    use bdk::{
-        bitcoin::{
-            bip32::Fingerprint,
-            secp256k1::XOnlyPublicKey,
-            taproot::{TapLeafHash, TapNodeHash},
-        },
-        database::AnyDatabase,
-        wallet::AddressIndex,
-        Balance, KeychainKind,
+    use crate::bitcoin::{
+        bip32::{DerivationPath, Fingerprint},
+        secp256k1::XOnlyPublicKey,
+        taproot::{TapLeafHash, TapNodeHash},
     };
+    use bdk::{database::AnyDatabase, wallet::AddressIndex, Balance, KeychainKind};
+    use std::{collections::BTreeMap, str::FromStr};
 
     use crate::{tests::*, utils::string_to_address};
 

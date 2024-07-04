@@ -23,6 +23,8 @@ pub enum Error {
     UnsyncedWallet,
     #[error("HeritageWallet does not have any unused AccountXPub")]
     MissingUnusedAccountXPub,
+    #[error("An AccountXPub have a different Fingerprint than the Heritage wallet")]
+    InvalidAccountXPub,
     #[error("HeritageConfig is not the expected version: {0}")]
     InvalidHeritageConfigVersion(&'static str),
     #[error("Invalid DescriptorPublicKey for AccountXPub: {0}")]

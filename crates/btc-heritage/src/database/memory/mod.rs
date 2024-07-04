@@ -1,11 +1,10 @@
+use ::bdk::BlockTime;
 use std::{
     any::Any,
     cell::RefCell,
     collections::{BTreeMap, HashMap},
     sync::RwLock,
 };
-extern crate bdk as crate_bdk;
-use crate_bdk::BlockTime;
 
 use crate::{
     account_xpub::AccountXPubId,
