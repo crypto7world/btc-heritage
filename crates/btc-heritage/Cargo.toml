@@ -1,0 +1,23 @@
+[package]
+name = "btc-heritage"
+version = "0.10.0"
+description = "A crate implementing primitives for a Bitcoin Taproot wallet managing on-chain inheritance of bitcoins"
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bdk = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = []
+online = ["bdk/electrum", "bdk/rpc"]
+database-tests = []
