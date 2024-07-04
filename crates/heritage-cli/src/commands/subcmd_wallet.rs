@@ -79,7 +79,10 @@ pub enum WalletSubcmd {
 }
 
 impl super::CommandExecutor for WalletSubcmd {
-    fn execute(&self, cli_parser: &super::CliParser) -> btc_heritage_wallet::errors::Result<()> {
+    fn execute(
+        &self,
+        cli_parser: &super::CliParser,
+    ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
         match self {
             WalletSubcmd::Create {
                 online_component,

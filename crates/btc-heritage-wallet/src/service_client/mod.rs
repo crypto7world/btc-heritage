@@ -1,5 +1,6 @@
 use reqwest::{blocking::Client, Method};
 use serde::Serialize;
+use serde_json::json;
 use std::cell::RefCell;
 pub use tokens::Tokens;
 
@@ -33,7 +34,12 @@ impl HeritageServiceClient {
         }
     }
 
-    fn api_call<T: Serialize>(&self, method: Method, path: &str, body: Option<T>) -> Result<()> {
+    fn api_call<T: Serialize>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<T>,
+    ) -> Result<serde_json::Value> {
         let mut tokens_borrow = self.tokens.borrow_mut();
         let tokens = tokens_borrow.as_mut().ok_or(Error::Unauthenticated)?;
         tokens.refresh_if_needed()?;
@@ -51,26 +57,35 @@ impl HeritageServiceClient {
         };
         let body = req_builder_to_body(req)?;
         println!("{body}");
-        Ok(())
+        Ok(serde_json::from_str(&body)?)
     }
 
-    fn api_call_list(&self, path: &str) -> Result<()> {
+    fn api_call_get(&self, path: &str) -> Result<serde_json::Value> {
         self.api_call::<String>(Method::GET, path, None)
     }
 
-    pub fn list_wallets(&self) -> Result<()> {
-        self.api_call_list("wallets")
+    pub fn list_wallets(&self) -> Result<Vec<types::HeritageWalletMeta>> {
+        Ok(serde_json::from_value(self.api_call_get("wallets")?)?)
     }
 
-    pub fn list_heirs(&self) -> Result<()> {
-        self.api_call_list("heirs")
+    pub fn list_heirs(&self) -> Result<serde_json::Value> {
+        self.api_call_get("heirs")
     }
 
-    pub fn list_heritages(&self) -> Result<()> {
-        self.api_call_list("heritages")
+    pub fn list_heritages(&self) -> Result<serde_json::Value> {
+        self.api_call_get("heritages")
     }
 
-    pub fn create_wallet(&self, name: &str) -> Result<()> {
-        self.api_call_list("heritages")
+    pub fn create_wallet(&self, name: &str) -> Result<types::HeritageWalletMeta> {
+        Ok(serde_json::from_value(self.api_call(
+            Method::POST,
+            "wallets",
+            Some(json!({"name": name})),
+        )?)?)
+    }
+
+    pub fn get_wallet(&self, wallet_id: &str) -> Result<types::HeritageWalletMeta> {
+        let path = format!("wallets/{wallet_id}");
+        Ok(serde_json::from_value(self.api_call_get(&path)?)?)
     }
 }

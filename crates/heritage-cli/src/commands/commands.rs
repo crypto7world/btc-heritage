@@ -16,7 +16,10 @@ pub enum Command {
 }
 
 impl super::CommandExecutor for Command {
-    fn execute(&self, cli_parser: &super::CliParser) -> btc_heritage_wallet::errors::Result<()> {
+    fn execute(
+        &self,
+        cli_parser: &super::CliParser,
+    ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
         match self {
             Command::Service { subcmd } => subcmd.execute(cli_parser),
             Command::Wallet {

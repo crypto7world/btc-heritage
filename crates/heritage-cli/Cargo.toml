@@ -14,6 +14,8 @@ license.workspace = true
 btc-heritage-wallet= { path = "../btc-heritage-wallet" }
 clap = { version = "4.5", features = ["derive", "env"] }
 log = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 env_logger = "0.11"
 rpassword = "7.3"
 

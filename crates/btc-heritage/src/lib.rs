@@ -49,40 +49,40 @@ mod tests {
 
         const EXPECTED_VALUES: [[&str; 4]; 3] = [
             [
-                "tr([9c7088e3/86'/1'/0'/0]tpubDErQZJ4AAjxLbDsRQAvEdHEq6284Ukn26XXV8ohnR7aBMDGk4txdrpgCb4DiaZiWwyKBYDMP4je8kmS1ex27t2rnsUVagk2vQz2dcdZ1hfu/*,\
+                "tr([9c7088e3/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/0/*,\
                 {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1731536000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1734560000)))})\
-                #et7cvmpg",
-                "tr([9c7088e3/86'/1'/0'/1]tpubDErQZJ4AAjxLed6LmFAN2xWHvsVi4C1Ryj8hjjKSZbRDXbzfwSGz6BybtkFTayuz4eed6G8XCFq8hrVRZELmx6k2FP4LaLMdzoTVFbEz6Kw/*,\
+                #a49rlfa5",
+                "tr([9c7088e3/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/1/*,\
                 {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1731536000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1734560000)))})\
-                #wu7ec8ur",
+                #dw3m88lx",
                 "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya",
                 "bcrt1pg39h846yhav36lte78m0vsltwa6a35c95cwwqejgu4hunfxecfuskw86d9"
             ],
             [
-                "tr([9c7088e3/86'/1'/1'/0]tpubDF3WfBWvJbyPZJQjtJB8aa3XQqWWhpb39VvmtrsdBuDgB2iWPmfVQfKa1UykkEtLKRnxeQuh7KFGFDhLeCyooVvNMx9W4PW43kXaotP3q4x/*,\
+                "tr([9c7088e3/86'/1'/1']tpubDD2pKf3K2M2oygc9tQX4ze9o9sMmn738oHEiRTwxAWJyW7HyPYjYQKMrxznXmgWncr416q1htkCszdHg3tbGseUUQXoxFZmjdAbwU8HY9QX/0/*,\
                 {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1763072000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1766096000)))})\
-                #umffkp5f",
-                "tr([9c7088e3/86'/1'/1'/1]tpubDF3WfBWvJbyPdio52JQrv3AqBeX8ZLpggaE9jG6YTj1UZeGVY1D3jZv1AS2cxybWHwGkmcBRGt4BfStSvvH9zUz51UJ57mzWmXwqadmYus1/*,\
+                #j670qz6g",
+                "tr([9c7088e3/86'/1'/1']tpubDD2pKf3K2M2oygc9tQX4ze9o9sMmn738oHEiRTwxAWJyW7HyPYjYQKMrxznXmgWncr416q1htkCszdHg3tbGseUUQXoxFZmjdAbwU8HY9QX/1/*,\
                 {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1763072000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1766096000)))})\
-                #6dppawur",
+                #zp2hcvc6",
                 "bcrt1p5mf2ulak53flxtgaxtlalsclxvp6wuzteut07n46hc8zv6rwc6rs6jldmr",
                 "bcrt1pc4qwu6z062vwek7yfmmg692yumder62wvkd0r0swqdskvekvg47s5kqsg4"
             ],
             [
-                "tr([9c7088e3/86'/1'/2'/0]tpubDEHRZWnhP52ZksKHcXRNuVbwYyTdqXMQoJdac9CGiCd4PQzJExt4pZniFGpAAeokXUetQDmERGfUMTDhGP55swwWkL4poWGJrKNp4choKzU/*,\
+                "tr([9c7088e3/86'/1'/2']tpubDD2pKf3K2M2p2MS1LdNxnNPKY61JgpGp9VTHf1k3e8coJk4ud2BhkrxYQifa8buLnrCyUbJke4US5cVobaZLr9qU554oMdwucWZpYZj5t13/0/*,\
                 {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1794608000))),\
                 {and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),\
                 and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}})\
-                #krw5v4la",
-                "tr([9c7088e3/86'/1'/2'/1]tpubDEHRZWnhP52Zo5uXF5ZcGemb95rAAqhZY47vGqkWNrSYthqKrq2Nh5C9Hn14NS1C9UE3pybwxa22npdgXLS41qW5VxYRDjDTYkGoAaCSQ3f/*,\
+                #e4y8h08w",
+                "tr([9c7088e3/86'/1'/2']tpubDD2pKf3K2M2p2MS1LdNxnNPKY61JgpGp9VTHf1k3e8coJk4ud2BhkrxYQifa8buLnrCyUbJke4US5cVobaZLr9qU554oMdwucWZpYZj5t13/1/*,\
                 {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1794608000))),\
                 {and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),\
                 and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}})\
-                #3k6c00kl",
+                #fvc83qxj",
                 "bcrt1p696kkt5g550uv0c4dmct5w3ul5fxyp4lh9350ud5ejc4lxm4u98shxl2ct",
                 "bcrt1p06pll6fqyrp9sg0l0jclnceryy3dt0t3vkuq0fz8mj94auschqaszazw34"
             ]
@@ -237,6 +237,7 @@ mod tests {
         "[9c7088e3/86'/1'/18']tpubDD2pKf3K2M2pidehdGHhWgQxbwK26FxGgZi7viZGJSyugbZNJgvhb5H1F6GHx817x6wpJ5bKjfP7XmXHyetu6ZVTi7fLxkAASWjohjzwSiM/*",
         "[9c7088e3/86'/1'/19']tpubDD2pKf3K2M2pm4JswF6uHWJMa4Radk1DEB5uEk5eKH145HefKLMKN71uCYFVLHU14JDaDNFERTN4yXzESP7tPpkeXTZm38girQors7bVmhh/*"
     ];
+    const BAD_OWNER_ACCOUNT_XPUB: &str = "[12345678/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/*";
 
     const HEIRS_HERITAGES: [&str; 3] = [
         r#"{
@@ -299,6 +300,9 @@ mod tests {
     }
     pub fn get_test_account_xpub(index: u32) -> AccountXPub {
         AccountXPub::try_from(get_test_account_xpub_str(index)).unwrap()
+    }
+    pub fn get_bad_account_xpub() -> AccountXPub {
+        AccountXPub::try_from(BAD_OWNER_ACCOUNT_XPUB).unwrap()
     }
 
     pub fn get_test_subwallet_config(ad_index: u32, thc: TestHeritageConfig) -> SubwalletConfig {

@@ -16,30 +16,38 @@ pub enum ServiceSubcmd {
 }
 
 impl super::CommandExecutor for ServiceSubcmd {
-    fn execute(&self, cli_parser: &super::CliParser) -> Result<()> {
+    fn execute(
+        &self,
+        cli_parser: &super::CliParser,
+    ) -> Result<Box<dyn crate::display::Displayable>> {
         let mut db = Database::new(&cli_parser.gargs.datadir, cli_parser.gargs.network)?;
-        match self {
+        let res: Box<dyn crate::display::Displayable> = match self {
             ServiceSubcmd::Login => Tokens::new(
                 &cli_parser.service_gargs.auth_url,
                 &cli_parser.service_gargs.auth_client_id,
             )?
-            .save(&mut db),
+            .save(&mut db)
+            .map(Box::new)?,
             ServiceSubcmd::Logout => todo!(),
             ServiceSubcmd::ListWallets => HeritageServiceClient::new(
                 cli_parser.service_gargs.service_api_url.clone(),
                 Tokens::load(&mut db)?,
             )
-            .list_wallets(),
+            .list_wallets()
+            .map(Box::new)?,
             ServiceSubcmd::ListHeirs => HeritageServiceClient::new(
                 cli_parser.service_gargs.service_api_url.clone(),
                 Tokens::load(&mut db)?,
             )
-            .list_heirs(),
+            .list_heirs()
+            .map(Box::new)?,
             ServiceSubcmd::ListHeritages => HeritageServiceClient::new(
                 cli_parser.service_gargs.service_api_url.clone(),
                 Tokens::load(&mut db)?,
             )
-            .list_heritages(),
-        }
+            .list_heritages()
+            .map(Box::new)?,
+        };
+        Ok(res)
     }
 }

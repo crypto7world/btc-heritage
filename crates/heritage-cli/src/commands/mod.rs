@@ -5,7 +5,10 @@ mod subcmd_wallet;
 use btc_heritage_wallet::bitcoin::Network;
 
 pub trait CommandExecutor {
-    fn execute(&self, cli_parser: &CliParser) -> btc_heritage_wallet::errors::Result<()>;
+    fn execute(
+        &self,
+        cli_parser: &CliParser,
+    ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>>;
 }
 
 #[derive(Clone, Debug, clap::Parser)]
@@ -30,7 +33,9 @@ pub struct CliParser {
 }
 
 impl CliParser {
-    pub fn execute(&self) -> btc_heritage_wallet::errors::Result<()> {
+    pub fn execute(
+        &self,
+    ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
         self.cmd.execute(self)
     }
 }

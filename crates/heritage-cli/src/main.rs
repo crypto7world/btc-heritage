@@ -1,4 +1,5 @@
 mod commands;
+mod display;
 
 use clap::Parser;
 use commands::CliParser;
@@ -13,7 +14,7 @@ fn main() {
     let cli_parser = CliParser::parse();
     log::debug!("Processing {:?}", cli_parser);
     match cli_parser.execute() {
-        Ok(_) => (),
+        Ok(displayable) => displayable.display(),
         Err(e) => log::error!("{e}"),
     };
 }

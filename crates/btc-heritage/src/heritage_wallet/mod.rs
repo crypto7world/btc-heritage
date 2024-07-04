@@ -20,6 +20,7 @@ use crate::{
     account_xpub::AccountXPub,
     bitcoin::{
         absolute::LockTime,
+        bip32::Fingerprint,
         psbt::{Input, Output, Psbt},
         Amount, FeeRate, OutPoint, Script, Sequence, TxOut, Weight,
     },
@@ -105,6 +106,37 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         log::debug!("HeritageWallet::list_unused_account_xpubs");
         let res = self.database.borrow().list_unused_account_xpubs()?;
         log::debug!("HeritageWallet::list_unused_account_xpubs - res={res:?}");
+        Ok(res)
+    }
+
+    /// Returns the fingerprint of the Heritage Wallet master key
+    /// if the wallet already has Account Xpubs
+    /// Else return None
+    pub fn fingerprint(&self) -> Result<Option<Fingerprint>> {
+        log::debug!("HeritageWallet::fingerprint");
+        let res = self
+            .database
+            .borrow()
+            .get_subwallet_config(SubwalletConfigId::Current)?
+            .map(|swc| {
+                swc.account_xpub()
+                    .descriptor_public_key()
+                    .master_fingerprint()
+            });
+
+        let res = if res.is_none() {
+            log::debug!(
+                "HeritageWallet::fingerprint - No Current SubwalletConfig, \
+            trying to find fingerprint on an Unused Account XPub"
+            );
+            self.database
+                .borrow()
+                .get_unused_account_xpub()?
+                .map(|axpub| axpub.descriptor_public_key().master_fingerprint())
+        } else {
+            res
+        };
+        log::debug!("HeritageWallet::fingerprint - res={res:?}");
         Ok(res)
     }
 
@@ -219,6 +251,15 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     ) -> Result<()> {
         log::debug!("HeritageWallet::append_account_xpubs");
         let account_xpubs = account_xpubs.into_iter().collect::<Vec<_>>();
+        if let Some(fingerprint) = self.fingerprint()? {
+            if account_xpubs
+                .iter()
+                .any(|axpub| axpub.descriptor_public_key().master_fingerprint() != fingerprint)
+            {
+                log::error!("Cannot add Account Xpubs that does not have the same Fingerprint as the Heritage wallet");
+                return Err(Error::InvalidAccountXPub);
+            }
+        }
         log::debug!("HeritageWallet::append_account_xpubs - account_xpubs={account_xpubs:?}");
         self.database
             .borrow_mut()
@@ -1280,13 +1321,6 @@ mod tests {
     };
 
     use bdk::{
-        bitcoin::{
-            absolute::LockTime,
-            bip32::{DerivationPath, Fingerprint},
-            secp256k1::XOnlyPublicKey,
-            taproot::TapNodeHash,
-            Amount, BlockHash, OutPoint, Sequence, Transaction, Txid,
-        },
         blockchain::{
             Blockchain, BlockchainFactory, Capability, GetBlockHash, GetHeight, GetTx, Progress,
             WalletSync,
@@ -1296,6 +1330,13 @@ mod tests {
     };
 
     use crate::{
+        bitcoin::{
+            absolute::LockTime,
+            bip32::{DerivationPath, Fingerprint},
+            secp256k1::XOnlyPublicKey,
+            taproot::TapNodeHash,
+            Amount, BlockHash, OutPoint, Sequence, Transaction, Txid,
+        },
         database::{memory::HeritageMemoryDatabase, HeritageDatabase, TransacHeritageOperation},
         heritage_wallet::{
             get_expected_tx_weight, BlockInclusionObjective, DescriptorsBackup, HeritageWallet,
@@ -1384,17 +1425,17 @@ mod tests {
         ) -> Result<Self::Inner, bdk::Error> {
             let mut hashtable: HashMap<String, Vec<TransactionDetails>> = HashMap::new();
             // Wallet TestHeritageConfig::BackupWifeY2
-            hashtable.insert("et7cvmpgwu7ec8ur".to_owned(), vec![
+            hashtable.insert("a49rlfa5dw3m88lx".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"51208bdbdb2969eeb7ec8efd20f7bc64961a760313404e900109a1ba19afb8b0292c"}]},"txid":"344dbc396e3c6945f46a67faab275141bb0fdd63f8a46362ba27e4753400d9c2","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":842520,"timestamp":1715552000}}"#).unwrap(),
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120444b73d744bf591d7d79f1f6f643eb7775d8d305a61ce06648e56fc9a4d9c279"}]},"txid":"c02152f71b8158fc81bb6bd2756c354a1ec00ead119c42da8d1eb3da7af084a9","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":904440,"timestamp":1752704000}}"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeY1
-            hashtable.insert("umffkp5f6dppawur".to_owned(), vec![
+            hashtable.insert("j670qz6gzp2hcvc6".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120a6d2ae7fb6a453f32d1d32ffdfc31f3303a7704bcf16ff4ebabe0e26686ec687"}]},"txid":"2f0a77d510db56dda3b43692d4658a92f523193a3b854d2387681f2fd0f5d920","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":895080,"timestamp":1747088000}}"#).unwrap(),
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120c540ee684fd298ecdbc44ef68d1544e6db91e94e659af1be0e03616666cc457d"}]},"txid":"7927f959c099df690214ba52e41945e069961bb19a6dab9ade0db86d6ccd9a4e","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":897960,"timestamp":1748816000}}"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeBro
-            hashtable.insert("krw5v4la3k6c00kl".to_owned(), vec![
+            hashtable.insert("e4y8h08wfvc83qxj".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120d1756b2e88a51fc63f156ef0ba3a3cfd126206bfb96347f1b4ccb15f9b75e14f"}]},"txid":"6ed1563a936196211f2f76447c478533df8f3efc43933f4c3405b9a760b31204","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":923160,"timestamp":1763936000}}"#).unwrap(),
             ]);
 
@@ -1469,6 +1510,26 @@ mod tests {
             },
         );
         assert_eq!(wallet.get_balance().unwrap(), expected_balance);
+    }
+
+    #[test]
+    fn fingerprint() {
+        // Test on an empty wallet
+        let wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
+        // An empty wallet does not have a fingerprint
+        assert!(wallet.fingerprint().is_ok_and(|f| f.is_none()));
+
+        // Test on an non-empty wallet
+        let wallet = setup_wallet();
+        // A non-empty wallet does have a fingerprint
+        assert_eq!(
+            wallet.fingerprint().unwrap(),
+            Some(
+                get_test_account_xpub(0)
+                    .descriptor_public_key()
+                    .master_fingerprint()
+            )
+        );
     }
 
     #[test]
@@ -1566,7 +1627,15 @@ mod tests {
 
         // Unused ADs change and is now initial_unused + expected_add
         initial_unused.extend(expected_add);
-        assert_eq!(wallet.list_unused_account_xpubs().unwrap(), initial_unused)
+        assert_eq!(wallet.list_unused_account_xpubs().unwrap(), initial_unused);
+
+        // Cannot add an Account XPub with a different fingerprint
+        assert!(wallet
+            .append_account_xpubs([get_bad_account_xpub()])
+            .is_err_and(|e| match e {
+                crate::errors::Error::InvalidAccountXPub => true,
+                _ => false,
+            }));
     }
 
     #[test]

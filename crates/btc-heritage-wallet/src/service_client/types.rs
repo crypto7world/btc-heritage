@@ -1,7 +1,7 @@
 use btc_heritage::{bitcoin::FeeRate, BlockInclusionObjective, HeritageWalletBalance};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HeritageWalletMeta {
     #[serde(rename = "wallet_id")]
     pub id: String,
