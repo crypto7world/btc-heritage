@@ -1,9 +1,15 @@
-use std::str::FromStr;
+use std::{any::Any, cell::RefCell, rc::Rc, str::FromStr};
 
-use btc_heritage_wallet::bitcoin::{Address, Amount};
+use btc_heritage_wallet::{
+    bitcoin::{bip32::Fingerprint, Address, Amount},
+    AnyWalletOffline, AnyWalletOnline, Database, HeritageServiceClient, LedgerKey, ServiceBinding,
+    Tokens, Wallet,
+};
 use clap::builder::{PossibleValuesParser, TypedValueParser};
 
-/// Common sub-command for both service and local wallets.
+use super::subcmd_wallet_axpubs::WalletAXpubSubcmd;
+
+/// Sub-command for wallets.
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum WalletSubcmd {
     /// Creates a new Heritage wallet with the chosen online and offline components
@@ -11,10 +17,18 @@ pub enum WalletSubcmd {
         #[arg(long, value_name = "TYPE", alias = "online", value_enum, default_value_t=OnlineComponentType::Service)]
         /// Specify the kind of online-component the wallet will use
         online_component: OnlineComponentType,
-        #[arg(long, value_name = "NAME")]
-        /// Specify the the name of an already existing Heritage wallet in the service
+        #[arg(long, value_name = "NAME", conflicts_with_all=["existing_service_wallet_fingerprint", "existing_service_wallet_id"])]
+        /// Specify the name of an existing Heritage wallet in the service
         /// to bind to, instead of creating a new one (if online_component = service)
-        existing_service_wallet: Option<String>,
+        existing_service_wallet_name: Option<String>,
+        #[arg(long, value_name = "FINGERPRINT", conflicts_with_all=["existing_service_wallet_name", "existing_service_wallet_id"])]
+        /// Specify the fingerprint of an existing Heritage wallet in the service
+        /// to bind to, instead of creating a new one (if online_component = service)
+        existing_service_wallet_fingerprint: Option<Fingerprint>,
+        #[arg(long, value_name = "WALLET_ID", conflicts_with_all=["existing_service_wallet_name", "existing_service_wallet_fingerprint"])]
+        /// Specify the ID of an existing Heritage wallet in the service
+        /// to bind to, instead of creating a new one (if online_component = service)
+        existing_service_wallet_id: Option<String>,
         #[arg(long, value_name = "TYPE", alias = "offline", value_enum, default_value_t=OfflineComponentType::Ledger, requires_if("local", "localgen"))]
         /// Specify the kind of offline-component the wallet will use
         offline_component: OfflineComponentType,
@@ -34,10 +48,15 @@ pub enum WalletSubcmd {
         /// Signal that the seed is password-protected (if offline_component = local).
         with_password: bool,
     },
+    /// Remove the wallet from the database
+    Remove,
     /// Manage the Heritage configuration of the wallet
     HeritageConfig,
-    /// Manage the Account eXtended Public Keys of the wallet
-    AccountXpubs,
+    /// Commands managing the Account eXtended Public Keys of the wallet
+    AccountXpubs {
+        #[command(subcommand)]
+        subcmd: super::subcmd_wallet_axpubs::WalletAXpubSubcmd,
+    },
     /// Sync the wallet from the Bitcoin network
     Sync,
     /// Generate a new Bitcoin address for the Heritage wallet
@@ -80,21 +99,105 @@ pub enum WalletSubcmd {
 
 impl super::CommandExecutor for WalletSubcmd {
     fn execute(
-        &self,
-        cli_parser: &super::CliParser,
+        self,
+        params: Box<dyn Any>,
     ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
-        match self {
+        let (wallet_name, gargs, service_gargs, electrum_gargs, bitcoinrpc_gargs): (
+            String,
+            super::CliGlobalArgs,
+            super::ServiceGlobalArgs,
+            super::ElectrumGlobalArgs,
+            super::BitcoinRpcGlobalArgs,
+        ) = *params.downcast().unwrap();
+        let mut db = Database::new(&gargs.datadir, gargs.network)?;
+
+        println!("wallet#test exist: {}", db.contains_key("wallet#test")?);
+        let service_client =
+            HeritageServiceClient::new(service_gargs.service_api_url, Tokens::load(&mut db)?);
+
+        let wallet = match &self {
             WalletSubcmd::Create {
                 online_component,
-                existing_service_wallet,
+                existing_service_wallet_name,
+                existing_service_wallet_fingerprint,
+                existing_service_wallet_id,
                 offline_component,
                 auto_feed_xpubs,
                 seed,
                 word_count,
                 with_password,
-            } => todo!(),
+            } => {
+                let online_wallet = match online_component {
+                    OnlineComponentType::None => AnyWalletOnline::None,
+                    OnlineComponentType::Service => AnyWalletOnline::Service(
+                        if let Some(wallet_name) = existing_service_wallet_name {
+                            ServiceBinding::bind_by_name(
+                                wallet_name,
+                                service_client,
+                                gargs.network,
+                            )?
+                        } else if let Some(fingerprint) = existing_service_wallet_fingerprint {
+                            ServiceBinding::bind_by_fingerprint(
+                                *fingerprint,
+                                service_client,
+                                gargs.network,
+                            )?
+                        } else if let Some(wallet_id) = existing_service_wallet_id {
+                            ServiceBinding::bind_by_id(&wallet_id, service_client, gargs.network)?
+                        } else {
+                            ServiceBinding::create(&wallet_name, service_client, gargs.network)?
+                        },
+                    ),
+                    OnlineComponentType::Electrum => todo!(),
+                    OnlineComponentType::Bitcoin => todo!(),
+                };
+                let offline_wallet = match offline_component {
+                    OfflineComponentType::None => AnyWalletOffline::None,
+                    OfflineComponentType::Local => todo!(),
+                    OfflineComponentType::Ledger => {
+                        AnyWalletOffline::Ledger(LedgerKey::new(gargs.network)?)
+                    }
+                };
+                let wallet = Wallet::new(wallet_name, offline_wallet, online_wallet)?;
+                let wallet = Rc::new(RefCell::new(wallet));
+
+                // Auto-feed
+                if *auto_feed_xpubs
+                    && !wallet.borrow().offline_wallet().is_none()
+                    && !wallet.borrow().online_wallet().is_none()
+                {
+                    (WalletAXpubSubcmd::AutoFeed { count: 20 })
+                        .execute(Box::new(wallet.clone()))?;
+                }
+                wallet
+            }
+            _ => {
+                let mut wallet = Wallet::load(&db, &wallet_name)?;
+                match wallet.offline_wallet_mut() {
+                    AnyWalletOffline::None => (),
+                    AnyWalletOffline::LocalKey(lk) => todo!(),
+                    AnyWalletOffline::Ledger(ledger) => ledger.init_ledger_client()?,
+                };
+                match wallet.online_wallet_mut() {
+                    AnyWalletOnline::None => (),
+                    AnyWalletOnline::Service(sb) => sb.init_service_client(service_client)?,
+                    AnyWalletOnline::Local(_) => todo!(),
+                };
+                Rc::new(RefCell::new(wallet))
+            }
+        };
+
+        let res: Box<dyn crate::display::Displayable> = match self {
+            WalletSubcmd::Create { .. } => {
+                wallet.borrow().create(&mut db)?;
+                Box::new("Wallet created")
+            }
+            WalletSubcmd::Remove => {
+                wallet.borrow().delete(&mut db)?;
+                Box::new("Wallet deleted")
+            }
             WalletSubcmd::HeritageConfig => todo!(),
-            WalletSubcmd::AccountXpubs => todo!(),
+            WalletSubcmd::AccountXpubs { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
             WalletSubcmd::Sync => todo!(),
             WalletSubcmd::GetAddress => todo!(),
             WalletSubcmd::SendBitcoins {
@@ -106,7 +209,9 @@ impl super::CommandExecutor for WalletSubcmd {
             WalletSubcmd::SignPsbt { psbt, broadcast } => todo!(),
             WalletSubcmd::BroadcastPsbt { psbt } => todo!(),
             WalletSubcmd::DisplayPsbt { psbt } => todo!(),
-        }
+        };
+        wallet.borrow().save(&mut db)?;
+        Ok(res)
     }
 }
 

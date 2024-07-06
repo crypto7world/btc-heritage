@@ -17,7 +17,11 @@ impl super::WalletOnline for LocalHeritageWallet {
         todo!()
     }
 
-    fn list_account_xpubs(&self) -> crate::errors::Result<Vec<btc_heritage::AccountXPub>> {
+    fn list_used_account_xpubs(&self) -> crate::errors::Result<Vec<btc_heritage::AccountXPub>> {
+        todo!()
+    }
+
+    fn list_unused_account_xpubs(&self) -> crate::errors::Result<Vec<btc_heritage::AccountXPub>> {
         todo!()
     }
 
@@ -63,7 +67,7 @@ impl super::WalletOnline for LocalHeritageWallet {
 }
 
 impl crate::wallet::WalletCommons for LocalHeritageWallet {
-    fn fingerprint(&self) -> crate::errors::Result<Fingerprint> {
+    fn fingerprint(&self) -> crate::errors::Result<Option<Fingerprint>> {
         todo!()
     }
 

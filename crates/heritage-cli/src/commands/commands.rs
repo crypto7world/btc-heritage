@@ -1,3 +1,5 @@
+use std::any::Any;
+
 /// Top level cli sub-commands.
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum Command {
@@ -17,15 +19,33 @@ pub enum Command {
 
 impl super::CommandExecutor for Command {
     fn execute(
-        &self,
-        cli_parser: &super::CliParser,
+        self,
+        params: Box<dyn Any>,
     ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
+        let (gargs, service_gargs, electrum_gargs, bitcoinrpc_gargs): (
+            super::CliGlobalArgs,
+            super::ServiceGlobalArgs,
+            super::ElectrumGlobalArgs,
+            super::BitcoinRpcGlobalArgs,
+        ) = *params.downcast().unwrap();
         match self {
-            Command::Service { subcmd } => subcmd.execute(cli_parser),
+            Command::Service { subcmd } => {
+                let params = Box::new((gargs, service_gargs));
+                subcmd.execute(params)
+            }
             Command::Wallet {
-                wallet_name: _,
+                wallet_name,
                 subcmd,
-            } => subcmd.execute(cli_parser),
+            } => {
+                let params = Box::new((
+                    wallet_name,
+                    gargs,
+                    service_gargs,
+                    electrum_gargs,
+                    bitcoinrpc_gargs,
+                ));
+                subcmd.execute(params)
+            }
         }
     }
 }

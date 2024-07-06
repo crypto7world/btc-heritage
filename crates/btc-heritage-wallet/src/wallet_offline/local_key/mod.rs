@@ -1,5 +1,8 @@
 use bip39::Mnemonic;
-use btc_heritage::bitcoin::{bip32::Fingerprint, Network};
+use btc_heritage::{
+    bitcoin::{bip32::Fingerprint, Network},
+    AccountXPub,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,10 +21,7 @@ impl super::WalletOffline for LocalKey {
         todo!()
     }
 
-    fn derive_accounts_xpubs(
-        &self,
-        count: usize,
-    ) -> crate::errors::Result<Vec<btc_heritage::miniscript::DescriptorPublicKey>> {
+    fn derive_accounts_xpubs(&self, count: usize) -> crate::errors::Result<Vec<AccountXPub>> {
         todo!()
     }
 
@@ -33,7 +33,7 @@ impl super::WalletOffline for LocalKey {
 }
 
 impl crate::wallet::WalletCommons for LocalKey {
-    fn fingerprint(&self) -> crate::errors::Result<Fingerprint> {
+    fn fingerprint(&self) -> crate::errors::Result<Option<Fingerprint>> {
         todo!()
     }
 

@@ -11,15 +11,22 @@ repository.workspace = true
 
 [dependencies]
 btc-heritage = { path = "../btc-heritage" }
-bip39 = "2.0.0"
-ledger_bitcoin_client = "0.4.1"
+
+bitcoin = { workspace = true }
+miniscript = { workspace = true }
+ledger_bitcoin_client = { workspace = true }
+
 ledger-transport-hid = "0.11"
 ledger-apdu = "0.11"
+
+bip39 = "2.0.0"
+
 serde = { workspace = true }
 serde_json = { workspace = true }
-sled = { workspace = true }
+redb = { workspace = true }
+reqwest = { workspace = true }
+open = { workspace = true }
+
 dirs-next = "2.0"
 log = { workspace = true }
 thiserror = { workspace = true }
-reqwest = { workspace = true }
-open = { workspace = true }

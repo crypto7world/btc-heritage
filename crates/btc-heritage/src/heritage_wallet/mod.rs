@@ -259,6 +259,16 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 log::error!("Cannot add Account Xpubs that does not have the same Fingerprint as the Heritage wallet");
                 return Err(Error::InvalidAccountXPub);
             }
+        } else {
+            let reference = account_xpubs
+                .first()
+                .map(|axpub| axpub.descriptor_public_key().master_fingerprint());
+            if account_xpubs.iter().any(|axpub| {
+                axpub.descriptor_public_key().master_fingerprint() != reference.unwrap()
+            }) {
+                log::error!("Cannot add Account Xpubs that does not all have the same Fingerprint");
+                return Err(Error::InvalidAccountXPub);
+            }
         }
         log::debug!("HeritageWallet::append_account_xpubs - account_xpubs={account_xpubs:?}");
         self.database

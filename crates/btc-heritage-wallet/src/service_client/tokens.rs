@@ -63,22 +63,23 @@ impl Tokens {
                 ("device_code", &device_auth_response.device_code),
                 ("client_id", client_id),
             ]);
-            let body = super::req_builder_to_body(req)?;
-
-            match serde_json::from_str::<TokenResponse>(&body) {
-                Ok(tokens) => {
-                    log::debug!("Got tokens!");
-                    return Ok(Self {
-                        id_token: tokens.id_token,
-                        access_token: tokens.access_token,
-                        refresh_token: tokens
-                            .refresh_token
-                            .ok_or_else(|| Error::Generic("Missing refresh token".to_owned()))?,
-                        expiration_ts: timestamp_now() + tokens.expires_in as u64,
-                        token_endpoint: auth_url.to_owned(),
-                        client_id: client_id.to_owned(),
-                    });
-                }
+            match super::req_builder_to_body(req) {
+                Ok(body) => match serde_json::from_str::<TokenResponse>(&body) {
+                    Ok(tokens) => {
+                        log::debug!("Got tokens!");
+                        return Ok(Self {
+                            id_token: tokens.id_token,
+                            access_token: tokens.access_token,
+                            refresh_token: tokens.refresh_token.ok_or_else(|| {
+                                Error::Generic("Missing refresh token".to_owned())
+                            })?,
+                            expiration_ts: timestamp_now() + tokens.expires_in as u64,
+                            token_endpoint: auth_url.to_owned(),
+                            client_id: client_id.to_owned(),
+                        });
+                    }
+                    Err(_) => log::debug!("No tokens available yet. Retrying."),
+                },
                 Err(_) => log::debug!("No tokens available yet. Retrying."),
             }
 

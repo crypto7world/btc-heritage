@@ -1,10 +1,14 @@
-use btc_heritage::{bitcoin::FeeRate, BlockInclusionObjective, HeritageWalletBalance};
+use btc_heritage::{
+    bitcoin::{bip32::Fingerprint, FeeRate},
+    BlockInclusionObjective, HeritageWalletBalance,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HeritageWalletMeta {
     #[serde(rename = "wallet_id")]
     pub id: String,
+    pub fingerprint: Option<Fingerprint>,
     pub last_sync_ts: u64,
     pub name: String,
     #[serde(default)]

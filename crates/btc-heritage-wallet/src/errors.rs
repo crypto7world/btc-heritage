@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -22,18 +24,30 @@ pub enum Error {
     Unauthenticated,
     #[error("No wallet named {0} in the database")]
     InexistantWallet(String),
+    #[error("No wallet found in the service")]
+    NoServiceWalletFound,
+    #[error("Multiple wallet found in the service")]
+    MultipleServiceWalletFound,
+    #[error("The wallet fingerprint on the service is not the one stored in the local database")]
+    IncoherentServiceWalletFingerprint,
+    #[error("The wallet fingerprint on the connected Ledger is not the one stored in the local database")]
+    IncoherentLedgerWalletFingerprint,
     #[error("The key {0} is already in the database")]
     KeyAlreadyExists(String),
+    #[error("Heritage error: {source}")]
+    HeritageError {
+        #[from]
+        source: btc_heritage::errors::Error,
+    },
     #[error("Reqwest error: {source}")]
     ReqwestError {
         #[from]
         source: reqwest::Error,
     },
-    #[error("Database error: {source:#}")]
-    DatabaseError {
-        #[from]
-        source: sled::Error,
-    },
+    #[error("Database error: {0}")]
+    DatabaseError(String),
+    #[error("Ledger client error: {0}")]
+    LedgerClientError(String),
     #[error("Generic error: {0}")]
     Generic(String),
 }
@@ -50,5 +64,41 @@ impl From<std::str::Utf8Error> for Error {
 impl From<std::string::FromUtf8Error> for Error {
     fn from(value: std::string::FromUtf8Error) -> Self {
         Self::Generic(format!("{value}"))
+    }
+}
+impl<T: Debug> From<ledger_bitcoin_client::error::BitcoinClientError<T>> for Error {
+    fn from(value: ledger_bitcoin_client::error::BitcoinClientError<T>) -> Self {
+        Self::LedgerClientError(format!("{value:?}"))
+    }
+}
+
+impl From<redb::Error> for Error {
+    fn from(value: redb::Error) -> Self {
+        Self::DatabaseError(format!("{value}"))
+    }
+}
+impl From<redb::DatabaseError> for Error {
+    fn from(value: redb::DatabaseError) -> Self {
+        Self::DatabaseError(format!("{value}"))
+    }
+}
+impl From<redb::TableError> for Error {
+    fn from(value: redb::TableError) -> Self {
+        Self::DatabaseError(format!("{value}"))
+    }
+}
+impl From<redb::TransactionError> for Error {
+    fn from(value: redb::TransactionError) -> Self {
+        Self::DatabaseError(format!("{value}"))
+    }
+}
+impl From<redb::CommitError> for Error {
+    fn from(value: redb::CommitError) -> Self {
+        Self::DatabaseError(format!("{value}"))
+    }
+}
+impl From<redb::StorageError> for Error {
+    fn from(value: redb::StorageError) -> Self {
+        Self::DatabaseError(format!("{value}"))
     }
 }

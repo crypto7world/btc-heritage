@@ -1,13 +1,16 @@
 mod commands;
 mod subcmd_service;
 mod subcmd_wallet;
+mod subcmd_wallet_axpubs;
+
+use std::any::Any;
 
 use btc_heritage_wallet::bitcoin::Network;
 
 pub trait CommandExecutor {
     fn execute(
-        &self,
-        cli_parser: &CliParser,
+        self,
+        params: Box<dyn Any>,
     ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>>;
 }
 
@@ -34,9 +37,16 @@ pub struct CliParser {
 
 impl CliParser {
     pub fn execute(
-        &self,
+        self,
     ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
-        self.cmd.execute(self)
+        let cmd = self.cmd;
+        let params = Box::new((
+            self.gargs,
+            self.service_gargs,
+            self.electrum_gargs,
+            self.bitcoinrpc_gargs,
+        ));
+        cmd.execute(params)
     }
 }
 

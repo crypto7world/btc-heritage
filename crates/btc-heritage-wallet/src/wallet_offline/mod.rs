@@ -2,12 +2,12 @@ use crate::errors::{Error, Result};
 use btc_heritage::{
     bitcoin::{bip32::Fingerprint, Network},
     miniscript::DescriptorPublicKey,
-    PartiallySignedTransaction,
+    AccountXPub, PartiallySignedTransaction,
 };
 
-mod ledger_hww;
+pub(crate) mod ledger_hww;
 mod local_key;
-use ledger_hww::LedgerKey;
+pub use ledger_hww::LedgerKey;
 use local_key::LocalKey;
 use serde::{Deserialize, Serialize};
 
@@ -18,8 +18,8 @@ pub trait WalletOffline {
     /// Sign all the (Tap) inputs of the given PSBT that can be signed using the privates keys
     /// and return the number of inputs signed.
     fn sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<usize>;
-    /// Return a list of the first `count` account eXtended Public Keys as a [Vec<DescriptorPublicKey>]
-    fn derive_accounts_xpubs(&self, count: usize) -> Result<Vec<DescriptorPublicKey>>;
+    /// Return a list of the first `count` account eXtended Public Keys as a [Vec<AccountXPub>]
+    fn derive_accounts_xpubs(&self, count: usize) -> Result<Vec<AccountXPub>>;
     /// Return the [DescriptorPublicKey] of the heir account descriptor.
     /// By convention, it correspond to the account 1751476594 which is the decimal value corresponding
     /// to `u32::from_be_bytes(*b"heir")`.
@@ -64,11 +64,11 @@ macro_rules! impl_wallet_offline_fn {
 
 impl WalletOffline for AnyWalletOffline {
     impl_wallet_offline_fn!(sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<usize>);
-    impl_wallet_offline_fn!(derive_accounts_xpubs(&self, count: usize) -> Result<Vec<DescriptorPublicKey>>);
+    impl_wallet_offline_fn!(derive_accounts_xpubs(&self, count: usize) -> Result<Vec<AccountXPub>>);
     impl_wallet_offline_fn!(derive_heir_xpub(&self) -> Result<DescriptorPublicKey>);
 }
 
 impl crate::wallet::WalletCommons for AnyWalletOffline {
-    impl_wallet_offline_fn!(fingerprint(&self) -> Result<Fingerprint>);
+    impl_wallet_offline_fn!(fingerprint(&self) -> Result<Option<Fingerprint>>);
     impl_wallet_offline_fn!(network(&self) -> Result<Network> );
 }

@@ -6,8 +6,10 @@ mod wallet;
 mod wallet_offline;
 mod wallet_online;
 
-pub use wallet_offline::{AnyWalletOffline, WalletOffline};
-pub use wallet_online::{AnyWalletOnline, WalletOnline};
+pub use btc_heritage::AccountXPub;
+pub use wallet::Wallet;
+pub use wallet_offline::{AnyWalletOffline, LedgerKey, WalletOffline};
+pub use wallet_online::{AnyWalletOnline, ServiceBinding, WalletOnline};
 
 pub use btc_heritage::bitcoin;
 pub use btc_heritage::miniscript;

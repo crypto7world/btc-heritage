@@ -1,14 +1,17 @@
+use btc_heritage::AccountXPub;
 use reqwest::{blocking::Client, Method};
 use serde::Serialize;
 use serde_json::json;
 use std::cell::RefCell;
 pub use tokens::Tokens;
+pub use types::*;
 
 use crate::errors::{Error, Result};
 
 mod tokens;
 mod types;
 
+#[derive(Debug)]
 pub struct HeritageServiceClient {
     client: Client,
     service_api_url: String,
@@ -19,10 +22,20 @@ fn req_builder_to_body(req: reqwest::blocking::RequestBuilder) -> Result<String>
     log::debug!("req={req:?}");
     let res = req.send()?;
     log::debug!("res={res:?}");
+    let status_code = res.status();
     let body_bytes = res.bytes()?.into();
     let body_str = String::from_utf8(body_bytes)?;
     log::debug!("body_str={body_str}");
-    Ok(body_str)
+    if status_code.is_client_error() || status_code.is_server_error() {
+        log::error!(
+            "{} {}: {body_str}",
+            status_code.as_u16(),
+            status_code.canonical_reason().unwrap_or("UNKNOWN")
+        );
+        Err(Error::Generic(body_str))
+    } else {
+        Ok(body_str)
+    }
 }
 
 impl HeritageServiceClient {
@@ -56,8 +69,10 @@ impl HeritageServiceClient {
             None => req,
         };
         let body = req_builder_to_body(req)?;
-        println!("{body}");
-        Ok(serde_json::from_str(&body)?)
+        match body.as_str() {
+            "" => Ok(serde_json::Value::Null),
+            _ => Ok(serde_json::from_str(&body)?),
+        }
     }
 
     fn api_call_get(&self, path: &str) -> Result<serde_json::Value> {
@@ -87,5 +102,15 @@ impl HeritageServiceClient {
     pub fn get_wallet(&self, wallet_id: &str) -> Result<types::HeritageWalletMeta> {
         let path = format!("wallets/{wallet_id}");
         Ok(serde_json::from_value(self.api_call_get(&path)?)?)
+    }
+
+    pub fn post_wallet_account_xpubs(
+        &self,
+        wallet_id: &str,
+        account_xpubs: &[btc_heritage::AccountXPub],
+    ) -> Result<()> {
+        let path = format!("wallets/{wallet_id}/account-xpubs");
+        serde_json::from_value(self.api_call(Method::POST, &path, Some(account_xpubs))?)?;
+        Ok(())
     }
 }

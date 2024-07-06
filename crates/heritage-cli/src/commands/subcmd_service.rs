@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use btc_heritage_wallet::{errors::Result, Database, HeritageServiceClient, Tokens};
 
 /// Commands related purely to the Heritage service
@@ -16,37 +18,32 @@ pub enum ServiceSubcmd {
 }
 
 impl super::CommandExecutor for ServiceSubcmd {
-    fn execute(
-        &self,
-        cli_parser: &super::CliParser,
-    ) -> Result<Box<dyn crate::display::Displayable>> {
-        let mut db = Database::new(&cli_parser.gargs.datadir, cli_parser.gargs.network)?;
+    fn execute(self, params: Box<dyn Any>) -> Result<Box<dyn crate::display::Displayable>> {
+        let (gargs, service_gargs): (super::CliGlobalArgs, super::ServiceGlobalArgs) =
+            *params.downcast().unwrap();
+        let mut db = Database::new(&gargs.datadir, gargs.network)?;
         let res: Box<dyn crate::display::Displayable> = match self {
-            ServiceSubcmd::Login => Tokens::new(
-                &cli_parser.service_gargs.auth_url,
-                &cli_parser.service_gargs.auth_client_id,
-            )?
-            .save(&mut db)
-            .map(Box::new)?,
+            ServiceSubcmd::Login => {
+                Tokens::new(&service_gargs.auth_url, &service_gargs.auth_client_id)?
+                    .save(&mut db)
+                    .map(Box::new)?
+            }
             ServiceSubcmd::Logout => todo!(),
-            ServiceSubcmd::ListWallets => HeritageServiceClient::new(
-                cli_parser.service_gargs.service_api_url.clone(),
-                Tokens::load(&mut db)?,
-            )
-            .list_wallets()
-            .map(Box::new)?,
-            ServiceSubcmd::ListHeirs => HeritageServiceClient::new(
-                cli_parser.service_gargs.service_api_url.clone(),
-                Tokens::load(&mut db)?,
-            )
-            .list_heirs()
-            .map(Box::new)?,
-            ServiceSubcmd::ListHeritages => HeritageServiceClient::new(
-                cli_parser.service_gargs.service_api_url.clone(),
-                Tokens::load(&mut db)?,
-            )
-            .list_heritages()
-            .map(Box::new)?,
+            ServiceSubcmd::ListWallets => {
+                HeritageServiceClient::new(service_gargs.service_api_url, Tokens::load(&mut db)?)
+                    .list_wallets()
+                    .map(Box::new)?
+            }
+            ServiceSubcmd::ListHeirs => {
+                HeritageServiceClient::new(service_gargs.service_api_url, Tokens::load(&mut db)?)
+                    .list_heirs()
+                    .map(Box::new)?
+            }
+            ServiceSubcmd::ListHeritages => {
+                HeritageServiceClient::new(service_gargs.service_api_url, Tokens::load(&mut db)?)
+                    .list_heritages()
+                    .map(Box::new)?
+            }
         };
         Ok(res)
     }
