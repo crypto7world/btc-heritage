@@ -10,7 +10,8 @@ pub use account_xpub::AccountXPub;
 pub use bdk::bitcoin::{psbt::PartiallySignedTransaction, Amount};
 pub use heritage_config::{heirtypes::*, HeritageConfig};
 pub use heritage_wallet::{
-    BlockInclusionObjective, HeritageWallet, HeritageWalletBalance, Recipient, SpendingConfig,
+    BlockInclusionObjective, DescriptorsBackup, HeritageWallet, HeritageWalletBalance, Recipient,
+    SpendingConfig,
 };
 
 pub use bdk::bitcoin;
@@ -50,41 +51,39 @@ mod tests {
         const EXPECTED_VALUES: [[&str; 4]; 3] = [
             [
                 "tr([9c7088e3/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/0/*,\
-                {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1731536000))),\
+                {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(12960),after(1731536000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1734560000)))})\
-                #a49rlfa5",
+                #7y7nqca9",
                 "tr([9c7088e3/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/1/*,\
-                {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1731536000))),\
+                {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1731536000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1734560000)))})\
-                #dw3m88lx",
+                #j84snf2h",
                 "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya",
-                "bcrt1pg39h846yhav36lte78m0vsltwa6a35c95cwwqejgu4hunfxecfuskw86d9"
+                "bcrt1pfmle946ue92fvn07y964eucx82a7rx4qum72eapf47vkls8kt04sxyyqs6"
             ],
             [
                 "tr([9c7088e3/86'/1'/1']tpubDD2pKf3K2M2oygc9tQX4ze9o9sMmn738oHEiRTwxAWJyW7HyPYjYQKMrxznXmgWncr416q1htkCszdHg3tbGseUUQXoxFZmjdAbwU8HY9QX/0/*,\
-                {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1763072000))),\
+                {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(12960),after(1763072000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1766096000)))})\
-                #j670qz6g",
+                #0hqx0pru",
                 "tr([9c7088e3/86'/1'/1']tpubDD2pKf3K2M2oygc9tQX4ze9o9sMmn738oHEiRTwxAWJyW7HyPYjYQKMrxznXmgWncr416q1htkCszdHg3tbGseUUQXoxFZmjdAbwU8HY9QX/1/*,\
-                {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1763072000))),\
+                {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1763072000))),\
                 and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1766096000)))})\
-                #zp2hcvc6",
+                #r5t9us5w",
                 "bcrt1p5mf2ulak53flxtgaxtlalsclxvp6wuzteut07n46hc8zv6rwc6rs6jldmr",
-                "bcrt1pc4qwu6z062vwek7yfmmg692yumder62wvkd0r0swqdskvekvg47s5kqsg4"
+                "bcrt1p7rq4t6jkf0f0cm297e22drf8xjmk9228my7yeahzlhdqyc8w38vs0cqh5q"
             ],
             [
                 "tr([9c7088e3/86'/1'/2']tpubDD2pKf3K2M2p2MS1LdNxnNPKY61JgpGp9VTHf1k3e8coJk4ud2BhkrxYQifa8buLnrCyUbJke4US5cVobaZLr9qU554oMdwucWZpYZj5t13/0/*,\
-                {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1794608000))),\
-                {and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),\
-                and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}})\
-                #e4y8h08w",
+                {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(12960),after(1794608000))),\
+                {and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}})\
+                #9lwn0wm9",
                 "tr([9c7088e3/86'/1'/2']tpubDD2pKf3K2M2p2MS1LdNxnNPKY61JgpGp9VTHf1k3e8coJk4ud2BhkrxYQifa8buLnrCyUbJke4US5cVobaZLr9qU554oMdwucWZpYZj5t13/1/*,\
-                {and_v(v:pk([f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20),and_v(v:older(12960),after(1794608000))),\
-                {and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),\
-                and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}})\
-                #fvc83qxj",
+                {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1794608000))),\
+                {and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}})\
+                #mh7ydv64",
                 "bcrt1p696kkt5g550uv0c4dmct5w3ul5fxyp4lh9350ud5ejc4lxm4u98shxl2ct",
-                "bcrt1p06pll6fqyrp9sg0l0jclnceryy3dt0t3vkuq0fz8mj94auschqaszazw34"
+                "bcrt1pkzck2ns3wzr9v88ruymymrdg8vdft6uqjatxc79teg96jvnu55fskynp3x"
             ]
         ];
 
@@ -241,7 +240,7 @@ mod tests {
 
     const HEIRS_HERITAGES: [&str; 3] = [
         r#"{
-            "heir_config":{"type":"SINGLE_HEIR_PUBKEY","value":"[f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20"},
+            "heir_config":{"type":"HEIR_X_PUBKEY","value":"[f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*"},
             "time_lock":365
         }"#,
         r#"{

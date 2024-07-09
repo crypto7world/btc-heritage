@@ -56,6 +56,15 @@ impl Wallet {
         format!("wallet#{name}")
     }
 
+    /// Verify that the given Wallet name is not already in the database
+    pub fn verify_name_is_free(db: &Database, name: &str) -> Result<()> {
+        if db.contains_key(&Self::name_to_key(name))? {
+            Err(Error::WalletAlreadyExist(name.to_owned()))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn create(&self, db: &mut Database) -> Result<()> {
         db.put_item(&Self::name_to_key(&self.name), self)?;
         Ok(())

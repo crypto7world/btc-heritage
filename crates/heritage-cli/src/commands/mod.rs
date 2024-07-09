@@ -2,6 +2,8 @@ mod commands;
 mod subcmd_service;
 mod subcmd_wallet;
 mod subcmd_wallet_axpubs;
+mod subcmd_wallet_descriptors;
+mod subcmd_wallet_heritage_config;
 
 use std::any::Any;
 

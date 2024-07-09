@@ -22,8 +22,12 @@ pub enum Error {
     AuthenticationProcessExpired,
     #[error("The CLI is not authenticated to the Heritage service. Login first.")]
     Unauthenticated,
-    #[error("No wallet named {0} in the database")]
+    #[error("No wallet named \"{0}\" in the database")]
     InexistantWallet(String),
+    #[error("A wallet named \"{0}\" is already in the database")]
+    WalletAlreadyExist(String),
+    #[error("The Descriptor {descriptor} is invalid: {error}")]
+    InvalidDescriptor { descriptor: String, error: String },
     #[error("No wallet found in the service")]
     NoServiceWalletFound,
     #[error("Multiple wallet found in the service")]

@@ -18,15 +18,26 @@ heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> cr
     --offline-wallet <none | local | ledger> [--word-count <12|18|24>] [--seed <mnemonic>] [--with-password] \
     --auto-feed-xpubs <true | false>
 
+# Wallet setup
+# Heritage configuration
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config set <...>
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config list
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config renew
+
+# Account eXtended Public Keys
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs list [--used <true|false>] [--unused <true|false>]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs display
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs feed <ACCOUNT_XPUB> [<ACCOUNT_XPUB> ..]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs auto-feed
+
+
+
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> backup-online-wallet <backup-file-path>
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> restore-online-wallet <backup-file-path>
 
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> balance
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> sync
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> status
-
-
-
 
 
 
@@ -50,16 +61,6 @@ heritage-cli local-wallet <wallet-name> restore <JSON-backup-file> [--seed <mnem
 heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> rebind [--seed <mnemonic> [--with-password] | --ledger]
 
 
-# Wallet setup
-# Heritage configuration
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config set <...>
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config list
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config renew
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config ledger-register-current
-
-# Account eXtended Public Keys
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs feed
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs list
 
 
 

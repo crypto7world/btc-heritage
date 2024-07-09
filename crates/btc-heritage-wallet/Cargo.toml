@@ -15,18 +15,21 @@ btc-heritage = { path = "../btc-heritage" }
 bitcoin = { workspace = true }
 miniscript = { workspace = true }
 ledger_bitcoin_client = { workspace = true }
+bip39 = "2.0.0"
 
 ledger-transport-hid = "0.11"
 ledger-apdu = "0.11"
 
-bip39 = "2.0.0"
 
 serde = { workspace = true }
 serde_json = { workspace = true }
+
 redb = { workspace = true }
+dirs-next = "2.0"
+regex = "1.10.5"
+
 reqwest = { workspace = true }
 open = { workspace = true }
 
-dirs-next = "2.0"
 log = { workspace = true }
 thiserror = { workspace = true }

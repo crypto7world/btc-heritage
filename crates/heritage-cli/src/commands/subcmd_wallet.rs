@@ -2,6 +2,7 @@ use std::{any::Any, cell::RefCell, rc::Rc, str::FromStr};
 
 use btc_heritage_wallet::{
     bitcoin::{bip32::Fingerprint, Address, Amount},
+    errors::{Error, Result},
     AnyWalletOffline, AnyWalletOnline, Database, HeritageServiceClient, LedgerKey, ServiceBinding,
     Tokens, Wallet,
 };
@@ -50,10 +51,18 @@ pub enum WalletSubcmd {
     },
     /// Remove the wallet from the database
     Remove,
-    /// Manage the Heritage configuration of the wallet
-    HeritageConfig,
+    /// Commands managing the Descriptors (BIP380) of the wallet
+    Descriptors {
+        #[command(subcommand)]
+        subcmd: super::subcmd_wallet_descriptors::WalletDescriptorsSubcmd,
+    },
+    /// Commands managing the Heritage configuration of the wallet
+    HeritageConfig {
+        #[command(subcommand)]
+        subcmd: super::subcmd_wallet_heritage_config::WalletHeritageConfigSubcmd,
+    },
     /// Commands managing the Account eXtended Public Keys of the wallet
-    AccountXpubs {
+    AccountXpub {
         #[command(subcommand)]
         subcmd: super::subcmd_wallet_axpubs::WalletAXpubSubcmd,
     },
@@ -98,10 +107,7 @@ pub enum WalletSubcmd {
 }
 
 impl super::CommandExecutor for WalletSubcmd {
-    fn execute(
-        self,
-        params: Box<dyn Any>,
-    ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
+    fn execute(self, params: Box<dyn Any>) -> Result<Box<dyn crate::display::Displayable>> {
         let (wallet_name, gargs, service_gargs, electrum_gargs, bitcoinrpc_gargs): (
             String,
             super::CliGlobalArgs,
@@ -111,7 +117,6 @@ impl super::CommandExecutor for WalletSubcmd {
         ) = *params.downcast().unwrap();
         let mut db = Database::new(&gargs.datadir, gargs.network)?;
 
-        println!("wallet#test exist: {}", db.contains_key("wallet#test")?);
         let service_client =
             HeritageServiceClient::new(service_gargs.service_api_url, Tokens::load(&mut db)?);
 
@@ -127,6 +132,7 @@ impl super::CommandExecutor for WalletSubcmd {
                 word_count,
                 with_password,
             } => {
+                Wallet::verify_name_is_free(&db, &wallet_name)?;
                 let online_wallet = match online_component {
                     OnlineComponentType::None => AnyWalletOnline::None,
                     OnlineComponentType::Service => AnyWalletOnline::Service(
@@ -196,8 +202,9 @@ impl super::CommandExecutor for WalletSubcmd {
                 wallet.borrow().delete(&mut db)?;
                 Box::new("Wallet deleted")
             }
-            WalletSubcmd::HeritageConfig => todo!(),
-            WalletSubcmd::AccountXpubs { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
+            WalletSubcmd::Descriptors { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
+            WalletSubcmd::HeritageConfig { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
+            WalletSubcmd::AccountXpub { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
             WalletSubcmd::Sync => todo!(),
             WalletSubcmd::GetAddress => todo!(),
             WalletSubcmd::SendBitcoins {
@@ -215,24 +222,32 @@ impl super::CommandExecutor for WalletSubcmd {
     }
 }
 
-fn parse_recipient(val: &str) -> Result<(Address, Amount), String> {
-    static ERR_MSG: &'static str = "invalid recipient. Must be <ADDRESS>:<AMOUNT>";
-
+fn parse_recipient(val: &str) -> Result<(Address, Amount)> {
     if !val.contains(':') {
-        return Err(ERR_MSG.to_string());
+        return Err(Error::Generic(
+            "invalid recipient. Must be <ADDRESS>:<AMOUNT>".to_owned(),
+        ));
     }
 
     let mut parts = val.split(':');
-    let addr = parts.next().ok_or_else(|| ERR_MSG.to_string())?;
+    let addr = parts.next().ok_or_else(|| {
+        Error::Generic("invalid recipient. Must be <ADDRESS>:<AMOUNT>".to_owned())
+    })?;
     let addr = Address::from_str(addr)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| Error::Generic(e.to_string()))?
         .assume_checked();
 
-    let amount = parts.next().ok_or_else(|| ERR_MSG.to_string())?;
-    let amount = amount.parse::<Amount>().map_err(|e| e.to_string())?;
+    let amount = parts.next().ok_or_else(|| {
+        Error::Generic("invalid recipient. Must be <ADDRESS>:<AMOUNT>".to_owned())
+    })?;
+    let amount = amount
+        .parse::<Amount>()
+        .map_err(|e| Error::Generic(e.to_string()))?;
 
     if parts.next().is_some() {
-        return Err(ERR_MSG.to_string());
+        return Err(Error::Generic(
+            "invalid recipient. Must be <ADDRESS>:<AMOUNT>".to_owned(),
+        ));
     }
 
     Ok((addr, amount))

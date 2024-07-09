@@ -903,6 +903,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         let unspent = subwallet
             .list_unspent()
             .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+        println!("{unspent:?}");
 
         // Manually select UTXOs
         let utxos_and_inputs = unspent
@@ -947,6 +948,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         })
         .map(|utxo|{
             if include_foreign_utxo {
+                println!("{utxo:?}");
                 let outpoint = utxo.outpoint;
                 let mut input = subwallet.get_psbt_input(utxo.clone(), None, true).map_err(|e| match e {
                     bdk::Error::UnknownUtxo => {
@@ -1139,12 +1141,19 @@ fn minimize_psbt_input_for_spender(
         }
         // This is an Heir spending
         Some(heritage_explorer) => {
-            let script = heritage_explorer.get_script();
-            let keys = heritage_explorer.get_xpubkeys_set();
+            // Keeps only the relevant keys
+            psbt_input
+                .tap_key_origins
+                .retain(|_, (_, (fingerprint, _))| heritage_explorer.has_fingerprint(*fingerprint));
+            // Create a Vec of the retained origins
+            let origins = psbt_input
+                .tap_key_origins
+                .iter()
+                .map(|(_, (_, (fingerprint, derivation_path)))| (fingerprint, derivation_path));
+            // Use the origins to ask for a concrete Script
+            let script = heritage_explorer.get_script(origins);
             // Keeps only the relevant script
             psbt_input.tap_scripts.retain(|_, (s, _)| *s == script);
-            // Keeps only the relevant keys
-            psbt_input.tap_key_origins.retain(|k, _| keys.contains(k));
         }
     }
 }
@@ -1435,17 +1444,17 @@ mod tests {
         ) -> Result<Self::Inner, bdk::Error> {
             let mut hashtable: HashMap<String, Vec<TransactionDetails>> = HashMap::new();
             // Wallet TestHeritageConfig::BackupWifeY2
-            hashtable.insert("a49rlfa5dw3m88lx".to_owned(), vec![
+            hashtable.insert("7y7nqca9j84snf2h".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"51208bdbdb2969eeb7ec8efd20f7bc64961a760313404e900109a1ba19afb8b0292c"}]},"txid":"344dbc396e3c6945f46a67faab275141bb0fdd63f8a46362ba27e4753400d9c2","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":842520,"timestamp":1715552000}}"#).unwrap(),
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120444b73d744bf591d7d79f1f6f643eb7775d8d305a61ce06648e56fc9a4d9c279"}]},"txid":"c02152f71b8158fc81bb6bd2756c354a1ec00ead119c42da8d1eb3da7af084a9","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":904440,"timestamp":1752704000}}"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeY1
-            hashtable.insert("j670qz6gzp2hcvc6".to_owned(), vec![
+            hashtable.insert("0hqx0prur5t9us5w".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120a6d2ae7fb6a453f32d1d32ffdfc31f3303a7704bcf16ff4ebabe0e26686ec687"}]},"txid":"2f0a77d510db56dda3b43692d4658a92f523193a3b854d2387681f2fd0f5d920","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":895080,"timestamp":1747088000}}"#).unwrap(),
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120c540ee684fd298ecdbc44ef68d1544e6db91e94e659af1be0e03616666cc457d"}]},"txid":"7927f959c099df690214ba52e41945e069961bb19a6dab9ade0db86d6ccd9a4e","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":897960,"timestamp":1748816000}}"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeBro
-            hashtable.insert("e4y8h08wfvc83qxj".to_owned(), vec![
+            hashtable.insert("9lwn0wm9mh7ydv64".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120d1756b2e88a51fc63f156ef0ba3a3cfd126206bfb96347f1b4ccb15f9b75e14f"}]},"txid":"6ed1563a936196211f2f76447c478533df8f3efc43933f4c3405b9a760b31204","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":923160,"timestamp":1763936000}}"#).unwrap(),
             ]);
 
@@ -1816,7 +1825,7 @@ mod tests {
         assert!(wallet.get_new_address().is_ok_and(|addr| addr
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY2,
-                1
+                1,
             )));
 
         wallet
@@ -1833,7 +1842,7 @@ mod tests {
         assert!(wallet.get_new_address().is_ok_and(|addr| addr
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY1,
-                1
+                1,
             )));
 
         wallet
@@ -1850,7 +1859,7 @@ mod tests {
         assert!(wallet.get_new_address().is_ok_and(|addr| addr
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeBro,
-                1
+                1,
             )));
     }
 

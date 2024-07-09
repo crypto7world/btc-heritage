@@ -1,4 +1,4 @@
-use btc_heritage::AccountXPub;
+use btc_heritage::{AccountXPub, DescriptorsBackup};
 use reqwest::{blocking::Client, Method};
 use serde::Serialize;
 use serde_json::json;
@@ -101,6 +101,11 @@ impl HeritageServiceClient {
 
     pub fn get_wallet(&self, wallet_id: &str) -> Result<types::HeritageWalletMeta> {
         let path = format!("wallets/{wallet_id}");
+        Ok(serde_json::from_value(self.api_call_get(&path)?)?)
+    }
+
+    pub fn get_descriptors_backup(&self, wallet_id: &str) -> Result<Vec<DescriptorsBackup>> {
+        let path = format!("wallets/{wallet_id}/descriptors-backup");
         Ok(serde_json::from_value(self.api_call_get(&path)?)?)
     }
 

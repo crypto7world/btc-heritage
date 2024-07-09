@@ -7,8 +7,8 @@ use btc_heritage::{
         bip32::{ChildNumber, DerivationPath, Fingerprint},
         Network,
     },
-    miniscript::DescriptorPublicKey,
-    AccountXPub,
+    miniscript::{descriptor::Tr, Descriptor, DescriptorPublicKey, TranslatePk},
+    AccountXPub, DescriptorsBackup,
 };
 use ledger_bitcoin_client::{
     apdu::{APDUCommand, StatusWord},
@@ -111,6 +111,12 @@ impl LedgerKey {
         self.ledger_client
             .as_ref()
             .expect("ledger client should have been initialized")
+    }
+    pub fn register_descriptors_backup(
+        &self,
+        descriptors_backups: &Vec<DescriptorsBackup>,
+    ) -> Result<()> {
+        todo!()
     }
 }
 

@@ -1,6 +1,6 @@
-use std::{any::Any, borrow::Borrow, cell::RefCell, rc::Rc};
+use std::{any::Any, cell::RefCell, rc::Rc};
 
-use btc_heritage_wallet::{AccountXPub, Wallet, WalletOffline, WalletOnline};
+use btc_heritage_wallet::{errors::Result, AccountXPub, Wallet, WalletOffline, WalletOnline};
 
 /// Wallet Account XPubs management subcommand.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -35,10 +35,7 @@ pub enum WalletAXpubSubcmd {
 }
 
 impl super::CommandExecutor for WalletAXpubSubcmd {
-    fn execute(
-        self,
-        params: Box<dyn Any>,
-    ) -> btc_heritage_wallet::errors::Result<Box<dyn crate::display::Displayable>> {
+    fn execute(self, params: Box<dyn Any>) -> Result<Box<dyn crate::display::Displayable>> {
         let wallet: Rc<RefCell<Wallet>> = *params.downcast().unwrap();
         let wallet = wallet.as_ref();
         let res: Box<dyn crate::display::Displayable> = match self {
@@ -69,6 +66,6 @@ impl super::CommandExecutor for WalletAXpubSubcmd {
     }
 }
 
-fn parse_account_xpubs(val: &str) -> Result<AccountXPub, String> {
-    AccountXPub::try_from(val).map_err(|e| e.to_string())
+fn parse_account_xpubs(val: &str) -> Result<AccountXPub> {
+    Ok(AccountXPub::try_from(val)?)
 }
