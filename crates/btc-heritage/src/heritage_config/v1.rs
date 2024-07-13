@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use bdk::bitcoin::{
-    absolute::LOCK_TIME_THRESHOLD,
-    bip32::{DerivationPath, Fingerprint},
-};
 use serde::{Deserialize, Serialize};
 
 use super::{heirtypes::HeirConfig, SpendConditions};
+use crate::bitcoin::{
+    absolute::LOCK_TIME_THRESHOLD,
+    bip32::{DerivationPath, Fingerprint},
+};
 
 const SEC_IN_A_DAY: u64 = 24 * 60 * 60;
 

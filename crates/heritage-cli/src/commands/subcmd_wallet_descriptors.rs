@@ -15,13 +15,6 @@ pub enum WalletDescriptorsSubcmd {
         /// The Descriptors to restore
         descriptors: Vec<DescriptorsBackup>,
     },
-    /// Register the Descriptors in a Ledger device as wallet policies
-    RegisterOnLedger {
-        #[arg(short, long, value_parser=parse_descriptor_backup)]
-        /// The Descriptors to register. If none is provided, the CLI will attempt
-        /// to use the current backup of the Online component of the wallet
-        descriptors: Vec<DescriptorsBackup>,
-    },
 }
 
 impl super::CommandExecutor for WalletDescriptorsSubcmd {
@@ -31,7 +24,6 @@ impl super::CommandExecutor for WalletDescriptorsSubcmd {
         let res: Box<dyn crate::display::Displayable> = match self {
             WalletDescriptorsSubcmd::Backup => todo!(),
             WalletDescriptorsSubcmd::Restore { descriptors } => todo!(),
-            WalletDescriptorsSubcmd::RegisterOnLedger { descriptors } => todo!(),
         };
         Ok(res)
     }

@@ -1,22 +1,14 @@
-use crate::{
-    account_xpub::AccountXPub,
-    bitcoin::bip32::ChildNumber,
-    errors::{Error, Result},
-    heritage_config::HeritageConfig,
-    miniscript::{descriptor::DescriptorXKey, DescriptorPublicKey, Tap},
-    utils,
-};
-
-use bdk::{
-    bitcoin::bip32::DerivationPath,
-    database::BatchDatabase,
-    keys::{DerivableKey, DescriptorKey},
-    Wallet,
-};
+use bdk::{database::BatchDatabase, Wallet};
 
 pub use crate::bitcoin::psbt::PartiallySignedTransaction;
-
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    account_xpub::AccountXPub,
+    errors::{Error, Result},
+    heritage_config::HeritageConfig,
+    utils,
+};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]

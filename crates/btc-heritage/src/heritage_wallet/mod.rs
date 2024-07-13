@@ -11,7 +11,6 @@ use std::{
 
 use bdk::{
     database::Database,
-    miniscript::{Miniscript, Tap},
     wallet::{AddressInfo, IsDust},
     BlockTime, FeeRate as BdkFeeRate, KeychainKind, LocalUtxo, Wallet,
 };
@@ -29,6 +28,7 @@ use crate::{
     },
     errors::{DatabaseError, Error, Result},
     heritage_config::{HeritageConfig, HeritageExplorer, HeritageExplorerTrait},
+    miniscript::{Miniscript, Tap},
     subwallet_config::SubwalletConfig,
     HeirConfig,
 };
@@ -836,7 +836,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             fee: psbt.fee().expect("our psbt is fresh and sound"),
         };
 
-        println!("{transaction_details:?}");
         log::debug!("HeritageWallet::create_psbt - psbt={psbt:?}");
         log::debug!("HeritageWallet::create_psbt - tx_summary={tx_summary:?}");
         Ok((psbt, tx_summary))
@@ -903,7 +902,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         let unspent = subwallet
             .list_unspent()
             .map_err(|e| DatabaseError::Generic(e.to_string()))?;
-        println!("{unspent:?}");
 
         // Manually select UTXOs
         let utxos_and_inputs = unspent
@@ -948,7 +946,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         })
         .map(|utxo|{
             if include_foreign_utxo {
-                println!("{utxo:?}");
                 let outpoint = utxo.outpoint;
                 let mut input = subwallet.get_psbt_input(utxo.clone(), None, true).map_err(|e| match e {
                     bdk::Error::UnknownUtxo => {
@@ -1446,12 +1443,12 @@ mod tests {
             // Wallet TestHeritageConfig::BackupWifeY2
             hashtable.insert("7y7nqca9j84snf2h".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"51208bdbdb2969eeb7ec8efd20f7bc64961a760313404e900109a1ba19afb8b0292c"}]},"txid":"344dbc396e3c6945f46a67faab275141bb0fdd63f8a46362ba27e4753400d9c2","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":842520,"timestamp":1715552000}}"#).unwrap(),
-                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120444b73d744bf591d7d79f1f6f643eb7775d8d305a61ce06648e56fc9a4d9c279"}]},"txid":"c02152f71b8158fc81bb6bd2756c354a1ec00ead119c42da8d1eb3da7af084a9","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":904440,"timestamp":1752704000}}"#).unwrap(),
+                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"51204eff92d75cc954964dfe21755cf3063abbe19aa0e6fcacf429af996fc0f65beb"}]},"txid":"d2f3bd44fb6ad0c32833ea943d718e806245e632302f25720811fea167c13507","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":904440,"timestamp":1752704000}}"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeY1
             hashtable.insert("0hqx0prur5t9us5w".to_owned(), vec![
                 serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120a6d2ae7fb6a453f32d1d32ffdfc31f3303a7704bcf16ff4ebabe0e26686ec687"}]},"txid":"2f0a77d510db56dda3b43692d4658a92f523193a3b854d2387681f2fd0f5d920","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":895080,"timestamp":1747088000}}"#).unwrap(),
-                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120c540ee684fd298ecdbc44ef68d1544e6db91e94e659af1be0e03616666cc457d"}]},"txid":"7927f959c099df690214ba52e41945e069961bb19a6dab9ade0db86d6ccd9a4e","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":897960,"timestamp":1748816000}}"#).unwrap(),
+                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120f0c155ea564bd2fc6d45f654a68d2734b762a947d93c4cf6e2fdda0260ee89d9"}]},"txid":"3854db1cb2253a270e49a093a6ddb92fa79efd8b295568e08448e4de678fc08b","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":897960,"timestamp":1748816000}}"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeBro
             hashtable.insert("9lwn0wm9mh7ydv64".to_owned(), vec![
@@ -2043,7 +2040,7 @@ mod tests {
                     )
                     .unwrap(),
                     [
-                        "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
+                        "05a793ed9e1755bd27f404b27cd1fce931ba8451a6fd060678268ca4a24b15e5",
                         "m/86'/1'/0'/0/1",
                     ],
                 ),
@@ -2073,7 +2070,7 @@ mod tests {
                     )
                     .unwrap(),
                     [
-                        "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
+                        "693880a19260132e9360318040fa32c3f95ae6180394d8b09e09fa67c215ee8c",
                         "m/86'/1'/1'/0/1",
                     ],
                 ),
@@ -2090,7 +2087,7 @@ mod tests {
                 == TapNodeHash::from_str(
                     expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[0]
+                        .unwrap()[0],
                 )
                 .unwrap())));
         // There is one key path per input and it is for the tap_internal_key (owner is spending)
@@ -2192,7 +2189,7 @@ mod tests {
                     )
                     .unwrap(),
                     [
-                        "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
+                        "05a793ed9e1755bd27f404b27cd1fce931ba8451a6fd060678268ca4a24b15e5",
                         "m/86'/1'/0'/0/1",
                     ],
                 ),
@@ -2222,7 +2219,7 @@ mod tests {
                     )
                     .unwrap(),
                     [
-                        "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
+                        "693880a19260132e9360318040fa32c3f95ae6180394d8b09e09fa67c215ee8c",
                         "m/86'/1'/1'/0/1",
                     ],
                 ),
@@ -2249,7 +2246,7 @@ mod tests {
                 == TapNodeHash::from_str(
                     expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[0]
+                        .unwrap()[0],
                 )
                 .unwrap())));
         // There is one key path per input and it is for the tap_internal_key (owner is spending)
@@ -2311,18 +2308,8 @@ mod tests {
 
         // This PSBT has 4 inputs
         assert_eq!(psbt.inputs.len(), 4);
-        let expected_values: HashMap<XOnlyPublicKey, [&str; 2], RandomState> =
+        let expected_values: HashMap<XOnlyPublicKey, [&str; 4], RandomState> =
             HashMap::from_iter(vec![
-                (
-                    XOnlyPublicKey::from_str(
-                        "a9a963f530557632c19635f7719bef70d31c09a1294b3d13e20d38c65913e19c",
-                    )
-                    .unwrap(),
-                    [
-                        "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
-                        "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690480243567b1",
-                    ],
-                ),
                 (
                     XOnlyPublicKey::from_str(
                         "ea7877acac8ca3128e09e77236c840e1a3fc23297f8e45ebee53973f311cf177",
@@ -2330,7 +2317,21 @@ mod tests {
                     .unwrap(),
                     [
                         "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
+                        "5dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20",
+                        "m/86'/1'/1751476594'/0/0",
                         "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690480243567b1",
+                    ],
+                ),
+                (
+                    XOnlyPublicKey::from_str(
+                        "a9a963f530557632c19635f7719bef70d31c09a1294b3d13e20d38c65913e19c",
+                    )
+                    .unwrap(),
+                    [
+                        "05a793ed9e1755bd27f404b27cd1fce931ba8451a6fd060678268ca4a24b15e5",
+                        "807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130",
+                        "m/86'/1'/1751476594'/0/1",
+                        "20807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130ad02a032b2690480243567b1",
                     ],
                 ),
                 (
@@ -2340,6 +2341,8 @@ mod tests {
                     .unwrap(),
                     [
                         "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
+                        "5dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20",
+                        "m/86'/1'/1751476594'/0/0",
                         "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690400581669b1",
                     ],
                 ),
@@ -2349,8 +2352,10 @@ mod tests {
                     )
                     .unwrap(),
                     [
-                        "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
-                        "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690400581669b1",
+                        "693880a19260132e9360318040fa32c3f95ae6180394d8b09e09fa67c215ee8c",
+                        "807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130",
+                        "m/86'/1'/1751476594'/0/1",
+                        "20807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130ad02a032b2690400581669b1",
                     ],
                 ),
             ]);
@@ -2366,7 +2371,7 @@ mod tests {
                 == TapNodeHash::from_str(
                     expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[0]
+                        .unwrap()[0],
                 )
                 .unwrap())));
         // There is one key path per input and it is the heir key
@@ -2374,26 +2379,32 @@ mod tests {
             .tap_key_origins
             .get(
                 &XOnlyPublicKey::from_str(
-                    "5dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20",
+                    expected_values
+                        .get(&input.tap_internal_key.unwrap())
+                        .unwrap()[1],
                 )
-                .unwrap()
+                .unwrap(),
             )
-            .is_some_and(
-                |(tap_leaf_hash, (key_fingerprint, derivation_path))| !tap_leaf_hash.is_empty()
+            .is_some_and(|(tap_leaf_hash, (key_fingerprint, derivation_path))| {
+                !tap_leaf_hash.is_empty()
                     && *key_fingerprint == Fingerprint::from_str("f0d79bf6").unwrap()
                     && *derivation_path
-                        == DerivationPath::from_str("m/86'/1'/1751476594'/0/0").unwrap()
-            )
+                        == DerivationPath::from_str(
+                            expected_values
+                                .get(&input.tap_internal_key.unwrap())
+                                .unwrap()[2],
+                        )
+                        .unwrap()
+            })
             && input.tap_key_origins.len() == 1));
         // There is one script and its the one expected for the heir
         assert!(psbt.inputs.iter().all(|input| input.tap_scripts.len() == 1
-            && input
-                .tap_scripts
-                .first_key_value()
-                .is_some_and(|(_, v)| v.0.to_hex_string()
+            && input.tap_scripts.first_key_value().is_some_and(|(_, v)| {
+                v.0.to_hex_string()
                     == expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[1])));
+                        .unwrap()[3]
+            })));
         // 1 output
         assert_eq!(psbt.outputs.len(), 1);
 
@@ -2453,7 +2464,7 @@ mod tests {
 
         // This PSBT has 1 inputs
         assert_eq!(psbt.inputs.len(), 1);
-        let expected_values: HashMap<XOnlyPublicKey, [&str; 2], RandomState> =
+        let expected_values: HashMap<XOnlyPublicKey, [&str; 4], RandomState> =
             HashMap::from_iter(vec![
                 (
                     XOnlyPublicKey::from_str(
@@ -2462,6 +2473,8 @@ mod tests {
                     .unwrap(),
                     [
                         "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
+                        "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                        "m/86'/1'/1751476594'/0/0",
                         "209d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bfad024065b2690400496367b1",
                     ],
                 ),
@@ -2478,7 +2491,7 @@ mod tests {
                 == TapNodeHash::from_str(
                     expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[0]
+                        .unwrap()[0],
                 )
                 .unwrap())));
         // There is one key path per input and it is the heir key
@@ -2486,26 +2499,32 @@ mod tests {
             .tap_key_origins
             .get(
                 &XOnlyPublicKey::from_str(
-                    "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                    expected_values
+                        .get(&input.tap_internal_key.unwrap())
+                        .unwrap()[1],
                 )
-                .unwrap()
+                .unwrap(),
             )
-            .is_some_and(
-                |(tap_leaf_hash, (key_fingerprint, derivation_path))| !tap_leaf_hash.is_empty()
+            .is_some_and(|(tap_leaf_hash, (key_fingerprint, derivation_path))| {
+                !tap_leaf_hash.is_empty()
                     && *key_fingerprint == Fingerprint::from_str("c907dcb9").unwrap()
                     && *derivation_path
-                        == DerivationPath::from_str("m/86'/1'/1751476594'/0/0").unwrap()
-            )
+                        == DerivationPath::from_str(
+                            expected_values
+                                .get(&input.tap_internal_key.unwrap())
+                                .unwrap()[2],
+                        )
+                        .unwrap()
+            })
             && input.tap_key_origins.len() == 1));
         // There is one script and its the one expected for the heir
         assert!(psbt.inputs.iter().all(|input| input.tap_scripts.len() == 1
-            && input
-                .tap_scripts
-                .first_key_value()
-                .is_some_and(|(_, v)| v.0.to_hex_string()
+            && input.tap_scripts.first_key_value().is_some_and(|(_, v)| {
+                v.0.to_hex_string()
                     == expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[1])));
+                        .unwrap()[3]
+            })));
         // 1 output
         assert_eq!(psbt.outputs.len(), 1);
 
@@ -2592,18 +2611,9 @@ mod tests {
 
         // This PSBT has 5 inputs
         assert_eq!(psbt.inputs.len(), 5);
-        let expected_values: HashMap<XOnlyPublicKey, [&str; 2], RandomState> =
+
+        let expected_values: HashMap<XOnlyPublicKey, [&str; 4], RandomState> =
             HashMap::from_iter(vec![
-                (
-                    XOnlyPublicKey::from_str(
-                        "a9a963f530557632c19635f7719bef70d31c09a1294b3d13e20d38c65913e19c",
-                    )
-                    .unwrap(),
-                    [
-                        "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
-                        "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690480243567b1",
-                    ],
-                ),
                 (
                     XOnlyPublicKey::from_str(
                         "ea7877acac8ca3128e09e77236c840e1a3fc23297f8e45ebee53973f311cf177",
@@ -2611,7 +2621,21 @@ mod tests {
                     .unwrap(),
                     [
                         "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
+                        "5dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20",
+                        "m/86'/1'/1751476594'/0/0",
                         "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690480243567b1",
+                    ],
+                ),
+                (
+                    XOnlyPublicKey::from_str(
+                        "a9a963f530557632c19635f7719bef70d31c09a1294b3d13e20d38c65913e19c",
+                    )
+                    .unwrap(),
+                    [
+                        "05a793ed9e1755bd27f404b27cd1fce931ba8451a6fd060678268ca4a24b15e5",
+                        "807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130",
+                        "m/86'/1'/1751476594'/0/1",
+                        "20807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130ad02a032b2690480243567b1",
                     ],
                 ),
                 (
@@ -2621,6 +2645,8 @@ mod tests {
                     .unwrap(),
                     [
                         "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
+                        "5dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20",
+                        "m/86'/1'/1751476594'/0/0",
                         "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690400581669b1",
                     ],
                 ),
@@ -2630,8 +2656,10 @@ mod tests {
                     )
                     .unwrap(),
                     [
-                        "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
-                        "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b2690400581669b1",
+                        "693880a19260132e9360318040fa32c3f95ae6180394d8b09e09fa67c215ee8c",
+                        "807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130",
+                        "m/86'/1'/1751476594'/0/1",
+                        "20807065fea1488df239f9bc5b295f4a4f03eb8b3ddbe5e96335efb54476f71130ad02a032b2690400581669b1",
                     ],
                 ),
                 (
@@ -2641,6 +2669,8 @@ mod tests {
                     .unwrap(),
                     [
                         "017779241278e5d108dd9ad60ba75fbfbe68fc1accc6a54be15a8ebff9de0f0c",
+                        "5dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20",
+                        "m/86'/1'/1751476594'/0/0",
                         "205dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20ad02a032b26904808bf76ab1",
                     ],
                 ),
@@ -2657,7 +2687,7 @@ mod tests {
                 == TapNodeHash::from_str(
                     expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[0]
+                        .unwrap()[0],
                 )
                 .unwrap())));
         // There is one key path per input and it is the heir key
@@ -2665,16 +2695,23 @@ mod tests {
             .tap_key_origins
             .get(
                 &XOnlyPublicKey::from_str(
-                    "5dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20",
+                    expected_values
+                        .get(&input.tap_internal_key.unwrap())
+                        .unwrap()[1],
                 )
-                .unwrap()
+                .unwrap(),
             )
-            .is_some_and(
-                |(tap_leaf_hash, (key_fingerprint, derivation_path))| !tap_leaf_hash.is_empty()
+            .is_some_and(|(tap_leaf_hash, (key_fingerprint, derivation_path))| {
+                !tap_leaf_hash.is_empty()
                     && *key_fingerprint == Fingerprint::from_str("f0d79bf6").unwrap()
                     && *derivation_path
-                        == DerivationPath::from_str("m/86'/1'/1751476594'/0/0").unwrap()
-            )
+                        == DerivationPath::from_str(
+                            expected_values
+                                .get(&input.tap_internal_key.unwrap())
+                                .unwrap()[2],
+                        )
+                        .unwrap()
+            })
             && input.tap_key_origins.len() == 1));
         // There is one script and its the one expected for the heir
         assert!(psbt.inputs.iter().all(|input| input.tap_scripts.len() == 1
@@ -2682,7 +2719,7 @@ mod tests {
                 v.0.to_hex_string()
                     == expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[1]
+                        .unwrap()[3]
             })));
         // 1 output
         assert_eq!(psbt.outputs.len(), 1);
@@ -2739,18 +2776,8 @@ mod tests {
 
         // This PSBT has 5 input
         assert_eq!(psbt.inputs.len(), 5);
-        let expected_values: HashMap<XOnlyPublicKey, [&str; 2], RandomState> =
+        let expected_values: HashMap<XOnlyPublicKey, [&str; 4], RandomState> =
             HashMap::from_iter(vec![
-                (
-                    XOnlyPublicKey::from_str(
-                        "a9a963f530557632c19635f7719bef70d31c09a1294b3d13e20d38c65913e19c",
-                    )
-                    .unwrap(),
-                    [
-                        "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
-                        "209d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bfad024065b2690400496367b1",
-                    ],
-                ),
                 (
                     XOnlyPublicKey::from_str(
                         "ea7877acac8ca3128e09e77236c840e1a3fc23297f8e45ebee53973f311cf177",
@@ -2758,6 +2785,20 @@ mod tests {
                     .unwrap(),
                     [
                         "2ab2e3fcb5ae9acbf80ea8c4cbe24f0f5ee132411e596b9ed1ffa5d8640c7424",
+                        "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                        "m/86'/1'/1751476594'/0/0",
+                        "209d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bfad024065b2690400496367b1",
+                    ],
+                ),
+                (
+                    XOnlyPublicKey::from_str(
+                        "a9a963f530557632c19635f7719bef70d31c09a1294b3d13e20d38c65913e19c",
+                    )
+                    .unwrap(),
+                    [
+                        "05a793ed9e1755bd27f404b27cd1fce931ba8451a6fd060678268ca4a24b15e5",
+                        "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                        "m/86'/1'/1751476594'/0/0",
                         "209d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bfad024065b2690400496367b1",
                     ],
                 ),
@@ -2768,6 +2809,8 @@ mod tests {
                     .unwrap(),
                     [
                         "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
+                        "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                        "m/86'/1'/1751476594'/0/0",
                         "209d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bfad024065b26904807c4469b1",
                     ],
                 ),
@@ -2777,7 +2820,9 @@ mod tests {
                     )
                     .unwrap(),
                     [
-                        "2a5046a9fdcb12b3cfab38da4266c6fad729d96153f80de2fa5af27726b5269e",
+                        "693880a19260132e9360318040fa32c3f95ae6180394d8b09e09fa67c215ee8c",
+                        "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                        "m/86'/1'/1751476594'/0/0",
                         "209d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bfad024065b26904807c4469b1",
                     ],
                 ),
@@ -2788,6 +2833,8 @@ mod tests {
                     .unwrap(),
                     [
                         "017779241278e5d108dd9ad60ba75fbfbe68fc1accc6a54be15a8ebff9de0f0c",
+                        "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                        "m/86'/1'/1751476594'/0/0",
                         "209d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bfad024065b2690400b0256bb1",
                     ],
                 ),
@@ -2804,7 +2851,7 @@ mod tests {
                 == TapNodeHash::from_str(
                     expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[0]
+                        .unwrap()[0],
                 )
                 .unwrap())));
         // There is one key path per input and it is the heir key
@@ -2812,16 +2859,23 @@ mod tests {
             .tap_key_origins
             .get(
                 &XOnlyPublicKey::from_str(
-                    "9d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf",
+                    expected_values
+                        .get(&input.tap_internal_key.unwrap())
+                        .unwrap()[1],
                 )
-                .unwrap()
+                .unwrap(),
             )
-            .is_some_and(
-                |(tap_leaf_hash, (key_fingerprint, derivation_path))| !tap_leaf_hash.is_empty()
+            .is_some_and(|(tap_leaf_hash, (key_fingerprint, derivation_path))| {
+                !tap_leaf_hash.is_empty()
                     && *key_fingerprint == Fingerprint::from_str("c907dcb9").unwrap()
                     && *derivation_path
-                        == DerivationPath::from_str("m/86'/1'/1751476594'/0/0").unwrap()
-            )
+                        == DerivationPath::from_str(
+                            expected_values
+                                .get(&input.tap_internal_key.unwrap())
+                                .unwrap()[2],
+                        )
+                        .unwrap()
+            })
             && input.tap_key_origins.len() == 1));
         // There is one script and its the one expected for the heir
         assert!(psbt.inputs.iter().all(|input| input.tap_scripts.len() == 1
@@ -2829,7 +2883,7 @@ mod tests {
                 v.0.to_hex_string()
                     == expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[1]
+                        .unwrap()[3]
             })));
         // 1 output
         assert_eq!(psbt.outputs.len(), 1);
@@ -2886,7 +2940,7 @@ mod tests {
 
         // This PSBT has 1 input
         assert_eq!(psbt.inputs.len(), 1);
-        let expected_values: HashMap<XOnlyPublicKey, [&str; 2], RandomState> =
+        let expected_values: HashMap<XOnlyPublicKey, [&str; 4], RandomState> =
             HashMap::from_iter(vec![
                 (
                     XOnlyPublicKey::from_str(
@@ -2895,6 +2949,8 @@ mod tests {
                     .unwrap(),
                     [
                         "017779241278e5d108dd9ad60ba75fbfbe68fc1accc6a54be15a8ebff9de0f0c",
+                        "f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e",
+                        "m/86'/1'/1751476594'/0/0",
                         "20f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9ead03e09700b2690480d4536bb1",
                     ],
                 ),
@@ -2911,7 +2967,7 @@ mod tests {
                 == TapNodeHash::from_str(
                     expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[0]
+                        .unwrap()[0],
                 )
                 .unwrap())));
         // There is one key path per input and it is the heir key
@@ -2919,16 +2975,23 @@ mod tests {
             .tap_key_origins
             .get(
                 &XOnlyPublicKey::from_str(
-                    "f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e",
+                    expected_values
+                        .get(&input.tap_internal_key.unwrap())
+                        .unwrap()[1],
                 )
-                .unwrap()
+                .unwrap(),
             )
-            .is_some_and(
-                |(tap_leaf_hash, (key_fingerprint, derivation_path))| !tap_leaf_hash.is_empty()
+            .is_some_and(|(tap_leaf_hash, (key_fingerprint, derivation_path))| {
+                !tap_leaf_hash.is_empty()
                     && *key_fingerprint == Fingerprint::from_str("767e581a").unwrap()
                     && *derivation_path
-                        == DerivationPath::from_str("m/86'/1'/1751476594'/0/0").unwrap()
-            )
+                        == DerivationPath::from_str(
+                            expected_values
+                                .get(&input.tap_internal_key.unwrap())
+                                .unwrap()[2],
+                        )
+                        .unwrap()
+            })
             && input.tap_key_origins.len() == 1));
         // There is one script and its the one expected for the heir
         assert!(psbt.inputs.iter().all(|input| input.tap_scripts.len() == 1
@@ -2936,7 +2999,7 @@ mod tests {
                 v.0.to_hex_string()
                     == expected_values
                         .get(&input.tap_internal_key.unwrap())
-                        .unwrap()[1]
+                        .unwrap()[3]
             })));
         // 1 output
         assert_eq!(psbt.outputs.len(), 1);

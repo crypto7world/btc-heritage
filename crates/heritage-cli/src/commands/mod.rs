@@ -4,6 +4,7 @@ mod subcmd_wallet;
 mod subcmd_wallet_axpubs;
 mod subcmd_wallet_descriptors;
 mod subcmd_wallet_heritage_config;
+mod subcmd_wallet_ledger_policy;
 
 use std::any::Any;
 

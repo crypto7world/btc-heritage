@@ -8,7 +8,10 @@ mod wallet_online;
 
 pub use btc_heritage::{AccountXPub, DescriptorsBackup, HeritageConfig};
 pub use wallet::Wallet;
-pub use wallet_offline::{AnyWalletOffline, LedgerKey, WalletOffline};
+pub use wallet_offline::{
+    ledger_hww::{policy::LedgerPolicy, LedgerKey},
+    AnyWalletOffline, WalletOffline,
+};
 pub use wallet_online::{AnyWalletOnline, ServiceBinding, WalletOnline};
 
 pub use btc_heritage::bitcoin;

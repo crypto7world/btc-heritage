@@ -11,9 +11,17 @@ pub enum Error {
     )]
     MissingOnlineComponent,
     #[error(
+        "This operation cannot be performed by this wallet because the Online component is not the expected type ({0})"
+    )]
+    IncorrectOnlineComponent(&'static str),
+    #[error(
         "This operation cannot be performed by this wallet because it has no Offline component"
     )]
     MissingOfflineComponent,
+    #[error(
+        "This operation cannot be performed by this wallet because the Offline component is not the expected type ({0})"
+    )]
+    IncorrectOfflineComponent(&'static str),
     #[error("A wallet cannot have neither online and offline components")]
     NoComponent,
     #[error("The Online and Offline parts of the wallet don't have the same fingerprint")]
@@ -28,6 +36,8 @@ pub enum Error {
     WalletAlreadyExist(String),
     #[error("The Descriptor {descriptor} is invalid: {error}")]
     InvalidDescriptor { descriptor: String, error: String },
+    #[error("The descriptor cannot be transformed in a Ledger wallet policy (reason: {0})")]
+    LedgerIncompatibleDescriptor(&'static str),
     #[error("No wallet found in the service")]
     NoServiceWalletFound,
     #[error("Multiple wallet found in the service")]

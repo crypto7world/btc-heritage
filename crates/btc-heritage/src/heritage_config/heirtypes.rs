@@ -1,4 +1,3 @@
-use bdk::miniscript::ToPublicKey;
 use serde::{Deserialize, Serialize};
 use std::{fmt::Display, str::FromStr};
 
@@ -8,13 +7,12 @@ use crate::{
         Network,
     },
     errors::Error,
-    miniscript::DescriptorPublicKey,
+    miniscript::{DescriptorPublicKey, ToPublicKey},
     utils, AccountXPub,
 };
 
 #[derive(Debug, Hash, Clone, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(into = "String")]
-// TODO: Struct should perform checks on the value it receives???
 pub struct SingleHeirPubkey(DescriptorPublicKey);
 
 impl<'de> Deserialize<'de> for SingleHeirPubkey {
@@ -115,12 +113,28 @@ impl Display for SingleHeirPubkey {
     }
 }
 
-#[derive(Debug, Hash, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Clone)]
+#[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Clone)]
 #[serde(tag = "type", content = "value", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HeirConfig {
     SingleHeirPubkey(SingleHeirPubkey),
     HeirXPubkey(AccountXPub),
     // SingleHeirPubKeyHash(KeyHash),
+}
+
+impl core::hash::Hash for HeirConfig {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            // We want to conserve the historic Hash implementation
+            // from when there was only one HeirConfig variant
+            // for retro-compatibility so we simply hash the encapsulated value
+            HeirConfig::SingleHeirPubkey(shp) => shp.hash(state),
+            // All additional variants will be hashed with a prefix
+            HeirConfig::HeirXPubkey(hxp) => {
+                "hxp".hash(state);
+                hxp.hash(state)
+            }
+        };
+    }
 }
 
 impl HeirConfig {
@@ -149,7 +163,7 @@ impl HeirConfig {
                     .full_derivation_path()
                     .expect("account Xpub has a derivation path");
                 let mut origins = origins.filter_map(|(f, d)| {
-                    if *f == fingerprint && d[..2] == derivation_path[..] {
+                    if *f == fingerprint && d[..3] == derivation_path[..] {
                         let chain = d[3];
                         let address_index = d[4];
                         Some(
@@ -166,7 +180,7 @@ impl HeirConfig {
                     .next()
                     .expect("Caller should gave us an origin that covers the Xpub");
                 if origins.next().is_some() {
-                    panic!("Having multiple key candidate is unexpected");
+                    panic!("Having multiple origins candidates is unexpected");
                 }
                 format!("v:pk({key})")
             } // HeritageMode::SingleHeirPubKeyHash(pubkeyhash) => {

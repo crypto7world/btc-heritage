@@ -1,10 +1,10 @@
-use crate::errors::Error;
 use std::{fmt::Write, str::FromStr, sync::OnceLock};
 
-use bdk::{
+use crate::{
     bitcoin::{
         psbt::PartiallySignedTransaction, secp256k1::Secp256k1, Address, Network, Transaction,
     },
+    errors::Error,
     miniscript::psbt::PsbtExt,
 };
 use serde_json::json;

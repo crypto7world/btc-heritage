@@ -1,19 +1,19 @@
 use std::{fmt::Display, str::FromStr};
 
-use bdk::{
+use serde::{Deserialize, Serialize};
+
+use crate::{
     bitcoin::{
         bip32::{ChildNumber, DerivationPath},
         Network,
     },
-    keys::DescriptorKey,
+    errors::Error,
     miniscript::{
         descriptor::{DescriptorXKey, Wildcard},
-        DescriptorPublicKey, Tap,
+        DescriptorPublicKey,
     },
+    utils,
 };
-use serde::{Deserialize, Serialize};
-
-use crate::{errors::Error, utils};
 
 pub type AccountXPubId = u32;
 #[derive(Debug, Clone, Hash, Serialize, Eq, PartialEq, Ord, PartialOrd)]

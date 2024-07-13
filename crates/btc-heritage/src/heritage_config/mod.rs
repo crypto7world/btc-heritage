@@ -1,16 +1,16 @@
-use crate::errors::{Error, Result};
 use std::{fmt::Debug, str::FromStr};
 
-use bdk::{
+use serde::{Deserialize, Serialize};
+
+use self::heirtypes::HeirConfig;
+use crate::{
     bitcoin::{
         bip32::{DerivationPath, Fingerprint},
         ScriptBuf,
     },
+    errors::{Error, Result},
     miniscript::{DefiniteDescriptorKey, Miniscript, Tap},
 };
-use serde::{Deserialize, Serialize};
-
-use self::heirtypes::HeirConfig;
 
 pub mod heirtypes;
 pub mod v1;
@@ -97,20 +97,11 @@ impl HeritageConfig {
         }
     }
 
-    // /// Returns the miniscript expression representing the TapTree generated
-    // /// by this [HeritageConfig], if any. The only case where this is [None] is
-    // /// if there is no heir in this [HeritageConfig].
-    // pub fn descriptor_taptree_miniscript_expression(&self) -> Option<String> {
-    //     match &self.0 {
-    //         InnerHeritageConfig::V1(hc) => hc.descriptor_taptree_miniscript_expression(),
-    //     }
-    // }
-
     /// Returns the miniscript expression representing the TapTree generated
     /// by this [HeritageConfig], if any.
     /// If present, the index will be used to derive a child for every xpub present in this [HeritageConfig],
-    /// i.e. [HeirConfig::HeirXPubkey]. For other HeirConfig, it has no effect.
-    /// The only case where this is [None] is if there is no heir in this [HeritageConfig].
+    /// i.e. for every [HeirConfig::HeirXPubkey]. For other HeirConfig, it has no effect.
+    /// The only case where this returns [None] is if there is no heir in this [HeritageConfig].
     pub fn descriptor_taptree_miniscript_expression_for_child(
         &self,
         index: Option<u32>,

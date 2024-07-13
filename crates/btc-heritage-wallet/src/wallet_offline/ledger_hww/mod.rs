@@ -1,21 +1,27 @@
-use std::{fmt::Debug, ops::Deref, str::FromStr};
+use std::{collections::HashMap, fmt::Debug, ops::Deref, str::FromStr};
 
-use crate::errors::{Error, Result};
+use crate::{
+    errors::{Error, Result},
+    LedgerPolicy,
+};
 
 use btc_heritage::{
     bitcoin::{
         bip32::{ChildNumber, DerivationPath, Fingerprint},
         Network,
     },
-    miniscript::{descriptor::Tr, Descriptor, DescriptorPublicKey, TranslatePk},
-    AccountXPub, DescriptorsBackup,
+    miniscript::DescriptorPublicKey,
+    AccountXPub,
 };
 use ledger_bitcoin_client::{
     apdu::{APDUCommand, StatusWord},
-    BitcoinClient, Transport,
+    BitcoinClient, Transport, WalletPolicy,
 };
 use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
+use policy::{LedgerPolicyHMAC, LedgerPolicyId};
 use serde::{Deserialize, Serialize};
+
+pub(crate) mod policy;
 
 /// Transport with the Ledger device.
 pub(crate) struct TransportHID(TransportNativeHID);
@@ -76,6 +82,7 @@ impl Deref for LedgerClient {
 pub struct LedgerKey {
     fingerprint: Fingerprint,
     network: Network,
+    registered_policies: HashMap<LedgerPolicy, (LedgerPolicyId, LedgerPolicyHMAC)>,
     #[serde(skip, default)]
     ledger_client: Option<LedgerClient>,
 }
@@ -89,6 +96,7 @@ impl LedgerKey {
             // which is different than the one used by ledger_bitcoin_client
             fingerprint: Fingerprint::from(fingerprint.as_bytes()),
             network,
+            registered_policies: HashMap::new(),
             ledger_client,
         })
     }
@@ -112,11 +120,34 @@ impl LedgerKey {
             .as_ref()
             .expect("ledger client should have been initialized")
     }
-    pub fn register_descriptors_backup(
+    pub fn register_policies(&mut self, policies: &Vec<LedgerPolicy>) -> Result<usize> {
+        let client = self.ledger_client();
+        let register_results = policies
+            .iter()
+            .map(|policy| {
+                let wallet_policy: WalletPolicy = policy.into();
+                let (id, hmac) = client.register_wallet(&wallet_policy)?;
+                Ok::<_, Error>((
+                    policy.clone(),
+                    (
+                        LedgerPolicyId::from(id.as_ref()),
+                        LedgerPolicyHMAC::from(hmac.as_ref()),
+                    ),
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let before = self.registered_policies.len();
+        self.registered_policies
+            .extend(register_results.into_iter());
+        Ok(self.registered_policies.len() - before)
+    }
+    pub fn list_registered_policies(
         &self,
-        descriptors_backups: &Vec<DescriptorsBackup>,
-    ) -> Result<()> {
-        todo!()
+    ) -> Vec<(LedgerPolicy, LedgerPolicyId, LedgerPolicyHMAC)> {
+        self.registered_policies
+            .iter()
+            .map(|(p, (id, hmac))| (p.clone(), id.clone(), hmac.clone()))
+            .collect()
     }
 }
 
