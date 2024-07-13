@@ -1,9 +1,12 @@
 use std::collections::HashSet;
 
-use bdk::bitcoin::absolute::LOCK_TIME_THRESHOLD;
 use serde::{Deserialize, Serialize};
 
 use super::{heirtypes::HeirConfig, SpendConditions};
+use crate::bitcoin::{
+    absolute::LOCK_TIME_THRESHOLD,
+    bip32::{DerivationPath, Fingerprint},
+};
 
 const SEC_IN_A_DAY: u64 = 24 * 60 * 60;
 
@@ -233,7 +236,10 @@ impl HeritageConfig {
     pub(crate) fn builder() -> HeritageConfigBuilder {
         HeritageConfigBuilder::default()
     }
-    pub fn descriptor_taptree_miniscript_expression(&self) -> Option<String> {
+    pub fn descriptor_taptree_miniscript_expression_for_child(
+        &self,
+        index: Option<u32>,
+    ) -> Option<String> {
         if self.heritages.0.len() == 0 {
             return None;
         }
@@ -241,7 +247,7 @@ impl HeritageConfig {
         // Create a vector of sorted Miniscript conditions
         // sorted by lockTime ascending (because of the Heritage sorting)
         let sorted_conditions: Vec<String> = (0..self.heritages.0.len())
-            .map(|idx| self.get_heritage_script_string(idx))
+            .map(|idx| self.get_heritage_script_string(idx, index))
             .collect();
 
         // The tree construction strategy is such that the first Heir always have the minimum tree depth
@@ -277,9 +283,8 @@ impl HeritageConfig {
             relative_block_lock: Some((self.minimum_lock_time * (heritage_index + 1)).as_blocks()),
         }
     }
-    fn get_heritage_script_string(&self, heritage_index: usize) -> String {
-        // Private method, we control the index and know it's valid
-        let heritage = &self.heritages.0[heritage_index];
+
+    fn get_lock_times(&self, heritage_index: usize) -> (u16, u64) {
         let SpendConditions {
             spendable_timestamp: Some(absolute_lock_time),
             relative_block_lock: Some(rel_lock_time),
@@ -294,9 +299,31 @@ impl HeritageConfig {
             rel_lock_time >= 1440,
             "rel_lock_time cannot be less than 1440 as a safety mesure"
         );
+        (rel_lock_time, absolute_lock_time)
+    }
 
-        let heritage_fragment = heritage.heir_config.descriptor_segment();
+    fn get_heritage_script_string(
+        &self,
+        heritage_index: usize,
+        xpub_child_index: Option<u32>,
+    ) -> String {
+        // Private method, we control the index and know it's valid
+        let heritage = &self.heritages.0[heritage_index];
+        let (rel_lock_time, absolute_lock_time) = self.get_lock_times(heritage_index);
+        let heritage_fragment = heritage.heir_config.descriptor_segment(xpub_child_index);
         format!("and_v({heritage_fragment},and_v(v:older({rel_lock_time}),after({absolute_lock_time})))")
+    }
+
+    fn get_concrete_heritage_script_string<'a>(
+        &self,
+        heritage_index: usize,
+        origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
+    ) -> String {
+        // Private method, we control the index and know it's valid
+        let heritage = &self.heritages.0[heritage_index];
+        let (rel_lock_time, absolute_lock_time) = self.get_lock_times(heritage_index);
+        let concrete_heritage_fragment = heritage.heir_config.concrete_script_segment(origins);
+        format!("and_v({concrete_heritage_fragment},and_v(v:older({rel_lock_time}),after({absolute_lock_time})))")
     }
     pub(crate) fn get_heritage_explorer(
         &self,
@@ -311,7 +338,6 @@ impl HeritageConfig {
         index.map(|index| HeritageExplorer {
             heritage_config: self,
             heritage_index: index,
-            miniscript_expression: self.get_heritage_script_string(index),
         })
     }
 }
@@ -360,7 +386,6 @@ impl HeritageConfigBuilder {
 pub(crate) struct HeritageExplorer<'a> {
     heritage_config: &'a HeritageConfig,
     heritage_index: usize,
-    miniscript_expression: String,
 }
 
 impl<'a> super::HeritageExplorerTrait for HeritageExplorer<'a> {
@@ -380,8 +405,18 @@ impl<'a> super::HeritageExplorerTrait for HeritageExplorer<'a> {
         }
     }
 
-    fn get_miniscript_expression(&self) -> &str {
-        &self.miniscript_expression
+    fn has_fingerprint(&self, fingerprint: Fingerprint) -> bool {
+        self.heritage_config.heritages.0[self.heritage_index]
+            .get_heir_config()
+            .has_fingerprint(fingerprint)
+    }
+
+    fn get_miniscript_expression<'b>(
+        &self,
+        origins: impl Iterator<Item = (&'b Fingerprint, &'b DerivationPath)>,
+    ) -> String {
+        self.heritage_config
+            .get_concrete_heritage_script_string(self.heritage_index, origins)
     }
 }
 
@@ -542,8 +577,10 @@ mod tests {
         .unwrap();
         assert_eq!(hc1, hc2);
         assert_eq!(
-            hc1.descriptor_taptree_miniscript_expression().unwrap(),
-            hc2.descriptor_taptree_miniscript_expression().unwrap()
+            hc1.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap(),
+            hc2.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap()
         );
     }
 
@@ -582,8 +619,10 @@ mod tests {
 
         assert_ne!(hc1, hc2);
         assert_ne!(
-            hc1.descriptor_taptree_miniscript_expression().unwrap(),
-            hc2.descriptor_taptree_miniscript_expression().unwrap()
+            hc1.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap(),
+            hc2.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap()
         );
     }
 
@@ -619,8 +658,10 @@ mod tests {
         .unwrap();
         assert_ne!(hc1, hc2);
         assert_ne!(
-            hc1.descriptor_taptree_miniscript_expression().unwrap(),
-            hc2.descriptor_taptree_miniscript_expression().unwrap()
+            hc1.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap(),
+            hc2.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap()
         );
     }
 
@@ -656,8 +697,10 @@ mod tests {
         .unwrap();
         assert_ne!(hc1, hc2);
         assert_ne!(
-            hc1.descriptor_taptree_miniscript_expression().unwrap(),
-            hc2.descriptor_taptree_miniscript_expression().unwrap()
+            hc1.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap(),
+            hc2.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap()
         );
     }
 
@@ -710,12 +753,13 @@ mod tests {
         );
         assert_eq!(
             expected_descriptor_fragment,
-            hc.descriptor_taptree_miniscript_expression().unwrap()
+            hc.descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap()
         );
 
         assert_eq!(
             get_test_heritage_config(TestHeritageConfig::BackupWifeBro)
-                .descriptor_taptree_miniscript_expression()
+                .descriptor_taptree_miniscript_expression_for_child(None)
                 .unwrap(),
             format!(
                 "{{and_v(v:pk({backup_pubkey}),and_v(v:older(12960),after(1794608000))),\

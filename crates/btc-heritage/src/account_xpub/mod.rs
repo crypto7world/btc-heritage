@@ -1,25 +1,24 @@
 use std::{fmt::Display, str::FromStr};
 
-use bdk::{
-    bitcoin::{bip32::ChildNumber, Network},
-    miniscript::DescriptorPublicKey,
-};
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::Error, utils};
+use crate::{
+    bitcoin::{
+        bip32::{ChildNumber, DerivationPath},
+        Network,
+    },
+    errors::Error,
+    miniscript::{
+        descriptor::{DescriptorXKey, Wildcard},
+        DescriptorPublicKey,
+    },
+    utils,
+};
 
 pub type AccountXPubId = u32;
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Serialize, Eq, PartialEq, Ord, PartialOrd)]
+#[serde(into = "String")]
 pub struct AccountXPub(DescriptorPublicKey);
-
-impl Serialize for AccountXPub {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.0.to_string())
-    }
-}
 
 impl<'de> Deserialize<'de> for AccountXPub {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -63,11 +62,42 @@ impl AccountXPub {
     pub fn descriptor_public_key(&self) -> &DescriptorPublicKey {
         &self.0
     }
+
+    pub fn child_descriptor_public_key(&self, index: u32) -> DescriptorPublicKey {
+        log::debug!("AccountXPub::child_descriptor_public_key - index={index}");
+        let (fingerprint, derivation_path, account_xpub_key) = match &self.0 {
+            DescriptorPublicKey::XPub(DescriptorXKey {
+                origin: Some((fingerprint, path)),
+                xkey,
+                ..
+            }) => (fingerprint, path, xkey),
+            _ => panic!(
+                "Invalid key variant, should never happen as AccountXPub is checked at creation"
+            ),
+        };
+        log::debug!("AccountXPub::child_descriptor_public_key - fingerprint={fingerprint}");
+        log::debug!("AccountXPub::child_descriptor_public_key - derivation_path={derivation_path}");
+        log::debug!(
+            "AccountXPub::child_descriptor_public_key - account_xpub_key={account_xpub_key}"
+        );
+        let child_deriv_path = DerivationPath::from(vec![ChildNumber::from(index)]);
+        DescriptorPublicKey::XPub(DescriptorXKey {
+            origin: Some((*fingerprint, derivation_path.clone())),
+            xkey: *account_xpub_key,
+            derivation_path: child_deriv_path,
+            wildcard: Wildcard::Unhardened,
+        })
+    }
 }
 
 impl Display for AccountXPub {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+impl From<AccountXPub> for String {
+    fn from(value: AccountXPub) -> Self {
+        value.to_string()
     }
 }
 
@@ -80,7 +110,7 @@ impl TryFrom<DescriptorPublicKey> for AccountXPub {
             xpub.origin
                 .as_ref()
                 .ok_or(Error::InvalidDescriptorPublicKey(
-                    "XPub must have origin information",
+                    "DescriptorPublicKey must have origin information",
                 ))?;
         } else {
             return Err(Error::InvalidDescriptorPublicKey(

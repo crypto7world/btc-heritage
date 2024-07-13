@@ -1,21 +1,14 @@
-use crate::{
-    account_xpub::AccountXPub,
-    bitcoin::bip32::ChildNumber,
-    errors::{Error, Result},
-    heritage_config::HeritageConfig,
-    miniscript::{descriptor::DescriptorXKey, DescriptorPublicKey, Tap},
-    utils,
-};
-
-use bdk::{
-    database::BatchDatabase,
-    keys::{DerivableKey, DescriptorKey},
-    Wallet,
-};
+use bdk::{database::BatchDatabase, Wallet};
 
 pub use crate::bitcoin::psbt::PartiallySignedTransaction;
-
 use serde::{Deserialize, Serialize};
+
+use crate::{
+    account_xpub::AccountXPub,
+    errors::{Error, Result},
+    heritage_config::HeritageConfig,
+    utils,
+};
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
@@ -47,44 +40,33 @@ impl SubwalletConfig {
         account_xpub: AccountXPub,
         heritage_config: HeritageConfig,
     ) -> Self {
-        log::debug!("SubwalletConfig::new - wallet_id={subwallet_id}");
+        log::debug!(
+            "SubwalletConfig::new - subwallet_id={subwallet_id} \
+        account_xpub={account_xpub} heritage_config={heritage_config:?}"
+        );
+        Self::new_with_custom_indexes(subwallet_id, account_xpub, heritage_config, 0, 1)
+    }
 
-        let descriptor = account_xpub.descriptor_public_key();
-        log::debug!("SubwalletConfig::new - account descriptor={descriptor}");
-        let (fingerprint, derivation_path, account_xpub_key) = match descriptor {
-            DescriptorPublicKey::XPub(DescriptorXKey {
-                origin: Some((fingerprint, path)),
-                xkey,
-                ..
-            }) => (fingerprint, path, xkey),
-            _ => panic!("Invalid key variant"),
-        };
-        log::debug!("SubwalletConfig::new - fingerprint={fingerprint}");
-        log::debug!("SubwalletConfig::new - derivation_path={derivation_path}");
-        log::debug!("SubwalletConfig::new - account_xpub_key={account_xpub_key}");
+    pub fn new_with_custom_indexes(
+        subwallet_id: SubwalletId,
+        account_xpub: AccountXPub,
+        heritage_config: HeritageConfig,
+        external_index: u32,
+        change_index: u32,
+    ) -> Self {
+        log::debug!(
+            "SubwalletConfig::new_with_custom_indexes - subwallet_id={subwallet_id} \
+        account_xpub={account_xpub} heritage_config={heritage_config:?} \
+        external_index={external_index} change_index={change_index}"
+        );
 
-        let descriptor_taptree_miniscript_expression =
-            heritage_config.descriptor_taptree_miniscript_expression();
-
-        let mut descriptor_iterator = derivation_path.normal_children().take(2).map(|child_path| {
-            let child_path = child_path
-                .into_iter()
-                .cloned()
-                .collect::<Vec<ChildNumber>>();
-            let orig_deriv_part = child_path[..derivation_path.len()].into();
-            let child_deriv_part = child_path[derivation_path.len()..].into();
-
-            let origin = Some((*fingerprint, orig_deriv_part));
-            let descriptor: DescriptorKey<Tap> = account_xpub_key
-                .into_descriptor_key(origin, child_deriv_part)
-                .unwrap();
-            if let DescriptorKey::Public(desc_pubkey, ..) = descriptor {
-                match &descriptor_taptree_miniscript_expression {
-                    Some(script_paths) => format!("tr({desc_pubkey},{script_paths})"),
-                    None => format!("tr({desc_pubkey})"),
-                }
-            } else {
-                panic!("Invalid key variant")
+        let mut descriptor_iterator = [external_index, change_index].into_iter().map(|index| {
+            let descriptor = account_xpub.child_descriptor_public_key(index);
+            let descriptor_taptree_miniscript_expression =
+                heritage_config.descriptor_taptree_miniscript_expression_for_child(Some(index));
+            match &descriptor_taptree_miniscript_expression {
+                Some(script_paths) => format!("tr({descriptor},{script_paths})"),
+                None => format!("tr({descriptor})"),
             }
         });
 
@@ -92,8 +74,10 @@ impl SubwalletConfig {
             descriptor_iterator.next().unwrap(),
             descriptor_iterator.next().unwrap(),
         );
-        log::debug!("SubwalletConfig::new - ext_descriptor={ext_descriptor}");
-        log::debug!("SubwalletConfig::new - change_descriptor={change_descriptor}");
+        log::debug!("SubwalletConfig::new_with_custom_indexes - ext_descriptor={ext_descriptor}");
+        log::debug!(
+            "SubwalletConfig::new_with_custom_indexes - change_descriptor={change_descriptor}"
+        );
 
         Self {
             subwallet_id,

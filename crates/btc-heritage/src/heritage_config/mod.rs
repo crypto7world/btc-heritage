@@ -1,13 +1,16 @@
-use crate::errors::{Error, Result};
-use std::{collections::HashSet, fmt::Debug, str::FromStr};
+use std::{fmt::Debug, str::FromStr};
 
-use bdk::{
-    bitcoin::{secp256k1::XOnlyPublicKey, ScriptBuf},
-    miniscript::{DefiniteDescriptorKey, Miniscript, Tap, ToPublicKey},
-};
 use serde::{Deserialize, Serialize};
 
 use self::heirtypes::HeirConfig;
+use crate::{
+    bitcoin::{
+        bip32::{DerivationPath, Fingerprint},
+        ScriptBuf,
+    },
+    errors::{Error, Result},
+    miniscript::{DefiniteDescriptorKey, Miniscript, Tap},
+};
 
 pub mod heirtypes;
 pub mod v1;
@@ -95,11 +98,18 @@ impl HeritageConfig {
     }
 
     /// Returns the miniscript expression representing the TapTree generated
-    /// by this [HeritageConfig], if any. The only case where this is [None] is
-    /// if there is no heir in this [HeritageConfig].
-    pub fn descriptor_taptree_miniscript_expression(&self) -> Option<String> {
+    /// by this [HeritageConfig], if any.
+    /// If present, the index will be used to derive a child for every xpub present in this [HeritageConfig],
+    /// i.e. for every [HeirConfig::HeirXPubkey]. For other HeirConfig, it has no effect.
+    /// The only case where this returns [None] is if there is no heir in this [HeritageConfig].
+    pub fn descriptor_taptree_miniscript_expression_for_child(
+        &self,
+        index: Option<u32>,
+    ) -> Option<String> {
         match &self.0 {
-            InnerHeritageConfig::V1(hc) => hc.descriptor_taptree_miniscript_expression(),
+            InnerHeritageConfig::V1(hc) => {
+                hc.descriptor_taptree_miniscript_expression_for_child(index)
+            }
         }
     }
 
@@ -117,7 +127,7 @@ impl HeritageConfig {
         match &self.0 {
             InnerHeritageConfig::V1(hc) => hc
                 .get_heritage_explorer(heir_config)
-                .map(|he| HeritageExplorer(InnerHeritageExplorer::V1(he))),
+                .map(|he: v1::HeritageExplorer| HeritageExplorer(InnerHeritageExplorer::V1(he))),
         }
     }
 }
@@ -135,27 +145,49 @@ pub trait HeritageExplorerTrait {
     /// they can spend a given input
     fn get_spend_conditions(&self) -> SpendConditions;
 
-    /// Get the actual Bitcoin lock script for the Heritage in this [HeritageConfig].
-    fn get_script(&self) -> ScriptBuf {
-        self.get_miniscript().encode()
-    }
+    /// Verify if the given [Fingerprint] is part of the Heritage being explored
+    fn has_fingerprint(&self, fingerprint: Fingerprint) -> bool;
 
-    /// Get a [HashSet] of the [XOnlyPublicKey] for the Heritage in this [HeritageConfig].
-    fn get_xpubkeys_set(&self) -> HashSet<XOnlyPublicKey> {
-        self.get_miniscript()
-            .iter_pk()
-            .map(|dpk| dpk.to_public_key().inner.to_x_only_pubkey())
-            .collect::<HashSet<_>>()
+    /// Get the actual Bitcoin lock script for the Heritage in this [HeritageConfig].
+    /// If `origins` are provided, they will be used to transform eXtended Public Keys into
+    /// Single Public Keys.
+    ///
+    /// # Panics
+    /// Panics if the provided `origins` were not covering every XPub or were not
+    /// compatible
+    fn get_script<'a>(
+        &self,
+        origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
+    ) -> ScriptBuf {
+        self.get_miniscript(origins).encode()
     }
 
     /// Get the [Miniscript] object for the Heritage in this [HeritageConfig].
-    fn get_miniscript(&self) -> Miniscript<DefiniteDescriptorKey, Tap> {
-        Miniscript::<DefiniteDescriptorKey, Tap>::from_str(self.get_miniscript_expression())
+    /// If `origins` are provided, they will be used to transform eXtended Public Keys into
+    /// Single Public Keys.
+    ///
+    /// # Panics
+    /// Panics if the provided `origins` were not covering every XPub or were not
+    /// compatible
+    fn get_miniscript<'a>(
+        &self,
+        origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
+    ) -> Miniscript<DefiniteDescriptorKey, Tap> {
+        Miniscript::<DefiniteDescriptorKey, Tap>::from_str(&self.get_miniscript_expression(origins))
             .expect("we provide the miniscript so it should be valid")
     }
 
     /// Get the miniscript expression for the Heritage in this [HeritageConfig].
-    fn get_miniscript_expression(&self) -> &str;
+    /// If `origins` are provided, they will be used to transform eXtended Public Keys into
+    /// Single Public Keys.
+    ///
+    /// # Panics
+    /// Panics if the provided `origins` were not covering every XPub or were not
+    /// compatible
+    fn get_miniscript_expression<'a>(
+        &self,
+        origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
+    ) -> String;
 }
 
 #[derive(Debug)]
@@ -178,9 +210,18 @@ impl<'a> HeritageExplorerTrait for HeritageExplorer<'a> {
         }
     }
 
-    fn get_miniscript_expression(&self) -> &str {
+    fn has_fingerprint(&self, fingerprint: Fingerprint) -> bool {
         match &self.0 {
-            InnerHeritageExplorer::V1(he) => he.get_miniscript_expression(),
+            InnerHeritageExplorer::V1(he) => he.has_fingerprint(fingerprint),
+        }
+    }
+
+    fn get_miniscript_expression<'b>(
+        &self,
+        origins: impl Iterator<Item = (&'b Fingerprint, &'b DerivationPath)>,
+    ) -> String {
+        match &self.0 {
+            InnerHeritageExplorer::V1(he) => he.get_miniscript_expression(origins),
         }
     }
 }

@@ -1,7 +1,10 @@
-use bdk::bitcoin::{psbt::Psbt, Network};
 use thiserror::Error;
 
-use crate::{account_xpub::AccountXPubId, heritage_wallet::SubwalletConfigId};
+use crate::{
+    account_xpub::AccountXPubId,
+    bitcoin::{psbt::Psbt, Network},
+    heritage_wallet::SubwalletConfigId,
+};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
