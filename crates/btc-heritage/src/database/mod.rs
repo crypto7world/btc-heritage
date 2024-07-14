@@ -770,7 +770,7 @@ pub mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         assert!(res.unwrap().is_none());
 
-        let new_bio = BlockInclusionObjective::from(5u8);
+        let new_bio = BlockInclusionObjective::from(5u16);
         // Insert work
         let res = db.set_block_inclusion_objective(new_bio);
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
@@ -779,7 +779,7 @@ pub mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         assert!(res.unwrap().is_some_and(|bio| bio == new_bio));
 
-        let new_bio = BlockInclusionObjective::from(10u8);
+        let new_bio = BlockInclusionObjective::from(10u16);
         // Update works
         let res = db.set_block_inclusion_objective(new_bio);
         assert!(res.is_ok(), "{:#}", res.unwrap_err());

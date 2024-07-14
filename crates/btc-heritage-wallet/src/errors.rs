@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 
+use btc_heritage::AccountXPubId;
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -38,6 +39,8 @@ pub enum Error {
     InvalidDescriptor { descriptor: String, error: String },
     #[error("The descriptor cannot be transformed in a Ledger wallet policy (reason: {0})")]
     LedgerIncompatibleDescriptor(&'static str),
+    #[error("Missing registered Ledger policy (wanted: {0:?})")]
+    LedgerMissingRegisteredPolicy(Vec<AccountXPubId>),
     #[error("No wallet found in the service")]
     NoServiceWalletFound,
     #[error("Multiple wallet found in the service")]

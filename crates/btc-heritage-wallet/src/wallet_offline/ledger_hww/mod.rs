@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fmt::Debug, ops::Deref, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    ops::Deref,
+    str::FromStr,
+};
 
 use crate::{
     errors::{Error, Result},
@@ -6,8 +11,11 @@ use crate::{
 };
 
 use btc_heritage::{
+    account_xpub::AccountXPubId,
     bitcoin::{
         bip32::{ChildNumber, DerivationPath, Fingerprint},
+        key::XOnlyPublicKey,
+        taproot::{Signature, TapLeafHash},
         Network,
     },
     miniscript::DescriptorPublicKey,
@@ -15,6 +23,7 @@ use btc_heritage::{
 };
 use ledger_bitcoin_client::{
     apdu::{APDUCommand, StatusWord},
+    psbt::PartialSignature,
     BitcoinClient, Transport, WalletPolicy,
 };
 use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
@@ -82,7 +91,8 @@ impl Deref for LedgerClient {
 pub struct LedgerKey {
     fingerprint: Fingerprint,
     network: Network,
-    registered_policies: HashMap<LedgerPolicy, (LedgerPolicyId, LedgerPolicyHMAC)>,
+    #[serde(default)]
+    registered_policies: HashMap<AccountXPubId, (LedgerPolicy, LedgerPolicyId, LedgerPolicyHMAC)>,
     #[serde(skip, default)]
     ledger_client: Option<LedgerClient>,
 }
@@ -125,13 +135,15 @@ impl LedgerKey {
         let register_results = policies
             .iter()
             .map(|policy| {
+                let account_id = policy.get_account_id();
                 let wallet_policy: WalletPolicy = policy.into();
                 let (id, hmac) = client.register_wallet(&wallet_policy)?;
                 Ok::<_, Error>((
-                    policy.clone(),
+                    account_id,
                     (
-                        LedgerPolicyId::from(id.as_ref()),
-                        LedgerPolicyHMAC::from(hmac.as_ref()),
+                        policy.clone(),
+                        LedgerPolicyId::from(id),
+                        LedgerPolicyHMAC::from(hmac),
                     ),
                 ))
             })
@@ -143,17 +155,107 @@ impl LedgerKey {
     }
     pub fn list_registered_policies(
         &self,
-    ) -> Vec<(LedgerPolicy, LedgerPolicyId, LedgerPolicyHMAC)> {
+    ) -> Vec<(
+        AccountXPubId,
+        LedgerPolicy,
+        LedgerPolicyId,
+        LedgerPolicyHMAC,
+    )> {
         self.registered_policies
             .iter()
-            .map(|(p, (id, hmac))| (p.clone(), id.clone(), hmac.clone()))
+            .map(|(account_id, (p, id, hmac))| (*account_id, p.clone(), id.clone(), hmac.clone()))
             .collect()
     }
 }
 
 impl super::WalletOffline for LedgerKey {
     fn sign_psbt(&self, psbt: &mut btc_heritage::PartiallySignedTransaction) -> Result<usize> {
-        todo!()
+        // We need to know what AccountXPubId are present in the PSBT inputs
+        let account_ids_present: HashSet<AccountXPubId> = psbt
+            .inputs
+            .iter()
+            .map(|input| {
+                input
+                    .tap_key_origins
+                    .iter()
+                    .filter_map(|(_, (_, (fg, dp)))| {
+                        if fg == &self.fingerprint {
+                            match dp[2] {
+                                ChildNumber::Normal { .. } => None,
+                                ChildNumber::Hardened { index } => Some(index),
+                            }
+                        } else {
+                            None
+                        }
+                    })
+            })
+            .flatten()
+            .collect();
+        if !account_ids_present
+            .iter()
+            .all(|i| self.registered_policies.contains_key(i))
+        {
+            return Err(Error::LedgerMissingRegisteredPolicy(
+                account_ids_present.into_iter().collect(),
+            ));
+        }
+
+        // Because for now we are bound to the rust-bitcoin version of BDK
+        // which is different than the one used by ledger_bitcoin_client
+        let psbt_v_ledger = bitcoin::Psbt::deserialize(
+            &btc_heritage::bitcoin::psbt::PartiallySignedTransaction::serialize(&psbt),
+        )
+        .map_err(|e| Error::Generic(e.to_string()))?;
+
+        let mut signed_inputs = 0;
+        for account_id in account_ids_present {
+            let (pol, _, hmac) = self
+                .registered_policies
+                .get(&account_id)
+                .expect("we ensured every ids are in the Hashtable");
+            let ret =
+                self.ledger_client()
+                    .sign_psbt(&psbt_v_ledger, &pol.into(), Some(hmac.into()))?;
+            for (index, sig) in ret {
+                signed_inputs += 1;
+                match sig {
+                    PartialSignature::Sig(key, sig) => {
+                        log::debug!("index: {}, key: {}, sig: {}", index, key, sig);
+                        let sig: Signature =
+                            Signature::from_slice(&sig.to_vec()).expect("same underlying data");
+                        psbt.inputs[index].tap_key_sig = Some(sig);
+                    }
+                    PartialSignature::TapScriptSig(key, tapleaf_hash, sig) => {
+                        log::debug!(
+                            "index: {}, key: {}, tapleaf_hash: {:?}, sig: {:?}",
+                            index,
+                            key,
+                            tapleaf_hash,
+                            sig.to_vec()
+                        );
+                        // Because for now we are bound to the rust-bitcoin version of BDK
+                        // which is different than the one used by ledger_bitcoin_client
+                        let key: XOnlyPublicKey = XOnlyPublicKey::from_str(&key.to_string())
+                            .expect("same underlying data");
+                        let tapleaf_hash = tapleaf_hash.map(|tapleaf_hash| {
+                            TapLeafHash::from_str(&tapleaf_hash.to_string())
+                                .expect("same underlying data")
+                        });
+                        let sig: Signature =
+                            Signature::from_slice(&sig.to_vec()).expect("same underlying data");
+                        match tapleaf_hash {
+                            Some(tapleaf_hash) => {
+                                psbt.inputs[index]
+                                    .tap_script_sigs
+                                    .insert((key, tapleaf_hash), sig);
+                            }
+                            None => psbt.inputs[index].tap_key_sig = Some(sig),
+                        };
+                    }
+                }
+            }
+        }
+        Ok(signed_inputs)
     }
 
     fn derive_accounts_xpubs(&self, count: usize) -> Result<Vec<AccountXPub>> {

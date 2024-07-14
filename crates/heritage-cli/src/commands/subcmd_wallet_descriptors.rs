@@ -1,6 +1,6 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use btc_heritage_wallet::{errors::Result, DescriptorsBackup, Wallet};
+use btc_heritage_wallet::{errors::Result, DescriptorsBackup, Wallet, WalletOnline};
 
 /// Wallet Descriptors management subcommand.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -11,8 +11,8 @@ pub enum WalletDescriptorsSubcmd {
     /// create Heritage Configurations and used Account eXtended Public Keys. Can only be used on
     /// a wallet with a freshly created Online component (no Account XPub, no Heritage Configuration)
     Restore {
-        #[arg(short, long, required = true, value_parser=parse_descriptor_backup)]
         /// The Descriptors to restore
+        #[arg(short, long, required = true, value_parser=parse_descriptor_backup)]
         descriptors: Vec<DescriptorsBackup>,
     },
 }
@@ -22,7 +22,9 @@ impl super::CommandExecutor for WalletDescriptorsSubcmd {
         let wallet: Rc<RefCell<Wallet>> = *params.downcast().unwrap();
         let wallet = wallet.as_ref();
         let res: Box<dyn crate::display::Displayable> = match self {
-            WalletDescriptorsSubcmd::Backup => todo!(),
+            WalletDescriptorsSubcmd::Backup => {
+                Box::new(wallet.borrow().online_wallet().backup_descriptors()?)
+            }
             WalletDescriptorsSubcmd::Restore { descriptors } => todo!(),
         };
         Ok(res)

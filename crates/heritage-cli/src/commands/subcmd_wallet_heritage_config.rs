@@ -1,6 +1,6 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use btc_heritage_wallet::{errors::Result, HeritageConfig, Wallet};
+use btc_heritage_wallet::{errors::Result, HeritageConfig, Wallet, WalletOnline};
 
 /// Wallet Heritage Configuration management subcommand.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -11,8 +11,8 @@ pub enum WalletHeritageConfigSubcmd {
     ShowCurrent,
     /// Set a new Heritage Conguration for the Online component of the wallet
     Set {
-        #[arg(value_parser=parse_heritage_configuration)]
         /// The Heritage Configuration as a JSON (tmp)
+        #[arg(value_parser=parse_heritage_configuration)]
         heritage_config: HeritageConfig,
     },
     /// Renew the current Heritage Conguration for the Online component of the wallet by
@@ -25,8 +25,10 @@ impl super::CommandExecutor for WalletHeritageConfigSubcmd {
         let wallet: Rc<RefCell<Wallet>> = *params.downcast().unwrap();
         let wallet = wallet.as_ref();
         let res: Box<dyn crate::display::Displayable> = match self {
-            WalletHeritageConfigSubcmd::List => todo!(),
-            WalletHeritageConfigSubcmd::ShowCurrent => todo!(),
+            WalletHeritageConfigSubcmd::List => Box::new(wallet.borrow().list_heritage_configs()?),
+            WalletHeritageConfigSubcmd::ShowCurrent => {
+                Box::new(wallet.borrow().list_heritage_configs()?.remove(0))
+            }
             WalletHeritageConfigSubcmd::Set { heritage_config } => todo!(),
             WalletHeritageConfigSubcmd::Renew => todo!(),
         };

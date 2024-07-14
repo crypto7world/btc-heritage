@@ -1,6 +1,8 @@
 use btc_heritage::bitcoin::bip32::Fingerprint;
 use serde::{Deserialize, Serialize};
 
+use crate::service_client::AccountXPubWithStatus;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LocalHeritageWallet {
     heritage_wallet_id: String,
@@ -17,17 +19,13 @@ impl super::WalletOnline for LocalHeritageWallet {
         todo!()
     }
 
-    fn list_used_account_xpubs(&self) -> crate::errors::Result<Vec<btc_heritage::AccountXPub>> {
-        todo!()
-    }
-
-    fn list_unused_account_xpubs(&self) -> crate::errors::Result<Vec<btc_heritage::AccountXPub>> {
+    fn list_account_xpubs(&self) -> crate::errors::Result<Vec<AccountXPubWithStatus>> {
         todo!()
     }
 
     fn feed_account_xpubs(
         &mut self,
-        account_xpubs: &[btc_heritage::AccountXPub],
+        account_xpubs: Vec<btc_heritage::AccountXPub>,
     ) -> crate::errors::Result<()> {
         todo!()
     }
@@ -38,7 +36,7 @@ impl super::WalletOnline for LocalHeritageWallet {
 
     fn set_heritage_config(
         &mut self,
-        new_hc: &btc_heritage::HeritageConfig,
+        new_hc: btc_heritage::HeritageConfig,
     ) -> crate::errors::Result<()> {
         todo!()
     }
@@ -47,21 +45,23 @@ impl super::WalletOnline for LocalHeritageWallet {
         todo!()
     }
 
-    fn get_balance(&self) -> crate::errors::Result<btc_heritage::HeritageWalletBalance> {
-        todo!()
-    }
-
-    fn last_sync_ts(&self) -> crate::errors::Result<u64> {
+    fn get_wallet_info(&self) -> crate::errors::Result<super::WalletInfo> {
         todo!()
     }
 
     fn create_psbt(
         &self,
-        spending_config: btc_heritage::SpendingConfig,
+        new_tx: crate::service_client::NewTx,
     ) -> crate::errors::Result<(
         btc_heritage::PartiallySignedTransaction,
         btc_heritage::heritage_wallet::TransactionSummary,
     )> {
+        todo!()
+    }
+    fn broadcast(
+        &self,
+        psbt: btc_heritage::PartiallySignedTransaction,
+    ) -> crate::errors::Result<btc_heritage::bitcoin::Txid> {
         todo!()
     }
 }

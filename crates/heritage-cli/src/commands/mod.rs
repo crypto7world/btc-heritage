@@ -55,27 +55,27 @@ impl CliParser {
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct CliGlobalArgs {
+    /// Set the Bitcoin network on which the CLI operates.
     #[arg(
         short, long,
-        env="HERITAGE_NETWORK",
+        env="BITCOIN_NETWORK",
         default_value_t = Network::Bitcoin,
         global = true
     )]
-    /// Set the Bitcoin network on which the CLI operates.
     pub network: Network,
-
+    /// Use the specified directory for database storage instead of the default one.
     #[arg(
         short, long,
         value_hint = clap::ValueHint::DirPath,
         default_value = "~/.heritage-wallet",
         global = true
     )]
-    /// Use the specified directory for database storage instead of the default one.
     pub datadir: String,
 }
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct ServiceGlobalArgs {
+    /// Set the URL of the Heritage service API.
     #[arg(
         long,
         value_hint = clap::ValueHint::Url,
@@ -83,8 +83,8 @@ pub struct ServiceGlobalArgs {
         default_value = "https://api.btcherit.com/v1",
         global = true
     )]
-    /// Set the URL of the Heritage service API.
     pub service_api_url: String,
+    /// Set the URL of the Heritage service OAUTH token endpoint for the CLI.
     #[arg(
         long,
         value_hint = clap::ValueHint::Url,
@@ -92,38 +92,37 @@ pub struct ServiceGlobalArgs {
         default_value = "https://device.crypto7.world/token",
         global = true
     )]
-    /// Set the URL of the Heritage service OAUTH token endpoint for the CLI.
     pub auth_url: String,
+    /// Set the OAUTH Client Id of the CLI for the Heritage service authentication endpoint.
     #[arg(
         long,
         env = "HERITAGE_AUTH_CLIENT_ID",
         default_value = "cda6031ca00d09d66c2b632448eb8fef",
         global = true
     )]
-    /// Set the OAUTH Client Id of the CLI for the Heritage service authentication endpoint.
     pub auth_client_id: String,
 }
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct ElectrumGlobalArgs {
+    /// Set the URL of an Electrum server RPC endpoint.
     #[arg(
         long,
         value_hint = clap::ValueHint::Url,
         default_value = "http://localhost:50001",
         global = true
     )]
-    /// Set the URL of an Electrum server RPC endpoint.
     pub electrum_url: String,
 }
 
 #[derive(Clone, Debug, clap::Args)]
 pub struct BitcoinRpcGlobalArgs {
+    /// Set the URL of a Bitcoin node RPC endpoint.
     #[arg(
         long,
         value_hint = clap::ValueHint::Url,
         default_value = "http://localhost:8332",
         global = true
     )]
-    /// Set the URL of a Bitcoin node RPC endpoint.
     pub bitcoin_url: String,
 }

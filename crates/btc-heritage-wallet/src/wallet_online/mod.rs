@@ -1,9 +1,12 @@
-use crate::errors::{Error, Result};
+use crate::{
+    errors::{Error, Result},
+    service_client::{AccountXPubWithStatus, NewTx},
+};
 use btc_heritage::{
-    bitcoin::{bip32::Fingerprint, Network},
+    bitcoin::{bip32::Fingerprint, Network, Txid},
     heritage_config::HeritageConfig,
     heritage_wallet::{DescriptorsBackup, TransactionSummary},
-    AccountXPub, HeritageWalletBalance, PartiallySignedTransaction, SpendingConfig,
+    AccountXPub, HeritageWalletBalance, PartiallySignedTransaction,
 };
 
 mod local_heritage_wallet;
@@ -12,23 +15,29 @@ use local_heritage_wallet::LocalHeritageWallet;
 use serde::{Deserialize, Serialize};
 pub use service::ServiceBinding;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WalletInfo {
+    pub fingerprint: Option<Fingerprint>,
+    pub balance: HeritageWalletBalance,
+    pub last_sync_ts: u64,
+}
+
 /// This trait regroup the functions of an Heritage wallet that does not need
 /// access to the private keys and can be safely operated in an online environment.
 pub trait WalletOnline {
     fn backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>;
     fn get_address(&self) -> Result<String>;
-    fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>>;
-    fn list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>>;
-    fn feed_account_xpubs(&mut self, account_xpubs: &[AccountXPub]) -> Result<()>;
+    fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>;
+    fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>;
     fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>;
-    fn set_heritage_config(&mut self, new_hc: &HeritageConfig) -> Result<()>;
+    fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<()>;
     fn sync(&mut self) -> Result<()>;
-    fn get_balance(&self) -> Result<HeritageWalletBalance>;
-    fn last_sync_ts(&self) -> Result<u64>;
+    fn get_wallet_info(&self) -> Result<WalletInfo>;
     fn create_psbt(
         &self,
-        spending_config: SpendingConfig,
+        new_tx: NewTx,
     ) -> Result<(PartiallySignedTransaction, TransactionSummary)>;
+    fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,15 +79,14 @@ macro_rules! impl_wallet_online_fn {
 impl WalletOnline for AnyWalletOnline {
     impl_wallet_online_fn!(backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>);
     impl_wallet_online_fn!(get_address(&self) -> Result<String>);
-    impl_wallet_online_fn!(list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>>);
-    impl_wallet_online_fn!(list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>>);
-    impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: &[AccountXPub]) -> Result<()>);
+    impl_wallet_online_fn!(list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>);
+    impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>);
     impl_wallet_online_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
-    impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: &HeritageConfig) -> Result<()>);
+    impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<()>);
     impl_wallet_online_fn!(sync(&mut self) -> Result<()>);
-    impl_wallet_online_fn!(get_balance(&self) -> Result<HeritageWalletBalance>);
-    impl_wallet_online_fn!(last_sync_ts(&self) -> Result<u64>);
-    impl_wallet_online_fn!(create_psbt(&self, spending_config: SpendingConfig) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
+    impl_wallet_online_fn!(get_wallet_info(&self) -> Result<WalletInfo>);
+    impl_wallet_online_fn!(create_psbt(&self, spending_config: NewTx) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
+    impl_wallet_online_fn!(broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>);
 }
 
 impl crate::wallet::WalletCommons for AnyWalletOnline {

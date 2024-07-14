@@ -1,12 +1,14 @@
 use std::{any::Any, cell::RefCell, rc::Rc, str::FromStr};
 
 use btc_heritage_wallet::{
-    bitcoin::{bip32::Fingerprint, Address, Amount},
+    bitcoin::{bip32::Fingerprint, psbt::Psbt, Address, Amount},
     errors::{Error, Result},
-    AnyWalletOffline, AnyWalletOnline, Database, HeritageServiceClient, LedgerKey, ServiceBinding,
-    Tokens, Wallet,
+    AnyWalletOffline, AnyWalletOnline, Database, HeritageServiceClient, LedgerKey, NewTx,
+    NewTxRecipient, ServiceBinding, Tokens, Wallet, WalletOffline, WalletOnline,
 };
 use clap::builder::{PossibleValuesParser, TypedValueParser};
+
+use crate::utils::ask_user_confirmation;
 
 use super::subcmd_wallet_axpubs::WalletAXpubSubcmd;
 
@@ -15,38 +17,38 @@ use super::subcmd_wallet_axpubs::WalletAXpubSubcmd;
 pub enum WalletSubcmd {
     /// Creates a new Heritage wallet with the chosen online and offline components
     Create {
-        #[arg(long, value_name = "TYPE", alias = "online", value_enum, default_value_t=OnlineComponentType::Service)]
         /// Specify the kind of online-component the wallet will use
+        #[arg(long, value_name = "TYPE", alias = "online", value_enum, default_value_t=OnlineComponentType::Service)]
         online_component: OnlineComponentType,
-        #[arg(long, value_name = "NAME", conflicts_with_all=["existing_service_wallet_fingerprint", "existing_service_wallet_id"])]
         /// Specify the name of an existing Heritage wallet in the service
         /// to bind to, instead of creating a new one (if online_component = service)
+        #[arg(long, value_name = "NAME", conflicts_with_all=["existing_service_wallet_fingerprint", "existing_service_wallet_id"])]
         existing_service_wallet_name: Option<String>,
-        #[arg(long, value_name = "FINGERPRINT", conflicts_with_all=["existing_service_wallet_name", "existing_service_wallet_id"])]
         /// Specify the fingerprint of an existing Heritage wallet in the service
         /// to bind to, instead of creating a new one (if online_component = service)
+        #[arg(long, value_name = "FINGERPRINT", conflicts_with_all=["existing_service_wallet_name", "existing_service_wallet_id"])]
         existing_service_wallet_fingerprint: Option<Fingerprint>,
-        #[arg(long, value_name = "WALLET_ID", conflicts_with_all=["existing_service_wallet_name", "existing_service_wallet_fingerprint"])]
         /// Specify the ID of an existing Heritage wallet in the service
         /// to bind to, instead of creating a new one (if online_component = service)
+        #[arg(long, value_name = "WALLET_ID", conflicts_with_all=["existing_service_wallet_name", "existing_service_wallet_fingerprint"])]
         existing_service_wallet_id: Option<String>,
-        #[arg(long, value_name = "TYPE", alias = "offline", value_enum, default_value_t=OfflineComponentType::Ledger, requires_if("local", "localgen"))]
         /// Specify the kind of offline-component the wallet will use
+        #[arg(long, value_name = "TYPE", alias = "offline", value_enum, default_value_t=OfflineComponentType::Ledger, requires_if("local", "localgen"))]
         offline_component: OfflineComponentType,
-        #[arg(long, default_value_t = true)]
         /// Automaticly feed Heritage account eXtended public keys (xpubs) to the online component of the wallet if possible.
+        #[arg(long, default_value_t = true)]
         auto_feed_xpubs: bool,
-        #[arg(long, value_name = "WORD", num_args=2..24, group="localgen")]
         /// The mnemonic phrase to restore as a seed for the Heritage wallet (12, 18 or 24 words) (if offline_component = local).
+        #[arg(long, value_name = "WORD", num_args=2..24, group="localgen")]
         seed: Option<Vec<String>>,
+        /// The length of the mnemonic phrase to generate as a seed for the Heritage wallet (if offline_component = local).
         #[arg(
             long, value_parser=PossibleValuesParser::new(["12", "18", "24"]).map(|s| s.parse::<usize>().unwrap()),
             group="localgen"
         )]
-        /// The length of the mnemonic phrase to generate as a seed for the Heritage wallet (if offline_component = local).
         word_count: Option<usize>,
-        #[arg(short = 'p', long, default_value_t = true)]
         /// Signal that the seed is password-protected (if offline_component = local).
+        #[arg(short = 'p', long, default_value_t = true)]
         with_password: bool,
     },
     /// Remove the wallet from the database
@@ -56,53 +58,64 @@ pub enum WalletSubcmd {
         #[command(subcommand)]
         subcmd: super::subcmd_wallet_descriptors::WalletDescriptorsSubcmd,
     },
+    /// Commands managing the Ledger wallet policies (BIP388) of the wallet
+    LedgerPolicies {
+        #[command(subcommand)]
+        subcmd: super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd,
+    },
     /// Commands managing the Heritage configuration of the wallet
-    HeritageConfig {
+    HeritageConfigs {
         #[command(subcommand)]
         subcmd: super::subcmd_wallet_heritage_config::WalletHeritageConfigSubcmd,
     },
     /// Commands managing the Account eXtended Public Keys of the wallet
-    AccountXpub {
+    AccountXpubs {
         #[command(subcommand)]
         subcmd: super::subcmd_wallet_axpubs::WalletAXpubSubcmd,
     },
     /// Sync the wallet from the Bitcoin network
     Sync,
+    /// Display info about of the wallet, like the balance
+    Info,
     /// Generate a new Bitcoin address for the Heritage wallet
     GetAddress,
     /// Create a Partially Signed Bitcoin Transaction (PSBT), a.k.a an Unsigned TX, from the provided receipients information
     SendBitcoins {
-        #[arg(short, long, value_name="ADDRESS>:<AMOUNT", required = true, value_parser=parse_recipient)]
         /// A recipient for our BTC
+        #[arg(short, long, value_name="ADDRESS>:<AMOUNT", required = true, value_parser=parse_recipient)]
         recipient: Vec<(Address, Amount)>,
-        #[arg(short, long, default_value_t = false)]
         /// Immediately sign the PSBT
+        #[arg(short, long, default_value_t = false)]
         sign: bool,
-        #[arg(short, long, default_value_t = false, requires = "sign")]
         /// Immediately broadcast the PSBT after signing it
+        #[arg(short, long, default_value_t = false, requires = "sign")]
         broadcast: bool,
-        #[arg(short = 'y', long, default_value_t = false, requires = "broadcast")]
-        /// Broadcast without asking for confirmation{n}
+        /// If --sign or --broadcast are requested, do it without asking for confirmation{n}
         /// /!\ BE VERY CAREFULL with that option /!\.
+        #[arg(short = 'y', long, default_value_t = false)]
         skip_confirmation: bool,
     },
     /// Sign every sign-able inputs of the given Partially Signed Bitcoin Transaction (PSBT)
     SignPsbt {
         /// The PSBT to sign
-        psbt: String,
-        #[arg(long, default_value_t = false)]
+        psbt: Psbt,
         /// Immediately broadcast the PSBT after signing it
+        #[arg(long, default_value_t = false)]
         broadcast: bool,
+        /// If --broadcast is requested, do it without asking for confirmation{n}
+        /// /!\ BE VERY CAREFULL with that option /!\.
+        #[arg(short = 'y', long, default_value_t = false)]
+        skip_confirmation: bool,
     },
     /// Extract a raw transaction from the given Partially Signed Bitcoin Transaction (PSBT) and broadcast it to the Bitcoin network
     BroadcastPsbt {
         /// The PSBT to broadcast. Must have every inputs correctly signed for this to work.
-        psbt: String,
+        psbt: Psbt,
     },
     /// Display infos on the given Partially Signed Bitcoin Transaction (PSBT)
     DisplayPsbt {
         /// The PSBT to display.
-        psbt: String,
+        psbt: Psbt,
     },
 }
 
@@ -119,6 +132,40 @@ impl super::CommandExecutor for WalletSubcmd {
 
         let service_client =
             HeritageServiceClient::new(service_gargs.service_api_url, Tokens::load(&mut db)?);
+
+        let need_online = match &self {
+            WalletSubcmd::Create { .. }
+            | WalletSubcmd::Descriptors { .. }
+            | WalletSubcmd::AccountXpubs { .. }
+            | WalletSubcmd::Sync
+            | WalletSubcmd::Info
+            | WalletSubcmd::GetAddress
+            | WalletSubcmd::SendBitcoins { .. }
+            | WalletSubcmd::BroadcastPsbt { .. }
+            | WalletSubcmd::HeritageConfigs { .. } => true,
+            WalletSubcmd::SignPsbt { broadcast, .. } if *broadcast => true,
+            WalletSubcmd::LedgerPolicies { subcmd } => match subcmd {
+                super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd::List => true,
+                _ => false,
+            },
+            _ => false,
+        };
+        let need_offline = match &self {
+            WalletSubcmd::Create { .. } | WalletSubcmd::SignPsbt { .. } => true,
+            WalletSubcmd::LedgerPolicies { subcmd } => match subcmd {
+                super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd::ListRegistered
+                | super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd::Register {
+                    ..
+                } => true,
+                _ => false,
+            },
+            WalletSubcmd::AccountXpubs { subcmd } => match subcmd {
+                WalletAXpubSubcmd::AutoFeed { .. } => true,
+                _ => false,
+            },
+            WalletSubcmd::SendBitcoins { sign, .. } if *sign => true,
+            _ => false,
+        };
 
         let wallet = match &self {
             WalletSubcmd::Create {
@@ -179,16 +226,20 @@ impl super::CommandExecutor for WalletSubcmd {
             }
             _ => {
                 let mut wallet = Wallet::load(&db, &wallet_name)?;
-                match wallet.offline_wallet_mut() {
-                    AnyWalletOffline::None => (),
-                    AnyWalletOffline::LocalKey(lk) => todo!(),
-                    AnyWalletOffline::Ledger(ledger) => ledger.init_ledger_client()?,
-                };
-                match wallet.online_wallet_mut() {
-                    AnyWalletOnline::None => (),
-                    AnyWalletOnline::Service(sb) => sb.init_service_client(service_client)?,
-                    AnyWalletOnline::Local(_) => todo!(),
-                };
+                if need_offline {
+                    match wallet.offline_wallet_mut() {
+                        AnyWalletOffline::None => (),
+                        AnyWalletOffline::LocalKey(lk) => todo!(),
+                        AnyWalletOffline::Ledger(ledger) => ledger.init_ledger_client()?,
+                    };
+                }
+                if need_online {
+                    match wallet.online_wallet_mut() {
+                        AnyWalletOnline::None => (),
+                        AnyWalletOnline::Service(sb) => sb.init_service_client(service_client)?,
+                        AnyWalletOnline::Local(_) => todo!(),
+                    };
+                }
                 Rc::new(RefCell::new(wallet))
             }
         };
@@ -203,18 +254,97 @@ impl super::CommandExecutor for WalletSubcmd {
                 Box::new("Wallet deleted")
             }
             WalletSubcmd::Descriptors { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
-            WalletSubcmd::HeritageConfig { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
-            WalletSubcmd::AccountXpub { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
-            WalletSubcmd::Sync => todo!(),
-            WalletSubcmd::GetAddress => todo!(),
+            WalletSubcmd::LedgerPolicies { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
+            WalletSubcmd::HeritageConfigs { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
+            WalletSubcmd::AccountXpubs { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
+            WalletSubcmd::Sync => {
+                wallet.borrow_mut().sync()?;
+                Box::new("Synchronization done")
+            }
+            WalletSubcmd::Info => Box::new(wallet.borrow().get_wallet_info()?),
+            WalletSubcmd::GetAddress => Box::new(wallet.borrow().get_address()?),
             WalletSubcmd::SendBitcoins {
                 recipient,
                 sign,
                 broadcast,
                 skip_confirmation,
-            } => todo!(),
-            WalletSubcmd::SignPsbt { psbt, broadcast } => todo!(),
-            WalletSubcmd::BroadcastPsbt { psbt } => todo!(),
+            } => {
+                let spending_config = NewTx::Recipients(
+                    recipient
+                        .into_iter()
+                        .map(|(address, amount)| NewTxRecipient {
+                            address: address.to_string(),
+                            amount: amount.to_sat(),
+                        })
+                        .collect(),
+                );
+                // Get the PSBT
+                let (mut psbt, summary) = wallet.borrow().create_psbt(spending_config)?;
+
+                log::debug!("{}", serde_json::to_string_pretty(&summary)?);
+                log::debug!("{}", serde_json::to_string_pretty(&psbt)?);
+                if sign
+                    && (skip_confirmation
+                        || ask_user_confirmation(&format!(
+                            "{}\nDo you want to sign this PSBT?",
+                            serde_json::to_string_pretty(&psbt)?
+                        ))?)
+                {
+                    log::info!("Signing the PSBT...");
+                    // Sign it
+                    let signed_input_count = wallet.borrow().sign_psbt(&mut psbt)?;
+                    log::info!("Signed {signed_input_count} input(s)");
+                    log::debug!("{}", serde_json::to_string_pretty(&psbt)?);
+
+                    if broadcast
+                        && (skip_confirmation
+                            || ask_user_confirmation(&format!(
+                                "{}\nDo you want to broadcast this PSBT?",
+                                serde_json::to_string_pretty(&psbt)?
+                            ))?)
+                    {
+                        log::info!("Broadcasting the PSBT...");
+                        // Broadcast it
+                        Box::new(wallet.borrow().broadcast(psbt)?)
+                    } else {
+                        Box::new(psbt.to_string())
+                    }
+                } else {
+                    Box::new(psbt.to_string())
+                }
+            }
+            WalletSubcmd::SignPsbt {
+                mut psbt,
+                broadcast,
+                skip_confirmation,
+            } => {
+                log::debug!("{}", serde_json::to_string_pretty(&psbt)?);
+                log::info!("Signing the PSBT...");
+                // Sign it
+                let signed_input_count = wallet.borrow().sign_psbt(&mut psbt)?;
+                log::info!("Signed {signed_input_count} input(s)");
+                log::debug!("{}", serde_json::to_string_pretty(&psbt)?);
+
+                if broadcast
+                    && (skip_confirmation
+                        || ask_user_confirmation(&format!(
+                            "{}\nDo you want to broadcast this PSBT?",
+                            serde_json::to_string_pretty(&psbt)?
+                        ))?)
+                {
+                    log::info!("Broadcasting the PSBT...");
+                    // Broadcast it
+                    Box::new(wallet.borrow().broadcast(psbt)?)
+                } else {
+                    Box::new(psbt.to_string())
+                }
+            }
+            WalletSubcmd::BroadcastPsbt { psbt } => {
+                log::debug!("{}", serde_json::to_string_pretty(&psbt)?);
+                log::info!("Broadcasting the PSBT...");
+                // Broadcast it
+                Box::new(wallet.borrow().broadcast(psbt)?)
+            }
             WalletSubcmd::DisplayPsbt { psbt } => todo!(),
         };
         wallet.borrow().save(&mut db)?;

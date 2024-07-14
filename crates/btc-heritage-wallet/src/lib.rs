@@ -17,4 +17,6 @@ pub use wallet_online::{AnyWalletOnline, ServiceBinding, WalletOnline};
 pub use btc_heritage::bitcoin;
 pub use btc_heritage::miniscript;
 pub use database::Database;
-pub use service_client::{HeritageServiceClient, Tokens};
+pub use service_client::{
+    AccountXPubWithStatus, HeritageServiceClient, NewTx, NewTxRecipient, Tokens,
+};

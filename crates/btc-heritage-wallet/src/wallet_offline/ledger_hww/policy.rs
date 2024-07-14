@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
-use btc_heritage::DescriptorsBackup;
+use bitcoin::hex::{Case, DisplayHex, FromHex};
+use btc_heritage::{AccountXPub, AccountXPubId, DescriptorsBackup};
 use ledger_bitcoin_client::{WalletPolicy, WalletPubKey};
 use serde::{Deserialize, Serialize};
 
@@ -23,53 +24,81 @@ fn re_account_xpub() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
         regex::Regex::new(
-            r"(?<key>\[[0-9a-f]{8}\/86['h]\/[01]['h]\/[0-9]+['h]\][tx]pub[1-9A-HJ-NP-Za-km-z]{79,108})(?<derivation>(:?\/[0-9]+)*\/\*|\/\*\*)",
+            r"(?<key>\[[0-9a-f]{8}\/86['h]\/[01]['h]\/[0-9]+['h]\][tx]pub[1-9A-HJ-NP-Za-km-z]{79,108})(?<derivation>\/\*\*|(:?\/[0-9]+)*\/\*)",
         )
         .unwrap()
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LedgerPolicyId(Vec<u8>);
-impl From<Vec<u8>> for LedgerPolicyId {
-    fn from(value: Vec<u8>) -> Self {
-        assert!(value.len() == 32, "Invalid for LedgerPolicyId");
-        Self(value)
-    }
-}
-impl From<&[u8]> for LedgerPolicyId {
-    fn from(value: &[u8]) -> Self {
-        Self(value.to_vec())
-    }
-}
-impl From<LedgerPolicyId> for Vec<u8> {
-    fn from(value: LedgerPolicyId) -> Self {
-        value.0
-    }
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LedgerPolicyHMAC(Vec<u8>);
-impl From<Vec<u8>> for LedgerPolicyHMAC {
-    fn from(value: Vec<u8>) -> Self {
-        assert!(value.len() == 32, "Invalid for LedgerPolicyHMAC");
-        Self(value)
-    }
-}
-impl From<&[u8]> for LedgerPolicyHMAC {
-    fn from(value: &[u8]) -> Self {
-        Self(value.to_vec())
-    }
-}
-impl From<LedgerPolicyHMAC> for Vec<u8> {
-    fn from(value: LedgerPolicyHMAC) -> Self {
-        value.0
-    }
+macro_rules! new_byte_type {
+    ($struct_name:ident) => {
+        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[serde(into = "String", try_from = "String")]
+        pub struct $struct_name([u8; 32]);
+        impl std::fmt::Display for $struct_name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(&self.0.to_hex_string(Case::Lower))
+            }
+        }
+        impl From<$struct_name> for String {
+            fn from(value: $struct_name) -> Self {
+                value.to_string()
+            }
+        }
+        impl From<[u8; 32]> for $struct_name {
+            fn from(value: [u8; 32]) -> Self {
+                Self(value)
+            }
+        }
+        impl From<$struct_name> for [u8; 32] {
+            fn from(value: $struct_name) -> Self {
+                value.0
+            }
+        }
+        impl<'a> From<&'a $struct_name> for &'a [u8; 32] {
+            fn from(value: &'a $struct_name) -> Self {
+                &value.0
+            }
+        }
+        impl TryFrom<&str> for $struct_name {
+            type Error = Error;
+
+            fn try_from(value: &str) -> Result<Self, Self::Error> {
+                let bytes =
+                    <[u8; 32]>::from_hex(value).map_err(|e| Error::Generic(e.to_string()))?;
+                Ok(Self(bytes))
+            }
+        }
+        impl TryFrom<String> for $struct_name {
+            type Error = Error;
+
+            fn try_from(value: String) -> Result<Self, Self::Error> {
+                $struct_name::try_from(value.as_str())
+            }
+        }
+    };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
+new_byte_type!(LedgerPolicyId);
+new_byte_type!(LedgerPolicyHMAC);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(into = "String", try_from = "String")]
 pub struct LedgerPolicy(String);
-
+impl LedgerPolicy {
+    /// Returns the [AccountXPubId] that this policy is for
+    pub fn get_account_id(&self) -> AccountXPubId {
+        let key = re_account_xpub()
+            .find(&self.0)
+            .expect("LedgerPolicy ensure the descriptor contains an account_xpub")
+            .as_str();
+        // The format is [origin]xpub.../**
+        // We remove the last char in order to get the account_x_pub
+        let key = AccountXPub::try_from(&key[..key.len() - 1])
+            .expect("LedgerPolicy ensure correct format");
+        key.descriptor_id()
+    }
+}
 impl std::fmt::Display for LedgerPolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
@@ -128,10 +157,13 @@ impl TryFrom<String> for LedgerPolicy {
 impl From<&LedgerPolicy> for WalletPolicy {
     fn from(value: &LedgerPolicy) -> Self {
         let descriptor = &value.0;
+        println!("descriptor={descriptor}");
         let mut descriptor_template = descriptor.clone();
         let mut keys: Vec<WalletPubKey> = Vec::new();
         for account_xpub in re_account_xpub().captures_iter(descriptor) {
+            println!("account_xpub={account_xpub:?}");
             let key = &account_xpub["key"];
+            println!("key={key}");
             let pubkey = WalletPubKey::from_str(key).expect("xpub format is correct");
             let desc_index = if let Some(i) = keys.iter().position(|e| e == &pubkey) {
                 i
@@ -140,11 +172,13 @@ impl From<&LedgerPolicy> for WalletPolicy {
                 keys.len() - 1
             };
 
-            descriptor_template = descriptor_template.replace(
-                account_xpub.extract::<2>().0,
-                &format!("@{}/**", desc_index),
-            );
+            println!("replace={} by @{}/**", &account_xpub[0], desc_index);
+
+            descriptor_template =
+                descriptor_template.replace(&account_xpub[0], &format!("@{}/**", desc_index));
         }
+
+        println!("descriptor_template={descriptor_template}");
         Self {
             name: "Heritage".to_owned(),
             version: ledger_bitcoin_client::wallet::Version::V2,

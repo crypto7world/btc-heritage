@@ -1,4 +1,13 @@
-use btc_heritage::bitcoin::{bip32::Fingerprint, Network};
+use std::{
+    io::{stdout, Write},
+    thread,
+    time::Duration,
+};
+
+use btc_heritage::{
+    bitcoin::{bip32::Fingerprint, Network},
+    utils::timestamp_now,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -21,7 +30,7 @@ impl ServiceBinding {
         network: Network,
     ) -> Result<Self> {
         let fingerprint = None;
-        let wallet_id = service_client.create_wallet(wallet_name)?.id;
+        let wallet_id = service_client.post_wallets(wallet_name)?.id;
         Ok(Self {
             wallet_id,
             fingerprint,
@@ -117,22 +126,20 @@ impl ServiceBinding {
 
 impl super::WalletOnline for ServiceBinding {
     fn backup_descriptors(&self) -> Result<Vec<btc_heritage::heritage_wallet::DescriptorsBackup>> {
-        todo!()
+        self.service_client()
+            .get_wallet_descriptors_backup(&self.wallet_id)
     }
 
     fn get_address(&self) -> Result<String> {
-        todo!()
+        self.service_client()
+            .post_wallet_create_address(&self.wallet_id)
     }
 
-    fn list_used_account_xpubs(&self) -> Result<Vec<btc_heritage::AccountXPub>> {
-        todo!()
+    fn list_account_xpubs(&self) -> Result<Vec<crate::service_client::AccountXPubWithStatus>> {
+        self.service_client()
+            .list_wallet_account_xpubs(&self.wallet_id)
     }
-
-    fn list_unused_account_xpubs(&self) -> Result<Vec<btc_heritage::AccountXPub>> {
-        todo!()
-    }
-
-    fn feed_account_xpubs(&mut self, account_xpubs: &[btc_heritage::AccountXPub]) -> Result<()> {
+    fn feed_account_xpubs(&mut self, account_xpubs: Vec<btc_heritage::AccountXPub>) -> Result<()> {
         let fingerprint = if account_xpubs.len() > 0 {
             Some(
                 account_xpubs[0]
@@ -151,33 +158,70 @@ impl super::WalletOnline for ServiceBinding {
     }
 
     fn list_heritage_configs(&self) -> Result<Vec<btc_heritage::HeritageConfig>> {
-        todo!()
+        self.service_client()
+            .list_wallet_heritage_configs(&self.wallet_id)
     }
 
-    fn set_heritage_config(&mut self, new_hc: &btc_heritage::HeritageConfig) -> Result<()> {
-        todo!()
+    fn set_heritage_config(&mut self, new_hc: btc_heritage::HeritageConfig) -> Result<()> {
+        self.service_client()
+            .post_wallet_heritage_configs(&self.wallet_id, new_hc)?;
+        Ok(())
     }
 
     fn sync(&mut self) -> Result<()> {
-        todo!()
+        // Get last_sync ts
+        let last_sync_ts = self
+            .service_client()
+            .get_wallet(&self.wallet_id)?
+            .last_sync_ts;
+        // If sync is old, ask for a new sync and wait
+        if last_sync_ts + 60 < timestamp_now() {
+            print!("Syncing");
+            let _ = stdout().flush();
+            self.service_client()
+                .post_wallet_synchronize(&self.wallet_id)?;
+            loop {
+                print!(".");
+                let _ = stdout().flush();
+                thread::sleep(Duration::from_secs(5));
+                let new_last_sync_ts = self
+                    .service_client()
+                    .get_wallet(&self.wallet_id)?
+                    .last_sync_ts;
+                if last_sync_ts != new_last_sync_ts {
+                    break;
+                }
+            }
+            println!(".");
+        }
+        Ok(())
     }
 
-    fn get_balance(&self) -> Result<btc_heritage::HeritageWalletBalance> {
-        todo!()
-    }
-
-    fn last_sync_ts(&self) -> Result<u64> {
-        todo!()
+    fn get_wallet_info(&self) -> Result<super::WalletInfo> {
+        let hwm = self.service_client().get_wallet(&self.wallet_id)?;
+        Ok(super::WalletInfo {
+            fingerprint: hwm.fingerprint,
+            balance: hwm.balance.unwrap_or_default(),
+            last_sync_ts: hwm.last_sync_ts,
+        })
     }
 
     fn create_psbt(
         &self,
-        spending_config: btc_heritage::SpendingConfig,
+        new_tx: crate::service_client::NewTx,
     ) -> Result<(
         btc_heritage::PartiallySignedTransaction,
         btc_heritage::heritage_wallet::TransactionSummary,
     )> {
-        todo!()
+        self.service_client()
+            .post_wallet_create_unsigned_tx(&self.wallet_id, new_tx)
+    }
+
+    fn broadcast(
+        &self,
+        psbt: btc_heritage::PartiallySignedTransaction,
+    ) -> Result<btc_heritage::bitcoin::Txid> {
+        self.service_client().post_broadcast_tx(psbt)
     }
 }
 

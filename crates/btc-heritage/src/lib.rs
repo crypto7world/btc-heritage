@@ -6,7 +6,7 @@ pub mod heritage_wallet;
 pub mod subwallet_config;
 pub mod utils;
 
-pub use account_xpub::AccountXPub;
+pub use account_xpub::{AccountXPub, AccountXPubId};
 pub use bdk::bitcoin::{psbt::PartiallySignedTransaction, Amount};
 pub use heritage_config::{heirtypes::*, HeritageConfig};
 pub use heritage_wallet::{

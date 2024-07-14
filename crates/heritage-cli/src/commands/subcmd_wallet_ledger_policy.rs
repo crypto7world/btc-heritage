@@ -11,9 +11,9 @@ pub enum WalletLedgerPolicySubcmd {
     ListRegistered,
     /// Register policies on a Ledger device
     Register {
-        #[arg(short, long, value_parser=parse_descriptor_backup)]
         /// The policies to register. If none is provided, the CLI will attempt
         /// to find them using the Online component of the wallet
+        #[arg(short, long, value_parser=parse_descriptor_backup)]
         policies: Vec<LedgerPolicy>,
     },
 }
@@ -44,14 +44,6 @@ impl super::CommandExecutor for WalletLedgerPolicySubcmd {
                 Box::new(ledger_wallet.list_registered_policies())
             }
             WalletLedgerPolicySubcmd::Register { policies } => {
-                let mut wallet_ref_mut = wallet.borrow_mut();
-                let btc_heritage_wallet::AnyWalletOffline::Ledger(ledger_wallet) =
-                    wallet_ref_mut.offline_wallet_mut()
-                else {
-                    return Err(
-                        btc_heritage_wallet::errors::Error::IncorrectOfflineComponent("Ledger"),
-                    );
-                };
                 let policies = if policies.len() > 0 {
                     policies
                 } else {
@@ -62,6 +54,14 @@ impl super::CommandExecutor for WalletLedgerPolicySubcmd {
                         .into_iter()
                         .filter_map(|d| TryInto::<LedgerPolicy>::try_into(d).ok())
                         .collect::<Vec<_>>()
+                };
+                let mut wallet_ref_mut = wallet.borrow_mut();
+                let btc_heritage_wallet::AnyWalletOffline::Ledger(ledger_wallet) =
+                    wallet_ref_mut.offline_wallet_mut()
+                else {
+                    return Err(
+                        btc_heritage_wallet::errors::Error::IncorrectOfflineComponent("Ledger"),
+                    );
                 };
                 let count = ledger_wallet.register_policies(&policies)?;
                 Box::new(format!("{count} policies registered"))

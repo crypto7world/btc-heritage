@@ -1,8 +1,12 @@
-use btc_heritage::{AccountXPub, DescriptorsBackup};
+use btc_heritage::{
+    bitcoin::{psbt::Psbt, Txid},
+    heritage_wallet::{HeritageUtxo, TransactionSummary},
+    BlockInclusionObjective, DescriptorsBackup, HeritageConfig,
+};
 use reqwest::{blocking::Client, Method};
 use serde::Serialize;
-use serde_json::json;
-use std::cell::RefCell;
+use serde_json::{json, Value};
+use std::{cell::RefCell, collections::HashMap, str::FromStr};
 pub use tokens::Tokens;
 pub use types::*;
 
@@ -79,43 +83,150 @@ impl HeritageServiceClient {
         self.api_call::<String>(Method::GET, path, None)
     }
 
-    pub fn list_wallets(&self) -> Result<Vec<types::HeritageWalletMeta>> {
-        Ok(serde_json::from_value(self.api_call_get("wallets")?)?)
+    pub fn delete_heir_contacts(&self) -> Result<()> {
+        todo!()
     }
 
-    pub fn list_heirs(&self) -> Result<serde_json::Value> {
-        self.api_call_get("heirs")
-    }
-
-    pub fn list_heritages(&self) -> Result<serde_json::Value> {
-        self.api_call_get("heritages")
-    }
-
-    pub fn create_wallet(&self, name: &str) -> Result<types::HeritageWalletMeta> {
-        Ok(serde_json::from_value(self.api_call(
-            Method::POST,
-            "wallets",
-            Some(json!({"name": name})),
-        )?)?)
-    }
-
-    pub fn get_wallet(&self, wallet_id: &str) -> Result<types::HeritageWalletMeta> {
+    pub fn get_wallet(&self, wallet_id: &str) -> Result<HeritageWalletMeta> {
         let path = format!("wallets/{wallet_id}");
         Ok(serde_json::from_value(self.api_call_get(&path)?)?)
     }
 
-    pub fn get_descriptors_backup(&self, wallet_id: &str) -> Result<Vec<DescriptorsBackup>> {
+    pub fn get_wallet_descriptors_backup(&self, wallet_id: &str) -> Result<Vec<DescriptorsBackup>> {
         let path = format!("wallets/{wallet_id}/descriptors-backup");
         Ok(serde_json::from_value(self.api_call_get(&path)?)?)
+    }
+
+    pub fn list_heirs(&self) -> Result<()> {
+        todo!()
+    }
+
+    pub fn list_heritages(&self) -> Result<()> {
+        todo!()
+    }
+
+    pub fn list_wallet_account_xpubs(&self, wallet_id: &str) -> Result<Vec<AccountXPubWithStatus>> {
+        let path = format!("wallets/{wallet_id}/account-xpubs");
+        Ok(serde_json::from_value(self.api_call_get(&path)?)?)
+    }
+
+    pub fn list_wallet_heritage_configs(&self, wallet_id: &str) -> Result<Vec<HeritageConfig>> {
+        let path = format!("wallets/{wallet_id}/heritage-configs");
+        Ok(serde_json::from_value(self.api_call_get(&path)?)?)
+    }
+
+    pub fn list_wallet_transactions(&self, wallet_id: &str) -> Result<Vec<TransactionSummary>> {
+        let path = format!("wallets/{wallet_id}/tx-summaries");
+        Ok(serde_json::from_value(self.api_call_get(&path)?)?)
+    }
+
+    pub fn list_wallet_utxos(&self, wallet_id: &str) -> Result<Vec<HeritageUtxo>> {
+        let path = format!("wallets/{wallet_id}/utxos");
+        Ok(serde_json::from_value(self.api_call_get(&path)?)?)
+    }
+
+    pub fn list_wallets(&self) -> Result<Vec<HeritageWalletMeta>> {
+        Ok(serde_json::from_value(self.api_call_get("wallets")?)?)
+    }
+
+    pub fn patch_heir(&self) -> Result<()> {
+        todo!()
+    }
+
+    pub fn patch_wallet(
+        &self,
+        wallet_id: &str,
+        name: Option<String>,
+        block_inclusion_objective: Option<BlockInclusionObjective>,
+    ) -> Result<HeritageWalletMeta> {
+        let path = format!("wallets/{wallet_id}");
+        Ok(serde_json::from_value(self.api_call(
+            Method::PATCH,
+            &path,
+            Some(json!({"name": name, "block_inclusion_objective": block_inclusion_objective})),
+        )?)?)
+    }
+
+    pub fn post_broadcast_tx(&self, psbt: Psbt) -> Result<Txid> {
+        let mut ret: HashMap<String, Txid> = serde_json::from_value(self.api_call(
+            Method::POST,
+            "broadcast-tx",
+            Some(json!({"psbt": psbt.to_string()})),
+        )?)?;
+        Ok(ret.remove("txid").expect("trusting the api for now"))
+    }
+
+    pub fn post_heir_contacts(&self) -> Result<()> {
+        todo!()
+    }
+
+    pub fn post_heirs(&self) -> Result<()> {
+        todo!()
+    }
+
+    pub fn post_heritage_create_unsigned_tx(&self) -> Result<()> {
+        todo!()
     }
 
     pub fn post_wallet_account_xpubs(
         &self,
         wallet_id: &str,
-        account_xpubs: &[btc_heritage::AccountXPub],
+        account_xpubs: Vec<btc_heritage::AccountXPub>,
     ) -> Result<()> {
         let path = format!("wallets/{wallet_id}/account-xpubs");
         serde_json::from_value(self.api_call(Method::POST, &path, Some(account_xpubs))?)?;
         Ok(())
+    }
+
+    pub fn post_wallet_create_address(&self, wallet_id: &str) -> Result<String> {
+        let path = format!("wallets/{wallet_id}/create-address");
+        let mut ret: HashMap<String, String> =
+            serde_json::from_value(self.api_call::<()>(Method::POST, &path, None)?)?;
+        Ok(ret.remove("address").expect("trusting the api for now"))
+    }
+
+    pub fn post_wallet_create_unsigned_tx(
+        &self,
+        wallet_id: &str,
+        new_tx: NewTx,
+    ) -> Result<(Psbt, TransactionSummary)> {
+        let path = format!("wallets/{wallet_id}/create-unsigned-tx");
+        let mut ret: HashMap<String, Value> =
+            serde_json::from_value(self.api_call(Method::POST, &path, Some(new_tx))?)?;
+        let psbt_str = ret.remove("psbt").expect("trusting the api for now");
+        let tx_sum =
+            serde_json::from_value(ret.remove("tx_summary").expect("trusting the api for now"))?;
+        Ok((
+            Psbt::from_str(psbt_str.as_str().expect("trusting the api for now"))
+                .expect("trusting the api for now"),
+            tx_sum,
+        ))
+    }
+
+    pub fn post_wallet_heritage_configs(
+        &self,
+        wallet_id: &str,
+        hc: HeritageConfig,
+    ) -> Result<HeritageConfig> {
+        let path = format!("wallets/{wallet_id}/heritage-configs");
+        Ok(serde_json::from_value(self.api_call(
+            Method::POST,
+            &path,
+            Some(hc),
+        )?)?)
+    }
+
+    pub fn post_wallet_synchronize(&self, wallet_id: &str) -> Result<()> {
+        let path = format!("wallets/{wallet_id}/synchronize");
+        self.api_call::<()>(Method::POST, &path, None)?;
+        Ok(())
+    }
+
+    pub fn post_wallets(&self, name: &str) -> Result<types::HeritageWalletMeta> {
+        Ok(serde_json::from_value(self.api_call(
+            Method::POST,
+            "wallets",
+            Some(json!({"name": name})),
+        )?)?)
     }
 }

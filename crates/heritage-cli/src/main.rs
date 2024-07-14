@@ -1,5 +1,6 @@
 mod commands;
 mod display;
+mod utils;
 
 use clap::Parser;
 use commands::CliParser;

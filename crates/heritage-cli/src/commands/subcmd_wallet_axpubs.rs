@@ -1,35 +1,37 @@
 use std::{any::Any, cell::RefCell, rc::Rc};
 
-use btc_heritage_wallet::{errors::Result, AccountXPub, Wallet, WalletOffline, WalletOnline};
+use btc_heritage_wallet::{
+    errors::Result, AccountXPub, AccountXPubWithStatus, Wallet, WalletOffline, WalletOnline,
+};
 
 /// Wallet Account XPubs management subcommand.
 #[derive(Debug, Clone, clap::Subcommand)]
 pub enum WalletAXpubSubcmd {
     /// List the Account eXtended Public Keys known by the Online component of the wallet and their status
     List {
-        #[arg(long, default_value_t = true)]
         /// List the used Account eXtended Public Keys of the Online wallet
-        used: bool,
         #[arg(long, default_value_t = true)]
+        used: bool,
         /// List the unused Account eXtended Public Keys of the Online wallet
+        #[arg(long, default_value_t = true)]
         unused: bool,
     },
     /// Display Account eXtended Public Keys generated using the Offline component of the wallet
     Display {
-        #[arg(long, default_value_t = 20)]
         /// The number of Account eXtended Public Keys to generate
+        #[arg(long, default_value_t = 20)]
         count: usize,
     },
     /// Feed (add) Account eXtended Public Keys to the Online component of the wallet
     Feed {
-        #[arg(value_name = "ACCOUNT_XPUB", num_args=1.., required = true, value_parser=parse_account_xpubs)]
         /// The Account eXtended Public Key(s) to feed
+        #[arg(value_name = "ACCOUNT_XPUB", num_args=1.., required = true, value_parser=parse_account_xpubs)]
         account_xpubs: Vec<AccountXPub>,
     },
     /// Generate Account eXtended Public Keys using the Offline component of the wallet and feed them to the Online component
     AutoFeed {
-        #[arg(long, default_value_t = 20)]
         /// The number of Account eXtended Public Keys to generate
+        #[arg(long, default_value_t = 20)]
         count: usize,
     },
 }
@@ -40,12 +42,24 @@ impl super::CommandExecutor for WalletAXpubSubcmd {
         let wallet = wallet.as_ref();
         let res: Box<dyn crate::display::Displayable> = match self {
             WalletAXpubSubcmd::List { used, unused } => {
-                let mut res = vec![];
-                if used {
-                    res.extend(wallet.borrow().list_used_account_xpubs()?.into_iter());
+                let mut res = wallet.borrow().list_account_xpubs()?;
+                if !used {
+                    res.retain(|e| {
+                        match e {
+                            AccountXPubWithStatus::Used(_) => false,
+                            _ => true,
+                        };
+                        true
+                    })
                 }
-                if unused {
-                    res.extend(wallet.borrow().list_unused_account_xpubs()?.into_iter());
+                if !unused {
+                    res.retain(|e| {
+                        match e {
+                            AccountXPubWithStatus::Unused(_) => false,
+                            _ => true,
+                        };
+                        true
+                    })
                 }
                 Box::new(res)
             }
@@ -53,12 +67,12 @@ impl super::CommandExecutor for WalletAXpubSubcmd {
                 Box::new(wallet.borrow().derive_accounts_xpubs(count)?)
             }
             WalletAXpubSubcmd::Feed { account_xpubs } => {
-                wallet.borrow_mut().feed_account_xpubs(&account_xpubs)?;
+                wallet.borrow_mut().feed_account_xpubs(account_xpubs)?;
                 Box::new(())
             }
             WalletAXpubSubcmd::AutoFeed { count } => {
                 let account_xpubs = wallet.borrow().derive_accounts_xpubs(count)?;
-                wallet.borrow_mut().feed_account_xpubs(&account_xpubs)?;
+                wallet.borrow_mut().feed_account_xpubs(account_xpubs)?;
                 Box::new(())
             }
         };

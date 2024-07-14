@@ -1,14 +1,15 @@
 use btc_heritage::{
-    bitcoin::{bip32::Fingerprint, Network},
+    bitcoin::{bip32::Fingerprint, Network, Txid},
     heritage_wallet::{DescriptorsBackup, TransactionSummary},
     miniscript::DescriptorPublicKey,
-    AccountXPub, HeritageConfig, HeritageWalletBalance, PartiallySignedTransaction, SpendingConfig,
+    AccountXPub, HeritageConfig, PartiallySignedTransaction,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     database::Database,
     errors::{Error, Result},
+    service_client::AccountXPubWithStatus,
     wallet_offline::{AnyWalletOffline, WalletOffline},
     wallet_online::{AnyWalletOnline, WalletOnline},
 };
@@ -147,13 +148,12 @@ macro_rules! impl_wallet_online_fn {
 impl WalletOnline for Wallet {
     impl_wallet_online_fn!(backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>);
     impl_wallet_online_fn!(get_address(&self) -> Result<String>);
-    impl_wallet_online_fn!(list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>>);
-    impl_wallet_online_fn!(list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>>);
-    impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: &[AccountXPub]) -> Result<()>);
+    impl_wallet_online_fn!(list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>);
+    impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>);
     impl_wallet_online_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
-    impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: &HeritageConfig) -> Result<()>);
+    impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<()>);
     impl_wallet_online_fn!(sync(&mut self) -> Result<()>);
-    impl_wallet_online_fn!(get_balance(&self) -> Result<HeritageWalletBalance>);
-    impl_wallet_online_fn!(last_sync_ts(&self) -> Result<u64>);
-    impl_wallet_online_fn!(create_psbt(&self, spending_config: SpendingConfig) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
+    impl_wallet_online_fn!(get_wallet_info(&self) -> Result<crate::wallet_online::WalletInfo>);
+    impl_wallet_online_fn!(create_psbt(&self, new_tx: crate::service_client::NewTx) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
+    impl_wallet_online_fn!(broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>);
 }

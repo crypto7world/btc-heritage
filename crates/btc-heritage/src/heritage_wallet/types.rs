@@ -120,15 +120,20 @@ impl Default for BlockInclusionObjective {
         Self(6)
     }
 }
-impl<T: Into<u16>> From<T> for BlockInclusionObjective {
+impl From<u16> for BlockInclusionObjective {
     /// Create a [BlockInclusionObjective] from a value that can be converted into a [u16]
     ///
     /// # Panics
     /// Panics if the resulting internal [u16] is less than 1 or more than 1008
-    fn from(value: T) -> Self {
+    fn from(value: u16) -> Self {
         let bio: u16 = value.into();
         assert!(1 <= bio && bio <= 1008);
         Self(bio)
+    }
+}
+impl From<BlockInclusionObjective> for u16 {
+    fn from(value: BlockInclusionObjective) -> Self {
+        value.0
     }
 }
 impl Display for BlockInclusionObjective {
