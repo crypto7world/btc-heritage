@@ -15,9 +15,6 @@ pub enum WalletHeritageConfigSubcmd {
         #[arg(value_parser=parse_heritage_configuration)]
         heritage_config: HeritageConfig,
     },
-    /// Renew the current Heritage Conguration for the Online component of the wallet by
-    /// updating only the reference date withtout changing heirs and their order.
-    Renew,
 }
 
 impl super::CommandExecutor for WalletHeritageConfigSubcmd {
@@ -30,7 +27,6 @@ impl super::CommandExecutor for WalletHeritageConfigSubcmd {
                 Box::new(wallet.borrow().list_heritage_configs()?.remove(0))
             }
             WalletHeritageConfigSubcmd::Set { heritage_config } => todo!(),
-            WalletHeritageConfigSubcmd::Renew => todo!(),
         };
         Ok(res)
     }

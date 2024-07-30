@@ -210,6 +210,12 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                         outpoint: subwallet_utxo.outpoint,
                         amount: Amount::from_sat(subwallet_utxo.txout.value),
                         confirmation_time: block_time,
+                        address: crate::bitcoin::Address::from_script(
+                            subwallet_utxo.txout.script_pubkey.as_script(),
+                            *crate::utils::bitcoin_network_from_env(),
+                        )
+                        .expect("script should always be valid")
+                        .into(),
                         heritage_config: subwallet_heritage_config.clone(),
                     });
                 }

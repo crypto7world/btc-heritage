@@ -10,6 +10,7 @@ use std::{
 };
 
 use bdk::{
+    bitcoin::Address,
     database::Database,
     wallet::{AddressInfo, IsDust},
     BlockTime, FeeRate as BdkFeeRate, KeychainKind, LocalUtxo, Wallet,
@@ -30,6 +31,7 @@ use crate::{
     heritage_config::{HeritageConfig, HeritageExplorer, HeritageExplorerTrait},
     miniscript::{Miniscript, Tap},
     subwallet_config::SubwalletConfig,
+    utils::bitcoin_network_from_env,
     HeirConfig,
 };
 
@@ -88,6 +90,101 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 })
             })
             .collect::<Result<_>>()?)
+    }
+
+    pub fn list_wallet_addresses(&self) -> Result<Vec<WalletAddress>> {
+        log::debug!("HeritageWallet::list_wallet_addresses");
+        let Some(fingerprint) = self.fingerprint()? else {
+            // No fingerprint means no AccountXPub, so no address either
+            return Ok(vec![]);
+        };
+
+        let intermediate_results = self
+            .database
+            .borrow()
+            .list_obsolete_subwallet_configs()?
+            .into_iter()
+            .chain(
+                self.database
+                    .borrow()
+                    .get_subwallet_config(SubwalletConfigId::Current)?,
+            )
+            // Map each subwallet config to a WalletAddress iterator
+            .map(|swc| {
+                // Retrieve the derivation path of the account xpub
+                let axpub_dp = swc
+                    .account_xpub()
+                    .descriptor_public_key()
+                    .full_derivation_path()
+                    .expect("DerivationPath is present for an Account Xpub");
+                let mut axpub_dpi = axpub_dp.normal_children();
+
+                // Construct the external and change DerivationPath
+                let (ext_dp, change_dp) = (axpub_dpi.next().unwrap(), axpub_dpi.next().unwrap());
+
+                // Open the Subwallet DB
+                let sw = self.get_subwallet(&swc)?;
+
+                // Retrieve the last external index
+                let last_external_index = sw
+                    .database()
+                    .get_last_index(KeychainKind::External)
+                    .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+
+                // Retrieve the last change index
+                let last_change_index = sw
+                    .database()
+                    .get_last_index(KeychainKind::Internal)
+                    .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+
+                // For each (index, keychain, derivation_path)
+                let wallet_addresses = [
+                    (last_change_index, KeychainKind::Internal, change_dp),
+                    (last_external_index, KeychainKind::External, ext_dp),
+                ]
+                .into_iter()
+                // Filtermap, if last index is present, find all address up to that index
+                // Else, do nothing
+                .filter_map(|(last_index, kc, dp)| {
+                    last_index.map(|last_index| {
+                        let wallet_addresses = sw
+                            .database()
+                            .iter_script_pubkeys(Some(kc))
+                            .map_err(|e| DatabaseError::Generic(e.to_string()))?
+                            .into_iter()
+                            .zip(dp.normal_children())
+                            .take((last_index + 1) as usize)
+                            .map(|(sb, dp)| WalletAddress {
+                                origin: (fingerprint, dp),
+                                address: Address::from_script(
+                                    sb.as_script(),
+                                    *bitcoin_network_from_env(),
+                                )
+                                .expect(
+                                    "script should always be valid from the \
+                                correct network inside the DB",
+                                ),
+                            })
+                            .collect::<Vec<_>>();
+                        Ok(wallet_addresses)
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+                Ok(wallet_addresses)
+            })
+            // Flatten to get a single WalletAddress iterator
+            .collect::<Result<Vec<_>>>()?;
+
+        // At this point we got a Vec<Vec<Vec<WalletAddress>>>
+        // We flatten and reverse it
+        // Reverse so that the result vec starts with external addresses of the current config,
+        // then change addresses of the current config, then external of the previous configs, etc...
+        Ok(intermediate_results
+            .into_iter()
+            .flatten()
+            .flatten()
+            .rev()
+            .collect())
     }
 
     /// Return an immutable reference to the internal database
@@ -386,9 +483,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
-    pub fn get_new_address(&self) -> Result<String> {
+    pub fn get_new_address(&self) -> Result<Address> {
         log::info!("HeritageWallet::get_new_address - Called for a new Bitcoin address");
-        let address = self.internal_get_new_address(None)?.to_string();
+        let address = self
+            .internal_get_new_address(KeychainKind::External)?
+            .address;
         log::info!("HeritageWallet::get_new_address - address={address}");
         Ok(address)
     }
@@ -584,7 +683,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     .map(|Recipient(addr, amount)| (addr.script_pubkey(), amount.to_sat()))
                     .collect::<Vec<_>>();
                 tx_builder.set_recipients(recipients);
-                let drain_addr = self.internal_get_new_address(Some(KeychainKind::Internal))?;
+                let drain_addr = self.internal_get_new_address(KeychainKind::Internal)?;
                 tx_builder.drain_to(drain_addr.script_pubkey());
                 drain_addr.script_pubkey()
             }
@@ -1041,7 +1140,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(subwalletconfig.get_subwallet(subdatabase))
     }
 
-    fn internal_get_new_address(&self, keychain_kind: Option<KeychainKind>) -> Result<AddressInfo> {
+    fn internal_get_new_address(&self, keychain_kind: KeychainKind) -> Result<AddressInfo> {
         log::debug!("HeritageWallet::internal_get_new_address - keychain_kind={keychain_kind:?}");
 
         let current_subwallet_config = self
@@ -1073,7 +1172,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         let subwallet = self.get_subwallet(&current_subwallet_config)?;
 
         let address = match keychain_kind {
-            Some(KeychainKind::External) | None => {
+            KeychainKind::External => {
                 log::debug!("HeritageWallet::internal_get_new_address - subwallet.get_address");
                 subwallet
                     .get_address(bdk::wallet::AddressIndex::New)
@@ -1085,7 +1184,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                         _ => DatabaseError::Generic(e.to_string()).into(),
                     })?
             }
-            Some(KeychainKind::Internal) => {
+            KeychainKind::Internal => {
                 log::debug!(
                     "HeritageWallet::internal_get_new_address - subwallet.get_internal_address"
                 );
@@ -1615,6 +1714,91 @@ mod tests {
     }
 
     #[test]
+    fn list_wallet_addresses() {
+        // Empty wallet
+        let wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
+        // Add AccountXPubs
+        wallet
+            .append_account_xpubs((0..3).into_iter().map(|i| get_test_account_xpub(i)))
+            .unwrap();
+        // Test the expected sequence of addresses
+        wallet
+            .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))
+            .unwrap();
+        wallet.get_new_address().unwrap();
+        wallet.get_new_address().unwrap();
+
+        wallet
+            .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY1))
+            .unwrap();
+        wallet.get_new_address().unwrap();
+        wallet.get_new_address().unwrap();
+
+        wallet
+            .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeBro))
+            .unwrap();
+        wallet.get_new_address().unwrap();
+        wallet.get_new_address().unwrap();
+
+        let results = wallet.list_wallet_addresses().unwrap();
+
+        // Expected addresses, in order
+        let expected_addresses = vec![
+            get_default_test_subwallet_config_expected_address(
+                TestHeritageConfig::BackupWifeBro,
+                1,
+            ),
+            get_default_test_subwallet_config_expected_address(
+                TestHeritageConfig::BackupWifeBro,
+                0,
+            ),
+            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY1, 1),
+            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY1, 0),
+            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY2, 1),
+            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY2, 0),
+        ];
+
+        assert_eq!(
+            results
+                .iter()
+                .map(|wa| wa.address().to_string())
+                .collect::<Vec<_>>(),
+            expected_addresses
+        );
+
+        // The fingerprint should be the same for every WalletAddress origin
+        let fingerprint = get_test_account_xpub(0)
+            .descriptor_public_key()
+            .master_fingerprint();
+        assert!(results.iter().all(|wa| wa.origin().0 == fingerprint));
+
+        // Expected derivation paths, in order
+        let expected_derivation_paths = (0..3)
+            .map(|a_i| {
+                let axpub = get_test_account_xpub(a_i);
+                let dp = axpub
+                    .descriptor_public_key()
+                    .full_derivation_path()
+                    .unwrap();
+                dp.normal_children()
+                    .take(1)
+                    .map(|cdp| cdp.normal_children().take(2).collect::<Vec<_>>())
+                    .flatten()
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .rev()
+            .collect::<Vec<_>>();
+        assert_eq!(
+            results
+                .iter()
+                .map(|wa| wa.origin().1.clone())
+                .collect::<Vec<_>>(),
+            expected_derivation_paths
+        );
+    }
+
+    #[test]
     fn list_unused_account_xpubs() {
         let wallet = setup_wallet();
         let expected = (3..10)
@@ -1697,7 +1881,7 @@ mod tests {
         let unused_axps = wallet.list_unused_account_xpubs().unwrap();
         assert!(unused_axps.len() == 4 && unused_axps[0] == get_test_account_xpub(1));
         // Now generate an address
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY2,
                 0
@@ -1784,7 +1968,7 @@ mod tests {
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))
             .is_ok());
         // Now generate an address
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY2,
                 0
@@ -1811,7 +1995,7 @@ mod tests {
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))
             .unwrap();
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY2,
                 0
@@ -1819,7 +2003,7 @@ mod tests {
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))
             .unwrap();
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY2,
                 1,
@@ -1828,7 +2012,7 @@ mod tests {
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY1))
             .unwrap();
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY1,
                 0
@@ -1836,7 +2020,7 @@ mod tests {
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY1))
             .unwrap();
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY1,
                 1,
@@ -1845,7 +2029,7 @@ mod tests {
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeBro))
             .unwrap();
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeBro,
                 0
@@ -1853,7 +2037,7 @@ mod tests {
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeBro))
             .unwrap();
-        assert!(wallet.get_new_address().is_ok_and(|addr| addr
+        assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeBro,
                 1,

@@ -22,18 +22,25 @@ heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> cr
 # Heritage configuration
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config set <...>
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config list
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config renew
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config show-current
 
 # Account eXtended Public Keys
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs list [--used <true|false>] [--unused <true|false>]
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs display
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs feed <ACCOUNT_XPUB> [<ACCOUNT_XPUB> ..]
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs auto-feed
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs generate [--count <count>]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs list-added [--used <true|false>] [--unused <true|false>]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs add <ACCOUNT_XPUB> [<ACCOUNT_XPUB> ..]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs auto-add [--count <count>]
+
+# Descriptors
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> descriptors backup
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> descriptors restore
+
+# Ledger policies
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ledger-policies list
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ledger-policies list-registered
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ledger-policies register <POLICY> [<POLICY> ..]
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ledger-policies auto-register
 
 
-
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> backup-online-wallet <backup-file-path>
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> restore-online-wallet <backup-file-path>
 
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> balance
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> sync

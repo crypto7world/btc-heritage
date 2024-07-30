@@ -28,7 +28,7 @@ impl SubdatabaseId {
 }
 impl Display for SubdatabaseId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        self.0.fmt(f)
     }
 }
 
@@ -484,6 +484,9 @@ pub mod tests {
                 height: 123_456,
                 timestamp: 1_700_000_000,
             }),
+            address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                .try_into()
+                .unwrap(),
             heritage_config: get_test_heritage_config(TestHeritageConfig::BackupWifeBro),
         };
         let heritage_utxo_2 = HeritageUtxo {
@@ -496,6 +499,9 @@ pub mod tests {
                 height: 123_456,
                 timestamp: 1_700_000_000,
             }),
+            address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                .try_into()
+                .unwrap(),
             heritage_config: get_test_heritage_config(TestHeritageConfig::BackupWifeBro),
         };
         let heritage_utxo_3 = HeritageUtxo {
@@ -508,6 +514,9 @@ pub mod tests {
                 height: 123_456,
                 timestamp: 1_700_000_000,
             }),
+            address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                .try_into()
+                .unwrap(),
             heritage_config: get_test_heritage_config(TestHeritageConfig::BackupWifeBro),
         };
 

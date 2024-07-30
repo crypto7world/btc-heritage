@@ -10,7 +10,9 @@ use clap::builder::{PossibleValuesParser, TypedValueParser};
 
 use crate::utils::ask_user_confirmation;
 
-use super::subcmd_wallet_axpubs::WalletAXpubSubcmd;
+use super::{
+    subcmd_wallet_axpubs::WalletAXpubSubcmd, subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd,
+};
 
 /// Sub-command for wallets.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -61,7 +63,7 @@ pub enum WalletSubcmd {
     /// Commands managing the Ledger wallet policies (BIP388) of the wallet
     LedgerPolicies {
         #[command(subcommand)]
-        subcmd: super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd,
+        subcmd: WalletLedgerPolicySubcmd,
     },
     /// Commands managing the Heritage configuration of the wallet
     HeritageConfigs {
@@ -133,10 +135,9 @@ impl super::CommandExecutor for WalletSubcmd {
         let service_client =
             HeritageServiceClient::new(service_gargs.service_api_url, Tokens::load(&mut db)?);
 
-        let need_online = match &self {
+        let need_online_component = match &self {
             WalletSubcmd::Create { .. }
             | WalletSubcmd::Descriptors { .. }
-            | WalletSubcmd::AccountXpubs { .. }
             | WalletSubcmd::Sync
             | WalletSubcmd::Info
             | WalletSubcmd::GetAddress
@@ -145,23 +146,29 @@ impl super::CommandExecutor for WalletSubcmd {
             | WalletSubcmd::HeritageConfigs { .. } => true,
             WalletSubcmd::SignPsbt { broadcast, .. } if *broadcast => true,
             WalletSubcmd::LedgerPolicies { subcmd } => match subcmd {
-                super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd::List => true,
-                _ => false,
+                WalletLedgerPolicySubcmd::List | WalletLedgerPolicySubcmd::AutoRegister => true,
+                WalletLedgerPolicySubcmd::ListRegistered
+                | WalletLedgerPolicySubcmd::Register { .. } => false,
+            },
+            WalletSubcmd::AccountXpubs { subcmd } => match subcmd {
+                WalletAXpubSubcmd::AutoAdd { .. }
+                | WalletAXpubSubcmd::ListAdded { .. }
+                | WalletAXpubSubcmd::Add { .. } => true,
+                WalletAXpubSubcmd::Generate { .. } => false,
             },
             _ => false,
         };
-        let need_offline = match &self {
+        let need_offline_component = match &self {
             WalletSubcmd::Create { .. } | WalletSubcmd::SignPsbt { .. } => true,
             WalletSubcmd::LedgerPolicies { subcmd } => match subcmd {
-                super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd::ListRegistered
-                | super::subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd::Register {
-                    ..
-                } => true,
-                _ => false,
+                WalletLedgerPolicySubcmd::ListRegistered
+                | WalletLedgerPolicySubcmd::AutoRegister
+                | WalletLedgerPolicySubcmd::Register { .. } => true,
+                WalletLedgerPolicySubcmd::List => false,
             },
             WalletSubcmd::AccountXpubs { subcmd } => match subcmd {
-                WalletAXpubSubcmd::AutoFeed { .. } => true,
-                _ => false,
+                WalletAXpubSubcmd::Generate { .. } | WalletAXpubSubcmd::AutoAdd { .. } => true,
+                WalletAXpubSubcmd::ListAdded { .. } | WalletAXpubSubcmd::Add { .. } => false,
             },
             WalletSubcmd::SendBitcoins { sign, .. } if *sign => true,
             _ => false,
@@ -219,21 +226,20 @@ impl super::CommandExecutor for WalletSubcmd {
                     && !wallet.borrow().offline_wallet().is_none()
                     && !wallet.borrow().online_wallet().is_none()
                 {
-                    (WalletAXpubSubcmd::AutoFeed { count: 20 })
-                        .execute(Box::new(wallet.clone()))?;
+                    (WalletAXpubSubcmd::AutoAdd { count: 20 }).execute(Box::new(wallet.clone()))?;
                 }
                 wallet
             }
             _ => {
                 let mut wallet = Wallet::load(&db, &wallet_name)?;
-                if need_offline {
+                if need_offline_component {
                     match wallet.offline_wallet_mut() {
                         AnyWalletOffline::None => (),
                         AnyWalletOffline::LocalKey(lk) => todo!(),
                         AnyWalletOffline::Ledger(ledger) => ledger.init_ledger_client()?,
                     };
                 }
-                if need_online {
+                if need_online_component {
                     match wallet.online_wallet_mut() {
                         AnyWalletOnline::None => (),
                         AnyWalletOnline::Service(sb) => sb.init_service_client(service_client)?,
