@@ -10,6 +10,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("{0} is not a valid wallet address")]
+    InvalidWalletAddressString(String),
     #[error("{0} is not a valid Bitcoin address for the expected network ({1})")]
     InvalidAddressString(String, Network),
     #[error("Psbt is not finalizable: {}", serde_json::json!(.0))]

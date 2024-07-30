@@ -1,13 +1,18 @@
-use std::fmt::Display;
+use std::{fmt::Display, ops::Deref, str::FromStr};
 
 use bdk::{Balance, BlockTime};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bitcoin::{Address, Amount, OutPoint, Txid},
+    bitcoin::{
+        address::NetworkChecked,
+        bip32::{DerivationPath, Fingerprint},
+        Address, Amount, OutPoint, Txid,
+    },
     errors::Error,
     heritage_config::HeritageExplorerTrait,
     subwallet_config::SubwalletId,
+    utils::string_to_address,
     HeirConfig, HeritageConfig,
 };
 
@@ -120,20 +125,25 @@ impl Default for BlockInclusionObjective {
         Self(6)
     }
 }
-impl<T: Into<u16>> From<T> for BlockInclusionObjective {
+impl From<u16> for BlockInclusionObjective {
     /// Create a [BlockInclusionObjective] from a value that can be converted into a [u16]
     ///
     /// # Panics
     /// Panics if the resulting internal [u16] is less than 1 or more than 1008
-    fn from(value: T) -> Self {
+    fn from(value: u16) -> Self {
         let bio: u16 = value.into();
         assert!(1 <= bio && bio <= 1008);
         Self(bio)
     }
 }
+impl From<BlockInclusionObjective> for u16 {
+    fn from(value: BlockInclusionObjective) -> Self {
+        value.0
+    }
+}
 impl Display for BlockInclusionObjective {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        self.0.fmt(f)
     }
 }
 
@@ -141,6 +151,49 @@ impl Display for BlockInclusionObjective {
 pub enum SubwalletConfigId {
     Current,
     Id(SubwalletId),
+}
+
+/// Wrapper around an [Address<NetworkChecked>] that automatically check the address
+/// using the `BITCOIN_NETWORK` environment variable.
+/// If the environment variable is absent, assume [crate::bitcoin::Network::Bitcoin]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+#[serde(into = "String", try_from = "String")]
+pub struct CheckedAddress(Address<NetworkChecked>);
+impl Deref for CheckedAddress {
+    type Target = Address<NetworkChecked>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl From<Address<NetworkChecked>> for CheckedAddress {
+    fn from(value: Address<NetworkChecked>) -> Self {
+        Self(value)
+    }
+}
+impl TryFrom<String> for CheckedAddress {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Error> {
+        Self::try_from(value.as_str())
+    }
+}
+impl TryFrom<&str> for CheckedAddress {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self, Error> {
+        Ok(Self(string_to_address(value)?))
+    }
+}
+
+impl From<CheckedAddress> for String {
+    fn from(value: CheckedAddress) -> String {
+        value.to_string()
+    }
+}
+impl Display for CheckedAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +208,8 @@ pub struct HeritageUtxo {
     /// Can be None if the UTXO is for a unconfirmed TX
     #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
     pub confirmation_time: Option<BlockTime>,
+    /// The Bitcoin [CheckedAddress] of this UTXO
+    pub address: CheckedAddress,
     /// The [HeritageConfig] of the subwallet that owns this UTXO
     pub heritage_config: HeritageConfig,
 }
@@ -232,4 +287,93 @@ pub struct DescriptorsBackup {
     pub first_use_ts: Option<u64>,
     pub last_external_index: Option<u32>,
     pub last_change_index: Option<u32>,
+}
+
+/// A [Address<NetworkChecked>] with [(Fingerprint, DerivationPath)] informations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+#[serde(into = "String", try_from = "String")]
+pub struct WalletAddress {
+    pub(crate) origin: (Fingerprint, DerivationPath),
+    pub(crate) address: Address<NetworkChecked>,
+}
+impl WalletAddress {
+    pub fn origin(&self) -> &(Fingerprint, DerivationPath) {
+        &self.origin
+    }
+    pub fn address(&self) -> &Address {
+        &self.address
+    }
+}
+impl Deref for WalletAddress {
+    type Target = Address<NetworkChecked>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.address
+    }
+}
+impl From<((Fingerprint, DerivationPath), Address<NetworkChecked>)> for WalletAddress {
+    fn from(value: ((Fingerprint, DerivationPath), Address<NetworkChecked>)) -> Self {
+        Self {
+            origin: value.0,
+            address: value.1,
+        }
+    }
+}
+impl TryFrom<String> for WalletAddress {
+    type Error = Error;
+    fn try_from(value: String) -> Result<Self, Error> {
+        Self::try_from(value.as_str())
+    }
+}
+impl TryFrom<&str> for WalletAddress {
+    type Error = Error;
+    fn try_from(value: &str) -> Result<Self, Error> {
+        // Expected format: [<fingerprint>/<derivation_path>]<address>
+        let error_c = || Error::InvalidWalletAddressString(value.to_owned());
+
+        // Strip off the opening bracket and split at the closing one
+        let mut parts = value.strip_prefix('[').ok_or_else(error_c)?.split(']');
+
+        // Extract the origin, the first part
+        let origin_str = parts.next().ok_or_else(error_c)?;
+        // Extract the address, the second part
+        let address_str = parts.next().ok_or_else(error_c)?;
+        // There is no other part
+        let None = parts.next() else {
+            return Err(error_c());
+        };
+        // Split the origin into <fingerprint>/<derivation_path>
+        let Some((fingerprint_str, derivation_path_str)) = origin_str.split_once('/') else {
+            return Err(error_c());
+        };
+        let fingerprint = Fingerprint::from_str(fingerprint_str).map_err(|e| {
+            log::error!("Could not parse fingerprint: {fingerprint_str} ({e})");
+            error_c()
+        })?;
+        let derivation_path = DerivationPath::from_str(derivation_path_str).map_err(|e| {
+            log::error!("Could not parse derivation_path: {derivation_path_str} ({e})");
+            error_c()
+        })?;
+        let address = string_to_address(address_str).map_err(|e| {
+            log::error!("Could not parse address: {address_str} ({e})");
+            error_c()
+        })?;
+
+        Ok(Self {
+            origin: (fingerprint, derivation_path),
+            address,
+        })
+    }
+}
+
+impl From<WalletAddress> for String {
+    fn from(value: WalletAddress) -> String {
+        value.to_string()
+    }
+}
+impl Display for WalletAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}/{}]{}", self.origin.0, self.origin.1, self.address)
+    }
 }

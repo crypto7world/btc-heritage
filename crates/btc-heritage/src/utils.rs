@@ -22,21 +22,35 @@ pub fn bytes_to_hex_string<B: AsRef<[u8]>>(bytes: B) -> String {
     s
 }
 
-static BITCOIN_NETWORK: OnceLock<Network> = OnceLock::new();
 pub fn bitcoin_network_from_env() -> &'static Network {
+    static BITCOIN_NETWORK: OnceLock<Network> = OnceLock::new();
     BITCOIN_NETWORK.get_or_init(|| {
+        #[cfg(not(any(test, feature = "database-tests")))]
         let bitcoin_network = match std::env::var("BITCOIN_NETWORK") {
             Ok(bitcoin_network) => match bitcoin_network.as_str() {
                 "bitcoin" => Network::Bitcoin,
-                _ => Network::Testnet,
+                "testnet" => Network::Testnet,
+                "regtest" => Network::Regtest,
+                "signet" => Network::Signet,
+                _ => {
+                    log::warn!(
+                        "environment variable `BITCOIN_NETWORK` is set to unknown value: \
+                        \"{bitcoin_network}\". Using Network::Testnet."
+                    );
+                    Network::Testnet
+                }
             },
+            #[cfg(not(any(test, feature = "database-tests")))]
             Err(_) => {
                 log::warn!(
-                    "environment variable `BITCOIN_NETWORK` is not set. Using Network::Regtest."
+                    "environment variable `BITCOIN_NETWORK` is not set. Using Network::Bitcoin."
                 );
-                Network::Regtest
+                Network::Bitcoin
             }
         };
+        #[cfg(any(test, feature = "database-tests"))]
+        let bitcoin_network = Network::Regtest;
+
         log::info!("BITCOIN_NETWORK={bitcoin_network:?}");
         bitcoin_network
     })

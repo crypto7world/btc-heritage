@@ -28,7 +28,7 @@ impl SubdatabaseId {
 }
 impl Display for SubdatabaseId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        self.0.fmt(f)
     }
 }
 
@@ -484,6 +484,9 @@ pub mod tests {
                 height: 123_456,
                 timestamp: 1_700_000_000,
             }),
+            address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                .try_into()
+                .unwrap(),
             heritage_config: get_test_heritage_config(TestHeritageConfig::BackupWifeBro),
         };
         let heritage_utxo_2 = HeritageUtxo {
@@ -496,6 +499,9 @@ pub mod tests {
                 height: 123_456,
                 timestamp: 1_700_000_000,
             }),
+            address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                .try_into()
+                .unwrap(),
             heritage_config: get_test_heritage_config(TestHeritageConfig::BackupWifeBro),
         };
         let heritage_utxo_3 = HeritageUtxo {
@@ -508,6 +514,9 @@ pub mod tests {
                 height: 123_456,
                 timestamp: 1_700_000_000,
             }),
+            address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                .try_into()
+                .unwrap(),
             heritage_config: get_test_heritage_config(TestHeritageConfig::BackupWifeBro),
         };
 
@@ -770,7 +779,7 @@ pub mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         assert!(res.unwrap().is_none());
 
-        let new_bio = BlockInclusionObjective::from(5u8);
+        let new_bio = BlockInclusionObjective::from(5u16);
         // Insert work
         let res = db.set_block_inclusion_objective(new_bio);
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
@@ -779,7 +788,7 @@ pub mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         assert!(res.unwrap().is_some_and(|bio| bio == new_bio));
 
-        let new_bio = BlockInclusionObjective::from(10u8);
+        let new_bio = BlockInclusionObjective::from(10u16);
         // Update works
         let res = db.set_block_inclusion_objective(new_bio);
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
