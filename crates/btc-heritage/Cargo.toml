@@ -1,6 +1,6 @@
 [package]
 name = "btc-heritage"
-version = "0.12.0"
+version = "0.13.0"
 description = "A crate implementing primitives for a Bitcoin Taproot wallet managing on-chain inheritance of bitcoins"
 repository.workspace = true
 edition.workspace = true
