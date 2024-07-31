@@ -7,6 +7,7 @@ use crate::{
     errors::Error,
     miniscript::psbt::PsbtExt,
 };
+
 use serde_json::json;
 
 /// The average time, in second, to produce a block
@@ -157,6 +158,81 @@ pub(crate) mod amount_serde {
         }
         deserializer.deserialize_u64(AmountVisitor)
     }
+}
+
+/// Sort a [Vec] of [bdk::TransactionDetails]
+///
+/// # Panics
+/// Panics if the [TransactionDetails] does not contain the raw transaction
+#[cfg(any(feature = "online", test))]
+pub(crate) fn sort_transaction_details_with_raw(v: &mut Vec<bdk::TransactionDetails>) {
+    // We must sort the transactions so they are in the correct order, from oldest to newest
+    // Trivialy, TXs in older blocks are older. For TXs in the same block, we must order them so
+    // that if any TX "A" uses an UTXO of another TX "B", "A" comes after "B".
+    let mut tx_index = std::collections::HashMap::new();
+    // First pass, each TX simply stores its block_height and the TX ids it depends on
+    for tx in v.iter() {
+        let block_height = tx.confirmation_time.as_ref().map(|ct| ct.height);
+        let txid_iter = tx
+            .transaction
+            .as_ref()
+            .expect("we asked it to be included")
+            .input
+            .iter()
+            .map(|txin| txin.previous_output.txid)
+            .collect::<std::collections::HashSet<_>>();
+        tx_index.insert(tx.txid, (block_height, txid_iter));
+    }
+    // Now sort
+    v.sort_by(|a, b| {
+        // a < b if a.confirmation_time < b.confirmation_time
+        a.confirmation_time
+            .cmp(&b.confirmation_time)
+            .then_with(|| {
+                let confirmation_time_of_interest =
+                    b.confirmation_time.as_ref().map(|ct| ct.height);
+                let mut stack_deps_a = vec![];
+                stack_deps_a.extend(
+                    tx_index
+                        .get(&a.txid)
+                        .expect("a is in the HashMap")
+                        .1
+                        .iter()
+                        .cloned(),
+                );
+                while let Some(deps_id) = stack_deps_a.pop() {
+                    if deps_id == b.txid {
+                        return std::cmp::Ordering::Greater;
+                    }
+                    if let Some((bh, deps)) = tx_index.get(&deps_id) {
+                        if confirmation_time_of_interest == *bh {
+                            stack_deps_a.extend(deps)
+                        }
+                    }
+                }
+                let mut stack_deps_b = vec![];
+                stack_deps_b.extend(
+                    tx_index
+                        .get(&b.txid)
+                        .expect("b is in the HashMap")
+                        .1
+                        .iter()
+                        .cloned(),
+                );
+                while let Some(deps_id) = stack_deps_b.pop() {
+                    if deps_id == a.txid {
+                        return std::cmp::Ordering::Less;
+                    }
+                    if let Some((bh, deps)) = tx_index.get(&deps_id) {
+                        if confirmation_time_of_interest == *bh {
+                            stack_deps_b.extend(deps)
+                        }
+                    }
+                }
+                std::cmp::Ordering::Equal
+            })
+            .then_with(|| a.txid.cmp(&b.txid))
+    });
 }
 
 #[cfg(test)]

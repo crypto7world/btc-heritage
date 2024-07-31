@@ -173,7 +173,7 @@ pub trait TransacHeritageDatabase: HeritageDatabase {
 
 #[cfg(any(test, feature = "database-tests"))]
 pub mod tests {
-    use std::str::FromStr;
+    use std::{collections::HashSet, str::FromStr};
 
     use bdk::{
         database::{BatchOperations, Database},
@@ -182,6 +182,7 @@ pub mod tests {
 
     use crate::{
         bitcoin::{Amount, FeeRate, Txid},
+        heritage_wallet::TransactionSummaryOwnedIO,
         tests::{
             get_test_account_xpub, get_test_heritage_config, get_test_subwallet_config,
             TestHeritageConfig,
@@ -605,9 +606,15 @@ pub mod tests {
                 height: 123_455,
                 timestamp: 1_700_000_000,
             }),
-            received: Amount::from_sat(100_000),
-            sent: Amount::ZERO,
+            owned_inputs: vec![TransactionSummaryOwnedIO(
+                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                    .try_into()
+                    .unwrap(),
+                Amount::from_sat(100_000),
+            )],
+            owned_outputs: vec![],
             fee: Amount::from_sat(10_000),
+            parent_txids: HashSet::new(),
         };
         let tx_summary_2 = TransactionSummary {
             txid: Txid::from_str(
@@ -618,22 +625,42 @@ pub mod tests {
                 height: 123_452,
                 timestamp: 1_700_000_000,
             }),
-            received: Amount::ZERO,
-            sent: Amount::from_sat(100_000),
+            owned_inputs: vec![],
+            owned_outputs: vec![TransactionSummaryOwnedIO(
+                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                    .try_into()
+                    .unwrap(),
+                Amount::from_sat(100_000),
+            )],
             fee: Amount::from_sat(10_000),
+            parent_txids: HashSet::new(),
         };
         let tx_summary_3 = TransactionSummary {
             txid: Txid::from_str(
-                "5df6e0e2761359d30a8275058e301fcc0381534545f55cf43e41983f5d4c9456",
+                "5df6e0e2761359d30a8275058e201fcc0381534545f55cf43e41983f5d4c9456",
             )
             .unwrap(),
             confirmation_time: Some(BlockTime {
-                height: 123_457,
+                height: 123_455,
                 timestamp: 1_700_000_000,
             }),
-            received: Amount::from_sat(100_000_000),
-            sent: Amount::from_sat(100_000),
+            owned_inputs: vec![TransactionSummaryOwnedIO(
+                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                    .try_into()
+                    .unwrap(),
+                Amount::from_sat(100_000),
+            )],
+            owned_outputs: vec![TransactionSummaryOwnedIO(
+                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                    .try_into()
+                    .unwrap(),
+                Amount::from_sat(100_000),
+            )],
             fee: Amount::from_sat(10_000),
+            parent_txids: HashSet::from([Txid::from_str(
+                "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
+            )
+            .unwrap()]),
         };
 
         // Add two TransactionSummary
@@ -660,15 +687,6 @@ pub mod tests {
         let res = db.list_transaction_summaries();
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         let lst1 = res.unwrap();
-        let mut expected = vec![
-            tx_summary_1.clone(),
-            tx_summary_3.clone(),
-            tx_summary_2.clone(),
-        ];
-        expected.sort();
-        expected.reverse();
-        // Result should be correctly sorted
-        assert_eq!(lst1, expected);
 
         // Paginate TransactionSummary should give us the same result
         let mut lst2 = vec![];
@@ -685,7 +703,16 @@ pub mod tests {
             }
             continuation_token = res.continuation_token;
         }
-        assert_eq!(lst1, lst2);
+        // Sorting is guaranteed by the database API only for TX sum with different heights
+        // So the last TX must be tx_summary_2 (because it has the lowest, unique block height)
+        assert_eq!(lst1.last().unwrap(), &tx_summary_2);
+        assert_eq!(lst2.last().unwrap(), &tx_summary_2);
+        // Verify the two lists have the same elems
+        assert!(
+            lst1.len() == lst2.len()
+                && lst1.iter().all(|e| lst2.contains(e))
+                && lst2.iter().all(|e| lst1.contains(e))
+        );
 
         // Remove TransactionSummary
         let to_delete = to_add1

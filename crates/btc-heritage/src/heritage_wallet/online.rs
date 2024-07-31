@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use bdk::{
     blockchain::{log_progress, Blockchain, BlockchainFactory},
+    database::Database,
     Balance, SyncOptions,
 };
 
@@ -12,12 +13,19 @@ use crate::{
     bitcoin::{Amount, FeeRate, OutPoint, Txid},
     database::TransacHeritageDatabase,
     errors::{DatabaseError, Error, Result},
+    heritage_wallet::TransactionSummaryOwnedIO,
     subwallet_config::SubwalletConfig,
+    utils::sort_transaction_details_with_raw,
 };
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn sync<T: BlockchainFactory>(&self, blockchain_factory: T) -> Result<()> {
         log::debug!("HeritageWallet::sync");
+        // This cache will serve to build the TransactionSummary list
+        // /!\ It is crucial that it is filled from oldest to newest so that we can
+        // use it in one-pass. Each time we search this cache for an owned-Outpoint
+        // we expect it to be in there if it exists.
+        let mut tx_owned_io_cache: HashMap<OutPoint, TransactionSummaryOwnedIO> = HashMap::new();
         // Manage the HeritageUtxo updates
         let mut existing_utxos = self.database().list_utxos()?;
         let mut utxos_to_add = vec![];
@@ -27,12 +35,18 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Start obsolete_balance at zero
         let mut obsolete_balance = Balance::default();
         // Walk over every subwallets and sync them
-        let subwalletconfigs = self.database.borrow().list_obsolete_subwallet_configs()?;
+        let mut subwalletconfigs = self.database.borrow().list_obsolete_subwallet_configs()?;
+        // Make sure the obsolete_subwallet_configs are in order
+        subwalletconfigs.sort_by_key(|swc| {
+            swc.subwallet_firstuse_time()
+                .expect("obsolete subwallet have always been used")
+        });
         for subwalletconfig in subwalletconfigs {
             // Extract the HeritageConfig of this wallet
             self.sync_subwallet(
                 subwalletconfig,
                 &blockchain_factory,
+                &mut tx_owned_io_cache,
                 &mut obsolete_balance,
                 &mut existing_utxos,
                 &mut utxos_to_add,
@@ -50,6 +64,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             self.sync_subwallet(
                 current_subwallet_config,
                 &blockchain_factory,
+                &mut tx_owned_io_cache,
                 &mut balance,
                 &mut existing_utxos,
                 &mut utxos_to_add,
@@ -139,6 +154,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         &self,
         subwalletconfig: SubwalletConfig,
         blockchain_factory: &T,
+        tx_owned_io_cache: &mut HashMap<OutPoint, TransactionSummaryOwnedIO>,
         balance_acc: &mut Balance,
         existing_utxos: &mut Vec<HeritageUtxo>,
         utxos_to_add: &mut Vec<HeritageUtxo>,
@@ -236,15 +252,63 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             // # TransactionSummary #
             // ######################
             // Retrieve the subwallet tx
-            let subwallet_txs = subwallet
-                .list_transactions(false)
+            let mut subwallet_txs = subwallet
+                .list_transactions(true)
                 .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+            sort_transaction_details_with_raw(&mut subwallet_txs);
+
+            // Retrieve the subwallet scriptpubkeys
+            let subwallet_spks = subwallet
+                .database()
+                .iter_script_pubkeys(None)
+                .map_err(|e| DatabaseError::Generic(e.to_string()))?
+                .into_iter()
+                .collect::<HashSet<_>>();
             for subwallet_tx in subwallet_txs {
+                let raw_tx = subwallet_tx
+                    .transaction
+                    .expect("we asked it to be included");
+                // Compose the set of "parent TXs"
+                let parent_txids = raw_tx
+                    .input
+                    .iter()
+                    .map(|txin| txin.previous_output.txid)
+                    .collect();
+
+                // Process the Outputs to verify if they are owned
+                // Update the cache as we construct the owned_outputs
+                let mut owned_outputs = (0u32..)
+                    .zip(raw_tx.output.into_iter())
+                    .filter(|(_, o)| subwallet_spks.contains(&o.script_pubkey))
+                    .map(|(i, o)| {
+                        let tsoio = TransactionSummaryOwnedIO(
+                            (&o.script_pubkey).try_into().expect("comes from DB"),
+                            Amount::from_sat(o.value),
+                        );
+                        let outpoint = OutPoint {
+                            txid: subwallet_tx.txid,
+                            vout: i,
+                        };
+                        tx_owned_io_cache.insert(outpoint, tsoio.clone());
+                        tsoio
+                    })
+                    .collect::<Vec<_>>();
+
+                // Process the Inputs to verify if they are owned
+                let mut owned_inputs = raw_tx
+                    .input
+                    .into_iter()
+                    // Remove is appropriate because a BTC UTXO can only be consummed once
+                    // So if we match, we might as well remove the match from the cache
+                    // + it is neat because we don't have to clone and it fits naturally in filter_map
+                    .filter_map(|i| tx_owned_io_cache.remove(&i.previous_output))
+                    .collect::<Vec<_>>();
+
                 txsum_to_add
                     .entry(subwallet_tx.txid)
                     .and_modify(|tx_sum| {
-                        tx_sum.received += Amount::from_sat(subwallet_tx.received);
-                        tx_sum.sent += Amount::from_sat(subwallet_tx.sent);
+                        tx_sum.owned_inputs.append(&mut owned_inputs);
+                        tx_sum.owned_outputs.append(&mut owned_outputs);
                         if let Some(fee) = subwallet_tx.fee {
                             tx_sum.fee = Amount::from_sat(fee);
                         }
@@ -252,9 +316,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     .or_insert(TransactionSummary {
                         txid: subwallet_tx.txid,
                         confirmation_time: subwallet_tx.confirmation_time,
-                        received: Amount::from_sat(subwallet_tx.received),
-                        sent: Amount::from_sat(subwallet_tx.sent),
+                        owned_inputs,
+                        owned_outputs,
                         fee: Amount::from_sat(subwallet_tx.fee.unwrap_or(0)),
+                        parent_txids,
                     });
             }
         } else {

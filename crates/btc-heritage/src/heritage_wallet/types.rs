@@ -1,6 +1,9 @@
-use std::{fmt::Display, ops::Deref, str::FromStr};
+use std::{collections::HashSet, fmt::Display, ops::Deref, str::FromStr};
 
-use bdk::{Balance, BlockTime};
+use bdk::{
+    bitcoin::{Script, ScriptBuf},
+    Balance, BlockTime,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -156,8 +159,7 @@ pub enum SubwalletConfigId {
 /// Wrapper around an [Address<NetworkChecked>] that automatically check the address
 /// using the `BITCOIN_NETWORK` environment variable.
 /// If the environment variable is absent, assume [crate::bitcoin::Network::Bitcoin]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(into = "String", try_from = "String")]
 pub struct CheckedAddress(Address<NetworkChecked>);
 impl Deref for CheckedAddress {
@@ -176,6 +178,21 @@ impl TryFrom<String> for CheckedAddress {
     type Error = Error;
     fn try_from(value: String) -> Result<Self, Error> {
         Self::try_from(value.as_str())
+    }
+}
+impl TryFrom<&Script> for CheckedAddress {
+    type Error = Error;
+    fn try_from(value: &Script) -> Result<Self, Error> {
+        Ok(Self::from(
+            Address::from_script(value, *crate::utils::bitcoin_network_from_env())
+                .map_err(|e| Error::Unknown(format!("Invalid script: {e}")))?,
+        ))
+    }
+}
+impl TryFrom<&ScriptBuf> for CheckedAddress {
+    type Error = Error;
+    fn try_from(value: &ScriptBuf) -> Result<Self, Error> {
+        Self::try_from(value.as_script())
     }
 }
 impl TryFrom<&str> for CheckedAddress {
@@ -244,6 +261,12 @@ impl HeritageUtxo {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransactionSummaryOwnedIO(
+    pub CheckedAddress,
+    #[serde(with = "crate::utils::amount_serde")] pub Amount,
+);
+
 /// A wallet transaction
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionSummary {
@@ -253,29 +276,15 @@ pub struct TransactionSummary {
     /// transaction, unconfirmed transaction contains `None`.
     #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
     pub confirmation_time: Option<BlockTime>,
-    /// Received value (sats)
-    /// Sum of owned outputs of this transaction.
-    #[serde(with = "crate::utils::amount_serde")]
-    pub received: Amount,
-    /// Sent value (sats)
-    /// Sum of owned inputs of this transaction.
-    #[serde(with = "crate::utils::amount_serde")]
-    pub sent: Amount,
+    /// The owned inputs addresses and amounts of this transaction
+    pub owned_inputs: Vec<TransactionSummaryOwnedIO>,
+    /// The owned outputs addresses and amounts of this transaction
+    pub owned_outputs: Vec<TransactionSummaryOwnedIO>,
     /// Fee value (sats)
     #[serde(with = "crate::utils::amount_serde")]
     pub fee: Amount,
-}
-impl PartialOrd for TransactionSummary {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for TransactionSummary {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.confirmation_time
-            .cmp(&other.confirmation_time)
-            .then_with(|| self.txid.cmp(&other.txid))
-    }
+    /// The previous [Txid] of the same block on which this transaction depends. For ordering purposes
+    pub parent_txids: HashSet<Txid>,
 }
 
 /// A descriptors backup to export an HeritageWallet configuration
