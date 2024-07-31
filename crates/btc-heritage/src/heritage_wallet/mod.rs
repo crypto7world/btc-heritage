@@ -790,7 +790,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
         // Create the PSBT
         log::debug!("HeritageWallet::create_psbt - tx_builder.finish()");
-        let (mut psbt, transaction_details) = tx_builder.finish().map_err(|e| match e {
+        let (mut psbt, _) = tx_builder.finish().map_err(|e| match e {
             bdk::Error::InvalidPolicyPathError(e) => Error::FailToExtractPolicy(e),
             bdk::Error::UnknownUtxo
             | bdk::Error::FeeRateTooLow { .. }
@@ -853,19 +853,15 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Adjust the fee because BDK computes it with laaaaaarge margin
         // As we are only using TapRoot inputs, we can do a lot better withtout too much difficulties
         // We just have to find the "change" output
-        let (adjustable_output_index, mut adjustment) = if let Some(adjustable_output_index) = psbt
+        let adjustable_output_index = if let Some(adjustable_output_index) = psbt
             .unsigned_tx
             .output
             .iter()
             .position(|o| o.script_pubkey == drain_script)
         {
-            log::debug!("HeritageWallet::create_psbt - adjust_with_real_fee(psbt, {fee_rate:?}, {adjustable_output_index})");
-            (
-                adjustable_output_index,
-                adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index),
-            )
+            adjustable_output_index
         } else {
-            log::info!("HeritageWallet::create_psbt - This psbt does not have change, which is unusual: {psbt:?}");
+            log::info!("HeritageWallet::create_psbt - This psbt does not have change, adding one");
             // We are in the remote possibility where we try to send exactly the right amount
             // so that there is no need to change
             // In that case just add the output, process the psbt, and see what happen
@@ -876,12 +872,13 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             psbt.unsigned_tx.output.push(drain_output);
             psbt.outputs.push(Output::default());
             let adjustable_output_index = psbt.unsigned_tx.output.len() - 1;
-            log::debug!("HeritageWallet::create_psbt - adjust_with_real_fee(psbt, {fee_rate:?}, {adjustable_output_index})");
-            (
-                adjustable_output_index,
-                adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index),
-            )
+            adjustable_output_index
         };
+
+        log::debug!("HeritageWallet::create_psbt - adjust_with_real_fee(psbt, {fee_rate:?}, {adjustable_output_index})");
+        let adjustment = adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index);
+        log::info!("HeritageWallet::create_psbt - Fee adjustment: {adjustment}");
+
         // If the resulting amount is below dust treshold, just pop the output (and therefor give that amount to the miners)
         if psbt.unsigned_tx.output[adjustable_output_index]
             .value
@@ -890,49 +887,55 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             // In that case, the adjustment is 0 because the only way we are here
             // is that we where in the case "remote possibility where we try to send exactly the right amount"
             // and we added the output drain and it happens to be too small so we just go back to the old fee.
-            // The `adjustment` in that case was exactly the amount in the output
-            adjustment =
-                adjustment - (psbt.unsigned_tx.output[adjustable_output_index].value as i64);
             psbt.unsigned_tx.output.remove(adjustable_output_index);
             psbt.outputs.remove(adjustable_output_index);
         }
 
-        let mut received = Amount::from_sat(transaction_details.received);
-        // If there was indeed an adjustment
-        if adjustment != 0 {
-            let must_adjust_received = match &spending_config {
-                // In this case, the drain_output MAY be ours
-                SpendingConfig::DrainTo(_) => self.is_mine(&drain_script)?,
-                // In this case, the drain_output IS ours and we must adjust `received`
-                SpendingConfig::Recipients(_) => true,
-            };
-            if must_adjust_received {
-                // And we will receive more \o/
-                if adjustment > 0 {
-                    received += Amount::from_sat(adjustment as u64);
-                }
-                // And we will receive less ...
-                else {
-                    // Received contains AT LEAST the amount sent to the drain_script
-                    // And the adjustment is AT MOST the amount sent to the drain_script
-                    // So the worst case is that received goes to exactly 0
-                    received = received
-                        .checked_sub(Amount::from_sat(-adjustment as u64))
-                        .expect("should never fail");
-                }
-            }
-        }
-
         // Our PSBT only contains owned inputs
-        let sent = Amount::from_sat(psbt.iter_funding_utxos().fold(0, |acc, utxo| {
-            acc + utxo.expect("funding info present").value
-        }));
+        // Adding all inputs into the owned_inputs Vec
+        let owned_inputs = psbt
+            .inputs
+            .iter()
+            .map(|i| {
+                let utxo = i.witness_utxo.as_ref().expect("we only deal with Taproot");
+                TransactionSummaryOwnedIO(
+                    (&utxo.script_pubkey)
+                        .try_into()
+                        .expect("comes from the PSBT"),
+                    Amount::from_sat(utxo.value),
+                )
+            })
+            .collect::<Vec<_>>();
+        // Creating the owned_outputs Vec
+        let owned_outputs = psbt
+            .unsigned_tx
+            .output
+            .iter()
+            .filter(|&o| self.is_mine(o.script_pubkey.as_script()).unwrap_or(false))
+            .map(|o| {
+                TransactionSummaryOwnedIO(
+                    (&o.script_pubkey).try_into().expect("comes from the PSBT"),
+                    Amount::from_sat(o.value),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        // Create the parent_ids
+        let parent_txids = psbt
+            .unsigned_tx
+            .input
+            .iter()
+            .map(|i| i.previous_output.txid)
+            .collect();
+
+        // Create the TransactionSummary
         let tx_summary = TransactionSummary {
             txid: psbt.unsigned_tx.txid(),
             confirmation_time: None,
-            received,
-            sent,
+            owned_inputs,
+            owned_outputs,
             fee: psbt.fee().expect("our psbt is fresh and sound"),
+            parent_txids,
         };
 
         log::debug!("HeritageWallet::create_psbt - psbt={psbt:?}");
@@ -2186,10 +2189,12 @@ mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         let tx_sums = res.unwrap();
         assert_eq!(tx_sums.len(), 5);
-        assert!(tx_sums
-            .iter()
-            .all(|txs| txs.received == Amount::from_btc(1.0).unwrap()
-                && txs.sent == Amount::from_sat(0)));
+        for tx_sum in tx_sums.iter() {
+            println!("{tx_sum:?}");
+        }
+        assert!(tx_sums.iter().all(|txs| txs.owned_outputs.len() == 1
+            && txs.owned_outputs[0].1 == Amount::from_btc(1.0).unwrap()
+            && txs.owned_inputs.len() == 0));
     }
 
     #[test]
@@ -2348,9 +2353,16 @@ mod tests {
         assert_eq!(psbt, expected_psbt);
 
         assert_eq!(tx_sum.confirmation_time, None);
-        assert_eq!(tx_sum.received, Amount::from_btc(3.39996080).unwrap());
+
+        assert_eq!(
+            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(3.39996080).unwrap()
+        );
         // Uses all "old" UTXO
-        assert_eq!(tx_sum.sent, Amount::from_btc(4.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(4.0).unwrap()
+        );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00003920).unwrap());
     }
 
@@ -2458,10 +2470,17 @@ mod tests {
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::OwnerDrain));
 
         assert_eq!(tx_sum.confirmation_time, None);
+
         // Receive nothing, draining
-        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(0.0).unwrap()
+        );
         // Uses all "old" UTXO
-        assert_eq!(tx_sum.sent, Amount::from_btc(5.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(5.0).unwrap()
+        );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00003410).unwrap());
     }
 
@@ -2615,9 +2634,15 @@ mod tests {
 
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
-        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(0.0).unwrap()
+        );
         // Uses all "old" UTXO
-        assert_eq!(tx_sum.sent, Amount::from_btc(4.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(4.0).unwrap()
+        );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00003960).unwrap());
     }
 
@@ -2735,9 +2760,15 @@ mod tests {
 
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
-        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(0.0).unwrap()
+        );
         // Uses only the eligible UTXO
-        assert_eq!(tx_sum.sent, Amount::from_btc(1.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(1.0).unwrap()
+        );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00001390).unwrap());
     }
 
@@ -2931,9 +2962,15 @@ mod tests {
 
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
-        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(0.0).unwrap()
+        );
         // Uses only the eligible UTXO
-        assert_eq!(tx_sum.sent, Amount::from_btc(5.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(5.0).unwrap()
+        );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00004810).unwrap());
     }
 
@@ -3095,9 +3132,15 @@ mod tests {
 
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
-        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(0.0).unwrap()
+        );
         // Uses only the eligible UTXO
-        assert_eq!(tx_sum.sent, Amount::from_btc(5.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(5.0).unwrap()
+        );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00004890).unwrap());
     }
 
@@ -3211,9 +3254,15 @@ mod tests {
 
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
-        assert_eq!(tx_sum.received, Amount::from_btc(0.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(0.0).unwrap()
+        );
         // Uses only the eligible UTXO
-        assert_eq!(tx_sum.sent, Amount::from_btc(1.0).unwrap());
+        assert_eq!(
+            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            Amount::from_btc(1.0).unwrap()
+        );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00001480).unwrap());
     }
 
