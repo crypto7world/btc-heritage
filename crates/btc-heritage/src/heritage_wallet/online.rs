@@ -15,6 +15,7 @@ use crate::{
     errors::{DatabaseError, Error, Result},
     heritage_wallet::TransactionSummaryOwnedIO,
     subwallet_config::SubwalletConfig,
+    utils::sort_transaction_details_with_raw,
 };
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
@@ -251,9 +252,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             // # TransactionSummary #
             // ######################
             // Retrieve the subwallet tx
-            let subwallet_txs = subwallet
+            let mut subwallet_txs = subwallet
                 .list_transactions(true)
                 .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+            sort_transaction_details_with_raw(&mut subwallet_txs);
+
             // Retrieve the subwallet scriptpubkeys
             let subwallet_spks = subwallet
                 .database()

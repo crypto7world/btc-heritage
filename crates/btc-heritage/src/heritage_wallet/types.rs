@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashSet, fmt::Display, ops::Deref, str::FromStr};
+use std::{collections::HashSet, fmt::Display, ops::Deref, str::FromStr};
 
 use bdk::{
     bitcoin::{Script, ScriptBuf},
@@ -283,29 +283,8 @@ pub struct TransactionSummary {
     /// Fee value (sats)
     #[serde(with = "crate::utils::amount_serde")]
     pub fee: Amount,
-    /// The previous [Txid] on which this transaction depends. For ordering purposes
-    pub(crate) parent_txids: HashSet<Txid>,
-}
-impl PartialOrd for TransactionSummary {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for TransactionSummary {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.confirmation_time
-            .cmp(&other.confirmation_time)
-            .then_with(|| {
-                if other.parent_txids.contains(&self.txid) {
-                    Ordering::Less
-                } else if self.parent_txids.contains(&other.txid) {
-                    Ordering::Greater
-                } else {
-                    Ordering::Equal
-                }
-            })
-            .then_with(|| self.txid.cmp(&other.txid))
-    }
+    /// The previous [Txid] of the same block on which this transaction depends. For ordering purposes
+    pub parent_txids: HashSet<Txid>,
 }
 
 /// A descriptors backup to export an HeritageWallet configuration

@@ -686,7 +686,7 @@ pub mod tests {
         // List TransactionSummary should give us 3
         let res = db.list_transaction_summaries();
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
-        let mut lst1 = res.unwrap();
+        let lst1 = res.unwrap();
 
         // Paginate TransactionSummary should give us the same result
         let mut lst2 = vec![];
@@ -707,10 +707,12 @@ pub mod tests {
         // So the last TX must be tx_summary_2 (because it has the lowest, unique block height)
         assert_eq!(lst1.last().unwrap(), &tx_summary_2);
         assert_eq!(lst2.last().unwrap(), &tx_summary_2);
-        // Then force sorting to compare the two lists
-        lst1.sort();
-        lst2.sort();
-        assert_eq!(lst1, lst2);
+        // Verify the two lists have the same elems
+        assert!(
+            lst1.len() == lst2.len()
+                && lst1.iter().all(|e| lst2.contains(e))
+                && lst2.iter().all(|e| lst1.contains(e))
+        );
 
         // Remove TransactionSummary
         let to_delete = to_add1
