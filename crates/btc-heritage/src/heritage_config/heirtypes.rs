@@ -1,5 +1,5 @@
+use core::{fmt::Display, str::FromStr};
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, str::FromStr};
 
 use crate::{
     bitcoin::{
@@ -24,7 +24,7 @@ impl<'de> Deserialize<'de> for SingleHeirPubkey {
         impl<'de> serde::de::Visitor<'de> for SingleHeirPubkeyVisitor {
             type Value = SingleHeirPubkey;
 
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
                 formatter.write_str("a DescriptorPublicKey string")
             }
 
@@ -108,7 +108,7 @@ impl From<SingleHeirPubkey> for String {
 }
 
 impl Display for SingleHeirPubkey {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }

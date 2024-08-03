@@ -1,4 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
+use core::cell::RefCell;
+use std::rc::Rc;
 
 use bdk::{
     bitcoin::{Script, ScriptBuf, Transaction, Txid},

@@ -18,7 +18,7 @@ impl Default for Days {
         Self(365)
     }
 }
-impl std::ops::Add<Self> for Days {
+impl core::ops::Add<Self> for Days {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -28,7 +28,7 @@ impl std::ops::Add<Self> for Days {
 
 macro_rules! days_mul_impl {
     ($t:ty) => {
-        impl std::ops::Mul<$t> for Days {
+        impl core::ops::Mul<$t> for Days {
             type Output = Self;
             fn mul(self, rhs: $t) -> Self::Output {
                 Self(
@@ -69,15 +69,15 @@ impl PartialEq for Heritage {
     }
 }
 impl PartialOrd for Heritage {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for Heritage {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         match self.time_lock.0.cmp(&other.time_lock.0) {
-            std::cmp::Ordering::Equal => self.heir_config.cmp(&other.heir_config),
+            core::cmp::Ordering::Equal => self.heir_config.cmp(&other.heir_config),
             other => other,
         }
     }
@@ -134,23 +134,23 @@ impl Default for MinimumLockTime {
         Self(Days(30))
     }
 }
-impl std::ops::Add<Self> for MinimumLockTime {
+impl core::ops::Add<Self> for MinimumLockTime {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
         MinimumLockTime(self.0 + rhs.0)
     }
 }
-impl std::ops::Add<Days> for MinimumLockTime {
+impl core::ops::Add<Days> for MinimumLockTime {
     type Output = Self;
 
     fn add(self, rhs: Days) -> Self::Output {
         MinimumLockTime(Days(self.0 .0 + rhs.0))
     }
 }
-impl<T> std::ops::Mul<T> for MinimumLockTime
+impl<T> core::ops::Mul<T> for MinimumLockTime
 where
-    Days: std::ops::Mul<T, Output = Days>,
+    Days: core::ops::Mul<T, Output = Days>,
 {
     type Output = Self;
     fn mul(self, rhs: T) -> Self::Output {

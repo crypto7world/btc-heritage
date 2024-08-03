@@ -1,4 +1,5 @@
-use std::{collections::HashSet, fmt::Display, ops::Deref, str::FromStr};
+use core::{fmt::Display, ops::Deref, str::FromStr};
+use std::collections::HashSet;
 
 use bdk::{
     bitcoin::{Script, ScriptBuf},
@@ -145,7 +146,7 @@ impl From<BlockInclusionObjective> for u16 {
     }
 }
 impl Display for BlockInclusionObjective {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -208,7 +209,7 @@ impl From<CheckedAddress> for String {
     }
 }
 impl Display for CheckedAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -382,7 +383,7 @@ impl From<WalletAddress> for String {
     }
 }
 impl Display for WalletAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "[{}/{}]{}", self.origin.0, self.origin.1, self.address)
     }
 }

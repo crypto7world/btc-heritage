@@ -27,8 +27,8 @@ mod tests {
     mod notdbtests {
 
         use bdk::{bitcoin::psbt::PartiallySignedTransaction, BlockTime};
+        use core::str::FromStr;
         use serde_json::Value;
-        use std::str::FromStr;
 
         use crate::{heritage_config::HeritageExplorerTrait, subwallet_config::SubwalletConfig};
 
