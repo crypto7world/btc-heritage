@@ -1,9 +1,9 @@
-use std::fmt::Debug;
+use core::fmt::Debug;
 
 use btc_heritage::AccountXPubId;
 use thiserror::Error;
 
-pub type Result<T> = std::result::Result<T, Error>;
+pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -27,28 +27,34 @@ pub enum Error {
     NoComponent,
     #[error("The Online and Offline parts of the wallet don't have the same fingerprint")]
     IncoherentFingerprints,
-    #[error("The authentication of the CLI expired")]
-    AuthenticationProcessExpired,
-    #[error("The CLI is not authenticated to the Heritage service. Login first.")]
-    Unauthenticated,
     #[error("No wallet named \"{0}\" in the database")]
     InexistantWallet(String),
     #[error("A wallet named \"{0}\" is already in the database")]
     WalletAlreadyExist(String),
     #[error("The Descriptor {descriptor} is invalid: {error}")]
     InvalidDescriptor { descriptor: String, error: String },
+    #[error("Password is missing for LocalKey with password")]
+    LocalKeyMissingPassword,
     #[error("The descriptor cannot be transformed in a Ledger wallet policy (reason: {0})")]
     LedgerIncompatibleDescriptor(&'static str),
     #[error("Missing registered Ledger policy (wanted: {0:?})")]
     LedgerMissingRegisteredPolicy(Vec<AccountXPubId>),
+    #[error("HeirConfig from Ledger are not supported because we cannot sign Heir transactions at the moment")]
+    LedgerHeirUnsupported,
+    #[error("It is impossible to extract the wallet Mnemonic from a Ledger device")]
+    LedgerGetMnemonicUnsupported,
     #[error("No wallet found in the service")]
     NoServiceWalletFound,
+    #[error("The account derivation index {0} is too big (max 2^31-1)")]
+    AccountDerivationIndexOutOfBound(u32),
     #[error("Multiple wallet found in the service")]
     MultipleServiceWalletFound,
     #[error("The wallet fingerprint on the service is not the one stored in the local database")]
     IncoherentServiceWalletFingerprint,
     #[error("The wallet fingerprint on the connected Ledger is not the one stored in the local database")]
     IncoherentLedgerWalletFingerprint,
+    #[error("The retrieved wallet fingerprint is not the one stored in the local database. Wrong password.")]
+    IncoherentLocalKeyFingerprint,
     #[error("The key {0} is already in the database")]
     KeyAlreadyExists(String),
     #[error("Heritage error: {source}")]
@@ -56,10 +62,10 @@ pub enum Error {
         #[from]
         source: btc_heritage::errors::Error,
     },
-    #[error("Reqwest error: {source}")]
-    ReqwestError {
+    #[error("Heritage API client error: {source}")]
+    SendRequestError {
         #[from]
-        source: reqwest::Error,
+        source: heritage_api_client::Error,
     },
     #[error("Database error: {0}")]
     DatabaseError(String),
@@ -73,16 +79,7 @@ impl From<serde_json::Error> for Error {
         Self::Generic(format!("{value}"))
     }
 }
-impl From<std::str::Utf8Error> for Error {
-    fn from(value: std::str::Utf8Error) -> Self {
-        Self::Generic(format!("{value}"))
-    }
-}
-impl From<std::string::FromUtf8Error> for Error {
-    fn from(value: std::string::FromUtf8Error) -> Self {
-        Self::Generic(format!("{value}"))
-    }
-}
+
 impl<T: Debug> From<ledger_bitcoin_client::error::BitcoinClientError<T>> for Error {
     fn from(value: ledger_bitcoin_client::error::BitcoinClientError<T>) -> Self {
         Self::LedgerClientError(format!("{value:?}"))

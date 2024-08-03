@@ -2,11 +2,14 @@ use crate::errors::{Error, Result};
 use btc_heritage::bitcoin::Network;
 
 mod utils;
+use heritage_api_client::TokenCache;
 use redb::{ReadableTable, TableDefinition};
 use serde::{de::DeserializeOwned, Serialize};
 use utils::prepare_data_dir;
 
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("heritage");
+const TOKEN_KEY: &'static str = "api_auth_tokens";
+
 pub struct Database(redb::Database);
 
 impl Database {
@@ -100,5 +103,64 @@ impl Database {
             },
         })?;
         Ok(table.get(key)?.is_some())
+    }
+
+    /// List all the keys in the DB
+    /// If `prefix` is [Some] and not the empty string, returns only keys that begin with `prefix`
+    pub fn list_keys(&self, prefix: Option<&str>) -> Result<Vec<String>> {
+        let table = (match self.0.begin_read()?.open_table(TABLE) {
+            Ok(table) => Ok(table),
+            Err(e) => match e {
+                redb::TableError::TableDoesNotExist(_) => return Ok(vec![]),
+                _ => Err(e),
+            },
+        })?;
+
+        if prefix.is_some_and(|s| !s.is_empty()) {
+            let prefix = prefix.unwrap();
+            let mut prefix_with_next_last_char = prefix.to_owned();
+            let last_char = prefix_with_next_last_char.remove(prefix_with_next_last_char.len() - 1);
+            let next_last_char = (last_char as u8 + 1) as char;
+            prefix_with_next_last_char.push(next_last_char);
+
+            Ok(table
+                .range(prefix..prefix_with_next_last_char.as_str())?
+                .filter_map(|e| {
+                    let k = e.ok().map(|(key, _)| key.value().to_owned());
+                    if k.as_ref().is_some_and(|s| s.starts_with(prefix)) {
+                        k
+                    } else {
+                        None
+                    }
+                })
+                .collect())
+        } else {
+            Ok(table
+                .iter()?
+                .filter_map(|e| e.ok().map(|(key, _)| key.value().to_owned()))
+                .collect())
+        }
+    }
+}
+
+impl TokenCache for Database {
+    fn save_tokens(
+        &mut self,
+        tokens: &heritage_api_client::Tokens,
+    ) -> core::result::Result<(), heritage_api_client::Error> {
+        self.update_item(TOKEN_KEY, tokens).map_err(|e| {
+            log::error!("{e}");
+            heritage_api_client::Error::TokenCacheWriteError(e.to_string())
+        })?;
+        Ok(())
+    }
+
+    fn load_tokens(
+        &self,
+    ) -> core::result::Result<Option<heritage_api_client::Tokens>, heritage_api_client::Error> {
+        self.get_item(TOKEN_KEY).map_err(|e| {
+            log::error!("{e}");
+            heritage_api_client::Error::TokenCacheReadError(e.to_string())
+        })
     }
 }

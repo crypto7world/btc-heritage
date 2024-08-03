@@ -1,6 +1,10 @@
-use std::any::Any;
+use core::any::Any;
 
-use btc_heritage_wallet::{errors::Result, Database, HeritageServiceClient, Tokens};
+use btc_heritage_wallet::{
+    errors::Result,
+    heritage_api_client::{HeritageServiceClient, Tokens},
+    Database,
+};
 
 /// Commands related purely to the Heritage service
 #[derive(Debug, Clone, clap::Subcommand)]

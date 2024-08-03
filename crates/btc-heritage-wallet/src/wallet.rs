@@ -1,16 +1,15 @@
+use bip39::Mnemonic;
 use btc_heritage::{
     bitcoin::{bip32::Fingerprint, Network, Txid},
-    heritage_wallet::{DescriptorsBackup, TransactionSummary},
-    miniscript::DescriptorPublicKey,
-    AccountXPub, HeritageConfig, PartiallySignedTransaction,
+    heritage_wallet::{DescriptorsBackup, TransactionSummary, WalletAddress},
+    AccountXPub, HeirConfig, HeritageConfig, PartiallySignedTransaction,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     database::Database,
     errors::{Error, Result},
-    service_client::AccountXPubWithStatus,
-    wallet_offline::{AnyWalletOffline, WalletOffline},
+    wallet_offline::{AnyWalletOffline, HeirConfigType, WalletOffline},
     wallet_online::{AnyWalletOnline, WalletOnline},
 };
 
@@ -29,6 +28,8 @@ pub struct Wallet {
 }
 
 impl Wallet {
+    const DB_KEY_PREFIX: &'static str = "wallet#";
+
     pub fn new(
         name: String,
         offline_wallet: AnyWalletOffline,
@@ -54,9 +55,19 @@ impl Wallet {
     }
 
     fn name_to_key(name: &str) -> String {
-        format!("wallet#{name}")
+        format!("{}{name}", Self::DB_KEY_PREFIX)
     }
-
+    pub fn db_list_names(db: &Database) -> Result<Vec<String>> {
+        let keys_with_prefix = db.list_keys(Some(Self::DB_KEY_PREFIX))?;
+        Ok(keys_with_prefix
+            .into_iter()
+            .map(|k| {
+                k.strip_prefix(Self::DB_KEY_PREFIX)
+                    .expect("we asked for keys with this prefix")
+                    .to_owned()
+            })
+            .collect())
+    }
     /// Verify that the given Wallet name is not already in the database
     pub fn verify_name_is_free(db: &Database, name: &str) -> Result<()> {
         if db.contains_key(&Self::name_to_key(name))? {
@@ -70,6 +81,7 @@ impl Wallet {
         db.put_item(&Self::name_to_key(&self.name), self)?;
         Ok(())
     }
+
     pub fn delete(&self, db: &mut Database) -> Result<()> {
         let wallet = db.delete_item::<Wallet>(&Self::name_to_key(&self.name))?;
         log::debug!("{wallet:?}");
@@ -130,8 +142,9 @@ macro_rules! impl_wallet_offline_fn {
 }
 impl WalletOffline for Wallet {
     impl_wallet_offline_fn!(sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<usize>);
-    impl_wallet_offline_fn!(derive_accounts_xpubs(&self, count: usize) -> Result<Vec<AccountXPub>>);
-    impl_wallet_offline_fn!(derive_heir_xpub(&self) -> Result<DescriptorPublicKey>);
+    impl_wallet_offline_fn!(derive_accounts_xpubs(&self, range: core::ops::Range<u32>) -> Result<Vec<AccountXPub>>);
+    impl_wallet_offline_fn!(derive_heir_config(&self, heir_config_type: HeirConfigType) -> Result<HeirConfig>);
+    impl_wallet_offline_fn!(get_mnemonic(&self) -> Result<Mnemonic>);
 }
 macro_rules! impl_wallet_online_fn {
     ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
@@ -148,12 +161,13 @@ macro_rules! impl_wallet_online_fn {
 impl WalletOnline for Wallet {
     impl_wallet_online_fn!(backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>);
     impl_wallet_online_fn!(get_address(&self) -> Result<String>);
-    impl_wallet_online_fn!(list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>);
+    impl_wallet_online_fn!(list_addresses(&self) -> Result<Vec<WalletAddress>>);
+    impl_wallet_online_fn!(list_account_xpubs(&self) -> Result<Vec<heritage_api_client::AccountXPubWithStatus>>);
     impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>);
     impl_wallet_online_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
     impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<()>);
     impl_wallet_online_fn!(sync(&mut self) -> Result<()>);
     impl_wallet_online_fn!(get_wallet_info(&self) -> Result<crate::wallet_online::WalletInfo>);
-    impl_wallet_online_fn!(create_psbt(&self, new_tx: crate::service_client::NewTx) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
+    impl_wallet_online_fn!(create_psbt(&self, new_tx: heritage_api_client::NewTx) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
     impl_wallet_online_fn!(broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>);
 }

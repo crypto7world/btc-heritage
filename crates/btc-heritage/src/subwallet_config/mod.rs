@@ -157,7 +157,8 @@ mod tests {
         taproot::{TapLeafHash, TapNodeHash},
     };
     use bdk::{database::AnyDatabase, wallet::AddressIndex, Balance, KeychainKind};
-    use std::{collections::BTreeMap, str::FromStr};
+    use core::str::FromStr;
+    use std::collections::BTreeMap;
 
     use crate::{tests::*, utils::string_to_address};
 

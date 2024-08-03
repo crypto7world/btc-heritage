@@ -1,8 +1,12 @@
-use btc_heritage::{
-    bitcoin::{bip32::Fingerprint, FeeRate},
-    AccountXPub, BlockInclusionObjective, HeritageWalletBalance,
-};
 use serde::{Deserialize, Serialize};
+
+// Expose API types
+pub use btc_heritage::{
+    bitcoin::{bip32::Fingerprint, FeeRate, Txid},
+    heritage_wallet::{HeritageUtxo, TransactionSummary, TransactionSummaryOwnedIO},
+    AccountXPub, AccountXPubId, BlockInclusionObjective, DescriptorsBackup, HeritageConfig,
+    HeritageWalletBalance, PartiallySignedTransaction,
+};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct HeritageWalletMeta {
@@ -46,4 +50,27 @@ pub struct NewTxDrainTo {
 pub enum NewTx {
     Recipients(Vec<NewTxRecipient>),
     DrainTo(NewTxDrainTo),
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum SynchronizationStatus {
+    #[default]
+    Never,
+    Queued,
+    InProgress,
+    Ok,
+    Failed,
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+pub struct Synchronization {
+    #[serde(default)]
+    pub status: SynchronizationStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queued_ts: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_ts: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended_ts: Option<u64>,
 }

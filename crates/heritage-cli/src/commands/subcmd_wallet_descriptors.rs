@@ -1,4 +1,5 @@
-use std::{any::Any, cell::RefCell, rc::Rc};
+use core::{any::Any, cell::RefCell};
+use std::rc::Rc;
 
 use btc_heritage_wallet::{errors::Result, DescriptorsBackup, Wallet, WalletOnline};
 

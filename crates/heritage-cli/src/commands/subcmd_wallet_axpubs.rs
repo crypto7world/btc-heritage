@@ -1,7 +1,9 @@
-use std::{any::Any, cell::RefCell, rc::Rc};
+use core::{any::Any, cell::RefCell};
+use std::rc::Rc;
 
 use btc_heritage_wallet::{
-    errors::Result, AccountXPub, AccountXPubWithStatus, Wallet, WalletOffline, WalletOnline,
+    errors::Result, heritage_api_client::AccountXPubWithStatus, AccountXPub, Wallet, WalletOffline,
+    WalletOnline,
 };
 
 /// Wallet Account XPubs management subcommand.
@@ -9,9 +11,12 @@ use btc_heritage_wallet::{
 pub enum WalletAXpubSubcmd {
     /// List Account eXtended Public Keys generated using the Offline component of the wallet
     Generate {
-        /// The number of Account eXtended Public Keys to generate
-        #[arg(long, default_value_t = 20)]
-        count: usize,
+        /// The index (inclusive) at which we start generation of Account eXtended Public Keys
+        #[arg(short, long, default_value_t = 0)]
+        start: u32,
+        /// The index (exclusive) at which we stop generation of Account eXtended Public Keys
+        #[arg(short, long, default_value_t = 20)]
+        end: u32,
     },
     /// List the Account eXtended Public Keys already added by the Online component of the wallet and their status
     ListAdded {
@@ -30,8 +35,8 @@ pub enum WalletAXpubSubcmd {
     },
     /// Generate Account eXtended Public Keys using the Offline component of the wallet and add them to the Online component
     AutoAdd {
-        /// The number of Account eXtended Public Keys to add
-        #[arg(long, default_value_t = 20)]
+        /// The number of unused Account eXtended Public Keys to ensure
+        #[arg(short, long, default_value_t = 20)]
         count: usize,
     },
 }
@@ -63,15 +68,29 @@ impl super::CommandExecutor for WalletAXpubSubcmd {
                 }
                 Box::new(res)
             }
-            WalletAXpubSubcmd::Generate { count } => {
-                Box::new(wallet.borrow().derive_accounts_xpubs(count)?)
+            WalletAXpubSubcmd::Generate { start, end } => {
+                Box::new(wallet.borrow().derive_accounts_xpubs(start..end)?)
             }
             WalletAXpubSubcmd::Add { account_xpubs } => {
                 wallet.borrow_mut().feed_account_xpubs(account_xpubs)?;
                 Box::new(())
             }
             WalletAXpubSubcmd::AutoAdd { count } => {
-                let account_xpubs = wallet.borrow().derive_accounts_xpubs(count)?;
+                let axpubs = wallet.borrow().list_account_xpubs()?;
+                let (unused_count, last_seen_index) =
+                    axpubs
+                        .iter()
+                        .fold((0usize, 0), |(uc, lsi), axpub| match axpub {
+                            AccountXPubWithStatus::Used(axpub) => {
+                                (uc, core::cmp::max(lsi, axpub.descriptor_id()))
+                            }
+                            AccountXPubWithStatus::Unused(axpub) => {
+                                (uc + 1, core::cmp::max(lsi, axpub.descriptor_id()))
+                            }
+                        });
+                let start = last_seen_index + 1;
+                let end = start + (count.checked_sub(unused_count).unwrap_or(0)) as u32;
+                let account_xpubs = wallet.borrow().derive_accounts_xpubs(start..end)?;
                 wallet.borrow_mut().feed_account_xpubs(account_xpubs)?;
                 Box::new(())
             }

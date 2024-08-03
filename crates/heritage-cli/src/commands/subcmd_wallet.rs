@@ -1,14 +1,16 @@
-use std::{any::Any, cell::RefCell, rc::Rc, str::FromStr};
+use core::{any::Any, cell::RefCell, str::FromStr};
+use std::rc::Rc;
 
 use btc_heritage_wallet::{
     bitcoin::{bip32::Fingerprint, psbt::Psbt, Address, Amount},
     errors::{Error, Result},
-    AnyWalletOffline, AnyWalletOnline, Database, HeritageServiceClient, LedgerKey, NewTx,
-    NewTxRecipient, ServiceBinding, Tokens, Wallet, WalletOffline, WalletOnline,
+    heritage_api_client::{HeritageServiceClient, NewTx, NewTxDrainTo, NewTxRecipient, Tokens},
+    AnyWalletOffline, AnyWalletOnline, Database, Language, LedgerKey, LocalKey, Mnemonic,
+    ServiceBinding, Wallet, WalletOffline, WalletOnline,
 };
 use clap::builder::{PossibleValuesParser, TypedValueParser};
 
-use crate::utils::ask_user_confirmation;
+use crate::utils::{ask_user_confirmation, prompt_user_for_password};
 
 use super::{
     subcmd_wallet_axpubs::WalletAXpubSubcmd, subcmd_wallet_ledger_policy::WalletLedgerPolicySubcmd,
@@ -37,9 +39,9 @@ pub enum WalletSubcmd {
         /// Specify the kind of offline-component the wallet will use
         #[arg(long, value_name = "TYPE", alias = "offline", value_enum, default_value_t=OfflineComponentType::Ledger, requires_if("local", "localgen"))]
         offline_component: OfflineComponentType,
-        /// Automaticly feed Heritage account eXtended public keys (xpubs) to the online component of the wallet if possible.
-        #[arg(long, default_value_t = true)]
-        auto_feed_xpubs: bool,
+        /// Disable the automatic feeding of Heritage account eXtended public keys (xpubs) to the online component of the wallet at creation.
+        #[arg(long, default_value_t = false)]
+        no_auto_feed_xpubs: bool,
         /// The mnemonic phrase to restore as a seed for the Heritage wallet (12, 18 or 24 words) (if offline_component = local).
         #[arg(long, value_name = "WORD", num_args=2..24, group="localgen")]
         seed: Option<Vec<String>>,
@@ -49,12 +51,17 @@ pub enum WalletSubcmd {
             group="localgen"
         )]
         word_count: Option<usize>,
-        /// Signal that the seed is password-protected (if offline_component = local).
-        #[arg(short = 'p', long, default_value_t = true)]
-        with_password: bool,
+        /// Signal that the seed should not be password-protected (if offline_component = local).
+        #[arg(long, default_value_t = false)]
+        no_password: bool,
     },
     /// Remove the wallet from the database
     Remove,
+    /// Commands managing the Descriptors (BIP380) of the wallet
+    Addresses {
+        #[command(subcommand)]
+        subcmd: super::subcmd_wallet_addresses::WalletAddressesSubcmd,
+    },
     /// Commands managing the Descriptors (BIP380) of the wallet
     Descriptors {
         #[command(subcommand)]
@@ -79,13 +86,26 @@ pub enum WalletSubcmd {
     Sync,
     /// Display info about of the wallet, like the balance
     Info,
-    /// Generate a new Bitcoin address for the Heritage wallet
-    GetAddress,
+    /// Display the mnemonic of the wallet for backup purpose
+    /// {n}/!\ BEWARE THOSE INFORMATIONS WILL ALLOW SPENDING OF YOUR COINS{n}unless the wallet is passphrase-protected /!\
+    ShowMnemonic {
+        #[arg(long, required = true)]
+        /// Confirm that you know what you are doing
+        i_understand_what_i_am_doing: bool,
+    },
+    /// Generate an Heir Configuration from this Heritage wallet that can be used as an heir for another Heritage wallet
+    GetHeirConfig {
+        /// The kind of Heir Configuration to generate
+        #[arg(short, long, value_enum, default_value_t=HeirConfigType::Xpub)]
+        kind: HeirConfigType,
+    },
     /// Create a Partially Signed Bitcoin Transaction (PSBT), a.k.a an Unsigned TX, from the provided receipients information
     SendBitcoins {
-        /// A recipient for our BTC
+        /// A recipient address and an amount to send them.
+        /// {n}<AMOUNT> can be a quantity of BTC e.g. 1.0btc, 100mbtc, 100sat
+        /// {n}or 'all' to drain the wallet
         #[arg(short, long, value_name="ADDRESS>:<AMOUNT", required = true, value_parser=parse_recipient)]
-        recipient: Vec<(Address, Amount)>,
+        recipient: Vec<(Address, Option<Amount>)>,
         /// Immediately sign the PSBT
         #[arg(short, long, default_value_t = false)]
         sign: bool,
@@ -140,9 +160,9 @@ impl super::CommandExecutor for WalletSubcmd {
             | WalletSubcmd::Descriptors { .. }
             | WalletSubcmd::Sync
             | WalletSubcmd::Info
-            | WalletSubcmd::GetAddress
             | WalletSubcmd::SendBitcoins { .. }
             | WalletSubcmd::BroadcastPsbt { .. }
+            | WalletSubcmd::Addresses { .. }
             | WalletSubcmd::HeritageConfigs { .. } => true,
             WalletSubcmd::SignPsbt { broadcast, .. } if *broadcast => true,
             WalletSubcmd::LedgerPolicies { subcmd } => match subcmd {
@@ -159,7 +179,10 @@ impl super::CommandExecutor for WalletSubcmd {
             _ => false,
         };
         let need_offline_component = match &self {
-            WalletSubcmd::Create { .. } | WalletSubcmd::SignPsbt { .. } => true,
+            WalletSubcmd::Create { .. }
+            | WalletSubcmd::SignPsbt { .. }
+            | WalletSubcmd::ShowMnemonic { .. }
+            | WalletSubcmd::GetHeirConfig { .. } => true,
             WalletSubcmd::LedgerPolicies { subcmd } => match subcmd {
                 WalletLedgerPolicySubcmd::ListRegistered
                 | WalletLedgerPolicySubcmd::AutoRegister
@@ -181,10 +204,10 @@ impl super::CommandExecutor for WalletSubcmd {
                 existing_service_wallet_fingerprint,
                 existing_service_wallet_id,
                 offline_component,
-                auto_feed_xpubs,
+                no_auto_feed_xpubs,
                 seed,
                 word_count,
-                with_password,
+                no_password,
             } => {
                 Wallet::verify_name_is_free(&db, &wallet_name)?;
                 let online_wallet = match online_component {
@@ -213,7 +236,28 @@ impl super::CommandExecutor for WalletSubcmd {
                 };
                 let offline_wallet = match offline_component {
                     OfflineComponentType::None => AnyWalletOffline::None,
-                    OfflineComponentType::Local => todo!(),
+                    OfflineComponentType::Local => {
+                        let password = if *no_password {
+                            None
+                        } else {
+                            Some(prompt_user_for_password(true)?)
+                        };
+                        let local_key = if let Some(seed) = seed {
+                            log::info!("Restoring a wallet...");
+                            let mnemo = Mnemonic::parse_in(Language::English, seed.join(" "))
+                                .map_err(|e| {
+                                    log::error!("invalid mnemonic {e}");
+                                    Error::Generic(format!("invalid mnemonic {e}"))
+                                })?;
+                            LocalKey::restore(mnemo, password, gargs.network)
+                        } else if let Some(word_count) = word_count {
+                            log::info!("Generating a new wallet...");
+                            LocalKey::generate(*word_count, password, gargs.network)
+                        } else {
+                            unreachable!("Clap ensure either seed or word_count is passed");
+                        };
+                        AnyWalletOffline::LocalKey(local_key)
+                    }
                     OfflineComponentType::Ledger => {
                         AnyWalletOffline::Ledger(LedgerKey::new(gargs.network)?)
                     }
@@ -222,9 +266,9 @@ impl super::CommandExecutor for WalletSubcmd {
                 let wallet = Rc::new(RefCell::new(wallet));
 
                 // Auto-feed
-                if *auto_feed_xpubs
-                    && !wallet.borrow().offline_wallet().is_none()
-                    && !wallet.borrow().online_wallet().is_none()
+                if !(*no_auto_feed_xpubs
+                    || wallet.borrow().offline_wallet().is_none()
+                    || wallet.borrow().online_wallet().is_none())
                 {
                     (WalletAXpubSubcmd::AutoAdd { count: 20 }).execute(Box::new(wallet.clone()))?;
                 }
@@ -235,7 +279,14 @@ impl super::CommandExecutor for WalletSubcmd {
                 if need_offline_component {
                     match wallet.offline_wallet_mut() {
                         AnyWalletOffline::None => (),
-                        AnyWalletOffline::LocalKey(lk) => todo!(),
+                        AnyWalletOffline::LocalKey(lk) => {
+                            let password = if lk.require_password() {
+                                Some(prompt_user_for_password(false)?)
+                            } else {
+                                None
+                            };
+                            lk.init_local_key(password)?;
+                        }
                         AnyWalletOffline::Ledger(ledger) => ledger.init_ledger_client()?,
                     };
                 }
@@ -259,8 +310,13 @@ impl super::CommandExecutor for WalletSubcmd {
                 wallet.borrow().delete(&mut db)?;
                 Box::new("Wallet deleted")
             }
+            WalletSubcmd::Addresses { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
             WalletSubcmd::Descriptors { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
-            WalletSubcmd::LedgerPolicies { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
+            WalletSubcmd::LedgerPolicies { subcmd } => {
+                let res = subcmd.execute(Box::new(wallet.clone()))?;
+                wallet.borrow().save(&mut db)?;
+                res
+            }
             WalletSubcmd::HeritageConfigs { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
             WalletSubcmd::AccountXpubs { subcmd } => subcmd.execute(Box::new(wallet.clone()))?,
             WalletSubcmd::Sync => {
@@ -268,22 +324,41 @@ impl super::CommandExecutor for WalletSubcmd {
                 Box::new("Synchronization done")
             }
             WalletSubcmd::Info => Box::new(wallet.borrow().get_wallet_info()?),
-            WalletSubcmd::GetAddress => Box::new(wallet.borrow().get_address()?),
+            WalletSubcmd::ShowMnemonic {
+                i_understand_what_i_am_doing: _,
+            } => Box::new(wallet.borrow().get_mnemonic()?),
+            WalletSubcmd::GetHeirConfig { kind } => {
+                Box::new(wallet.borrow().derive_heir_config(kind.into())?)
+            }
             WalletSubcmd::SendBitcoins {
                 recipient,
                 sign,
                 broadcast,
                 skip_confirmation,
             } => {
-                let spending_config = NewTx::Recipients(
-                    recipient
-                        .into_iter()
-                        .map(|(address, amount)| NewTxRecipient {
-                            address: address.to_string(),
-                            amount: amount.to_sat(),
-                        })
-                        .collect(),
-                );
+                // All recipients have an amount
+                // OR
+                // There is only one recipient
+                let spending_config = if recipient.iter().all(|(_, a)| a.is_some()) {
+                    NewTx::Recipients(
+                        recipient
+                            .into_iter()
+                            .map(|(address, amount)| NewTxRecipient {
+                                address: address.to_string(),
+                                amount: amount.expect("we verified every amount is some").to_sat(),
+                            })
+                            .collect(),
+                    )
+                } else if recipient.len() == 1 {
+                    NewTx::DrainTo(NewTxDrainTo {
+                        drain_to: recipient[0].0.to_string(),
+                    })
+                } else {
+                    log::error!("Exactly one recipient is allowed when using amount 'all'");
+                    return Err(Error::Generic(
+                        "Exactly one recipient is allowed when using amount 'all'".to_owned(),
+                    ));
+                };
                 // Get the PSBT
                 let (mut psbt, summary) = wallet.borrow().create_psbt(spending_config)?;
 
@@ -353,12 +428,11 @@ impl super::CommandExecutor for WalletSubcmd {
             }
             WalletSubcmd::DisplayPsbt { psbt } => todo!(),
         };
-        wallet.borrow().save(&mut db)?;
         Ok(res)
     }
 }
 
-fn parse_recipient(val: &str) -> Result<(Address, Amount)> {
+fn parse_recipient(val: &str) -> Result<(Address, Option<Amount>)> {
     if !val.contains(':') {
         return Err(Error::Generic(
             "invalid recipient. Must be <ADDRESS>:<AMOUNT>".to_owned(),
@@ -376,9 +450,14 @@ fn parse_recipient(val: &str) -> Result<(Address, Amount)> {
     let amount = parts.next().ok_or_else(|| {
         Error::Generic("invalid recipient. Must be <ADDRESS>:<AMOUNT>".to_owned())
     })?;
-    let amount = amount
-        .parse::<Amount>()
-        .map_err(|e| Error::Generic(e.to_string()))?;
+    let amount = match amount {
+        "all" => None,
+        _ => Some(
+            amount
+                .parse::<Amount>()
+                .map_err(|e| Error::Generic(e.to_string()))?,
+        ),
+    };
 
     if parts.next().is_some() {
         return Err(Error::Generic(
@@ -387,6 +466,22 @@ fn parse_recipient(val: &str) -> Result<(Address, Amount)> {
     }
 
     Ok((addr, amount))
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum HeirConfigType {
+    /// Produce an Heir Config consisting of a single PublicKey (deprecated)
+    SinglePub,
+    /// Produce an Heir Config consisting of an Extended PublicKey
+    Xpub,
+}
+impl From<HeirConfigType> for btc_heritage_wallet::HeirConfigType {
+    fn from(value: HeirConfigType) -> Self {
+        match value {
+            HeirConfigType::SinglePub => btc_heritage_wallet::HeirConfigType::SingleHeirPubkey,
+            HeirConfigType::Xpub => btc_heritage_wallet::HeirConfigType::HeirXPubkey,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]

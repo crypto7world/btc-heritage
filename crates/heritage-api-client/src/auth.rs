@@ -2,13 +2,19 @@ use btc_heritage::utils::timestamp_now;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    database::Database,
-    errors::{Error, Result},
-};
+use crate::errors::{Error, Result};
 
 #[derive(Debug, Deserialize)]
-pub struct TokenResponse {
+struct DeviceAuthorizationResponse {
+    device_code: String,
+    user_code: String,
+    verification_uri: String,
+    interval: u32,
+    expires_in: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct TokenResponse {
     id_token: String,
     access_token: String,
     #[serde(default)]
@@ -16,10 +22,16 @@ pub struct TokenResponse {
     expires_in: u32,
 }
 
+/// A trait providing methods for the OAuth tokens to be cached and retrieved
+pub trait TokenCache {
+    fn save_tokens(&mut self, tokens: &Tokens) -> Result<()>;
+    fn load_tokens(&self) -> Result<Option<Tokens>>;
+}
+
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Tokens {
-    pub(super) id_token: String,
-    pub(super) access_token: String,
+    pub(crate) id_token: String,
+    pub(crate) access_token: String,
     refresh_token: String,
     expiration_ts: u64,
     token_endpoint: String,
@@ -35,7 +47,7 @@ impl Tokens {
         let req: reqwest::blocking::RequestBuilder = client
             .post(auth_url)
             .form(&[("client_id", client_id), ("scope", "openid profile email")]);
-        let body = super::req_builder_to_body(req)?;
+        let body = crate::client::req_builder_to_body(req)?;
 
         let device_auth_response: DeviceAuthorizationResponse = serde_json::from_str(&body)?;
         let auth_expiration_ts = timestamp_now() + device_auth_response.expires_in as u64;
@@ -63,7 +75,7 @@ impl Tokens {
                 ("device_code", &device_auth_response.device_code),
                 ("client_id", client_id),
             ]);
-            match super::req_builder_to_body(req) {
+            match crate::client::req_builder_to_body(req) {
                 Ok(body) => match serde_json::from_str::<TokenResponse>(&body) {
                     Ok(tokens) => {
                         log::debug!("Got tokens!");
@@ -83,12 +95,12 @@ impl Tokens {
                 Err(_) => log::debug!("No tokens available yet. Retrying."),
             }
 
-            std::thread::sleep(std::time::Duration::from_secs(
+            std::thread::sleep(core::time::Duration::from_secs(
                 device_auth_response.interval as u64,
             ));
         }
     }
-    pub(super) fn refresh_if_needed(&mut self) -> Result<()> {
+    pub(crate) fn refresh_if_needed(&mut self) -> Result<()> {
         log::debug!("Tokens::refresh_if_needed");
         if self.expiration_ts > timestamp_now() + 30 {
             return Ok(());
@@ -100,7 +112,7 @@ impl Tokens {
             ("grant_type", "refresh_token"),
             ("refresh_token", self.refresh_token.as_str()),
         ]);
-        let body = super::req_builder_to_body(req)?;
+        let body = crate::client::req_builder_to_body(req)?;
         let token_response = serde_json::from_str::<TokenResponse>(&body)?;
 
         self.id_token = token_response.id_token;
@@ -111,21 +123,11 @@ impl Tokens {
         Ok(())
     }
 
-    pub fn save(&self, db: &mut Database) -> Result<()> {
-        db.update_item("service_tokens", self)?;
-        Ok(())
+    pub fn save<T: TokenCache>(&self, db: &mut T) -> Result<()> {
+        db.save_tokens(self)
     }
 
-    pub fn load(db: &Database) -> Result<Option<Self>> {
-        db.get_item("service_tokens")
+    pub fn load<T: TokenCache>(db: &T) -> Result<Option<Self>> {
+        db.load_tokens()
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct DeviceAuthorizationResponse {
-    device_code: String,
-    user_code: String,
-    verification_uri: String,
-    interval: u32,
-    expires_in: u32,
 }

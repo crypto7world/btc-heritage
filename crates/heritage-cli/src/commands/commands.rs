@@ -1,4 +1,6 @@
-use std::any::Any;
+use core::any::Any;
+
+use btc_heritage_wallet::{Database, Wallet};
 
 /// Top level cli sub-commands.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -15,6 +17,8 @@ pub enum Command {
         #[command(subcommand)]
         subcmd: super::subcmd_wallet::WalletSubcmd,
     },
+    /// List the existing Heritage wallets names, if any
+    ListWallets,
 }
 
 impl super::CommandExecutor for Command {
@@ -45,6 +49,11 @@ impl super::CommandExecutor for Command {
                     bitcoinrpc_gargs,
                 ));
                 subcmd.execute(params)
+            }
+            Command::ListWallets => {
+                let db = Database::new(&gargs.datadir, gargs.network)?;
+                let wallet_names = Wallet::db_list_names(&db)?;
+                Ok(Box::new(wallet_names))
             }
         }
     }

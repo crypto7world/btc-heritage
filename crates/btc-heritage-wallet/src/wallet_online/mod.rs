@@ -1,16 +1,14 @@
-use crate::{
-    errors::{Error, Result},
-    service_client::{AccountXPubWithStatus, NewTx},
-};
+use crate::errors::{Error, Result};
 use btc_heritage::{
     bitcoin::{bip32::Fingerprint, Network, Txid},
     heritage_config::HeritageConfig,
-    heritage_wallet::{DescriptorsBackup, TransactionSummary},
+    heritage_wallet::{DescriptorsBackup, TransactionSummary, WalletAddress},
     AccountXPub, HeritageWalletBalance, PartiallySignedTransaction,
 };
 
 mod local_heritage_wallet;
 mod service;
+use heritage_api_client::{AccountXPubWithStatus, NewTx};
 use local_heritage_wallet::LocalHeritageWallet;
 use serde::{Deserialize, Serialize};
 pub use service::ServiceBinding;
@@ -27,6 +25,7 @@ pub struct WalletInfo {
 pub trait WalletOnline {
     fn backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>;
     fn get_address(&self) -> Result<String>;
+    fn list_addresses(&self) -> Result<Vec<WalletAddress>>;
     fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>;
     fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>;
     fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>;
@@ -79,6 +78,7 @@ macro_rules! impl_wallet_online_fn {
 impl WalletOnline for AnyWalletOnline {
     impl_wallet_online_fn!(backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>);
     impl_wallet_online_fn!(get_address(&self) -> Result<String>);
+    impl_wallet_online_fn!(list_addresses(&self) -> Result<Vec<WalletAddress>>);
     impl_wallet_online_fn!(list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>);
     impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>);
     impl_wallet_online_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);

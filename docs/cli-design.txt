@@ -34,6 +34,10 @@ heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ac
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> descriptors backup
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> descriptors restore
 
+# Addresses
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> addresses new
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> addresses list
+
 # Ledger policies
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ledger-policies list
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ledger-policies list-registered

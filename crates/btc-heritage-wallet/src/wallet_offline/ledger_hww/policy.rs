@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use core::str::FromStr;
 
 use bitcoin::hex::{Case, DisplayHex, FromHex};
 use btc_heritage::{AccountXPub, AccountXPubId, DescriptorsBackup};
@@ -35,8 +35,8 @@ macro_rules! new_byte_type {
         #[derive(Debug, Clone, Serialize, Deserialize)]
         #[serde(into = "String", try_from = "String")]
         pub struct $struct_name([u8; 32]);
-        impl std::fmt::Display for $struct_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        impl core::fmt::Display for $struct_name {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
                 f.write_str(&self.0.to_hex_string(Case::Lower))
             }
         }
@@ -99,8 +99,8 @@ impl LedgerPolicy {
         key.descriptor_id()
     }
 }
-impl std::fmt::Display for LedgerPolicy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for LedgerPolicy {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }

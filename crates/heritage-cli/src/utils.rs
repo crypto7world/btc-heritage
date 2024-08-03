@@ -24,3 +24,16 @@ pub fn ask_user_confirmation(prompt: &str) -> Result<bool> {
     }
     Ok(s == "yes".to_owned())
 }
+
+pub fn prompt_user_for_password(double_check: bool) -> Result<String> {
+    let passphrase1 = rpassword::prompt_password("Please enter your password: ")
+        .map_err(|e| Error::Generic(e.to_string()))?;
+    if double_check {
+        let passphrase2 = rpassword::prompt_password("Please re-enter your password: ")
+            .map_err(|e| Error::Generic(e.to_string()))?;
+        if passphrase1 != passphrase2 {
+            return Err(Error::Generic("Passwords did not match".to_owned()));
+        }
+    }
+    Ok(passphrase1)
+}

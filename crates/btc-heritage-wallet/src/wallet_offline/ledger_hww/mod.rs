@@ -1,9 +1,5 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::Debug,
-    ops::Deref,
-    str::FromStr,
-};
+use core::{fmt::Debug, ops::Deref, str::FromStr};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     errors::{Error, Result},
@@ -18,7 +14,6 @@ use btc_heritage::{
         taproot::{Signature, TapLeafHash},
         Network,
     },
-    miniscript::DescriptorPublicKey,
     AccountXPub,
 };
 use ledger_bitcoin_client::{
@@ -35,7 +30,7 @@ pub(crate) mod policy;
 /// Transport with the Ledger device.
 pub(crate) struct TransportHID(TransportNativeHID);
 impl Debug for TransportHID {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("TransportHID").finish()
     }
 }
@@ -69,7 +64,7 @@ impl Transport for TransportHID {
 
 struct LedgerClient(BitcoinClient<TransportHID>);
 impl Debug for LedgerClient {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("LedgerClient").finish()
     }
 }
@@ -258,7 +253,7 @@ impl super::WalletOffline for LedgerKey {
         Ok(signed_inputs)
     }
 
-    fn derive_accounts_xpubs(&self, count: usize) -> Result<Vec<AccountXPub>> {
+    fn derive_accounts_xpubs(&self, range: core::ops::Range<u32>) -> Result<Vec<AccountXPub>> {
         let cointype_path_segment = match self.network {
             Network::Bitcoin => 0,
             _ => 1,
@@ -269,10 +264,12 @@ impl super::WalletOffline for LedgerKey {
         ];
         let base_derivation_path = DerivationPath::from(base_derivation_path);
 
-        let xpubs: Result<Vec<AccountXPub>> = base_derivation_path
-            .hardened_children()
-            .take(count)
-            .map(|derivation_path| {
+        let xpubs = range
+            .into_iter()
+            .map(|i| {
+                let derivation_path = base_derivation_path
+                    .extend([ChildNumber::from_hardened_idx(i)
+                        .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
                 let xpub: bitcoin::bip32::Xpub = self.ledger_client().get_extended_pubkey(
                     // Because for now we are bound to the rust-bitcoin version of BDK
                     // which is different than the one used by ledger_bitcoin_client
@@ -295,8 +292,15 @@ impl super::WalletOffline for LedgerKey {
         xpubs
     }
 
-    fn derive_heir_xpub(&self) -> Result<DescriptorPublicKey> {
-        todo!()
+    fn derive_heir_config(
+        &self,
+        _heir_config_type: super::HeirConfigType,
+    ) -> Result<btc_heritage::HeirConfig> {
+        Err(Error::LedgerHeirUnsupported)
+    }
+
+    fn get_mnemonic(&self) -> Result<bip39::Mnemonic> {
+        Err(Error::LedgerGetMnemonicUnsupported)
     }
 }
 

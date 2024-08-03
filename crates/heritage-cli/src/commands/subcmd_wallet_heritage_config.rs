@@ -1,4 +1,5 @@
-use std::{any::Any, cell::RefCell, rc::Rc};
+use core::{any::Any, cell::RefCell};
+use std::rc::Rc;
 
 use btc_heritage_wallet::{errors::Result, HeritageConfig, Wallet, WalletOnline};
 
@@ -26,7 +27,10 @@ impl super::CommandExecutor for WalletHeritageConfigSubcmd {
             WalletHeritageConfigSubcmd::ShowCurrent => {
                 Box::new(wallet.borrow().list_heritage_configs()?.remove(0))
             }
-            WalletHeritageConfigSubcmd::Set { heritage_config } => todo!(),
+            WalletHeritageConfigSubcmd::Set { heritage_config } => {
+                wallet.borrow_mut().set_heritage_config(heritage_config)?;
+                Box::new("Heritage Configuration set")
+            }
         };
         Ok(res)
     }

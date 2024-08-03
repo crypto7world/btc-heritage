@@ -2,7 +2,7 @@ pub mod memory;
 pub mod paginate;
 
 use bdk::{database::BatchDatabase, BlockTime};
-use std::fmt::Display;
+use core::fmt::Display;
 
 use crate::{
     account_xpub::AccountXPub,
@@ -17,7 +17,7 @@ use crate::{
 
 use self::paginate::{ContinuationToken, Paginated};
 
-type Result<T> = std::result::Result<T, DatabaseError>;
+type Result<T> = core::result::Result<T, DatabaseError>;
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SubdatabaseId(String);
@@ -27,7 +27,7 @@ impl SubdatabaseId {
     }
 }
 impl Display for SubdatabaseId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -173,7 +173,8 @@ pub trait TransacHeritageDatabase: HeritageDatabase {
 
 #[cfg(any(test, feature = "database-tests"))]
 pub mod tests {
-    use std::{collections::HashSet, str::FromStr};
+    use core::str::FromStr;
+    use std::collections::HashSet;
 
     use bdk::{
         database::{BatchOperations, Database},
@@ -855,7 +856,7 @@ pub mod bdk_tests {
         database::{BatchOperations, Database, SyncTime},
         BlockTime, KeychainKind, LocalUtxo, TransactionDetails,
     };
-    use std::str::FromStr;
+    use core::str::FromStr;
 
     use super::*;
 

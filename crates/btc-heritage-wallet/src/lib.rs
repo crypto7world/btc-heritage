@@ -1,6 +1,5 @@
 mod database;
 pub mod errors;
-mod service_client;
 mod utils;
 mod wallet;
 mod wallet_offline;
@@ -10,13 +9,13 @@ pub use btc_heritage::{AccountXPub, DescriptorsBackup, HeritageConfig};
 pub use wallet::Wallet;
 pub use wallet_offline::{
     ledger_hww::{policy::LedgerPolicy, LedgerKey},
-    AnyWalletOffline, WalletOffline,
+    local_key::LocalKey,
+    AnyWalletOffline, HeirConfigType, WalletOffline,
 };
 pub use wallet_online::{AnyWalletOnline, ServiceBinding, WalletOnline};
 
+pub use bip39::{Language, Mnemonic};
 pub use btc_heritage::bitcoin;
 pub use btc_heritage::miniscript;
 pub use database::Database;
-pub use service_client::{
-    AccountXPubWithStatus, HeritageServiceClient, NewTx, NewTxRecipient, Tokens,
-};
+pub use heritage_api_client;

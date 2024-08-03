@@ -4,10 +4,8 @@ pub mod online;
 mod types;
 pub use types::*;
 
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap, HashSet},
-};
+use core::cell::RefCell;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use bdk::{
     bitcoin::Address,
@@ -188,7 +186,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     }
 
     /// Return an immutable reference to the internal database
-    pub fn database(&self) -> impl std::ops::Deref<Target = D> + '_ {
+    pub fn database(&self) -> impl core::ops::Deref<Target = D> + '_ {
         self.database.borrow()
     }
 
@@ -1432,11 +1430,8 @@ fn varint_len(n: usize) -> usize {
 #[cfg(test)]
 mod tests {
 
-    use std::{
-        cell::RefCell,
-        collections::{hash_map::RandomState, HashMap, HashSet},
-        str::FromStr,
-    };
+    use core::{cell::RefCell, str::FromStr};
+    use std::collections::{hash_map::RandomState, HashMap, HashSet};
 
     use bdk::{
         blockchain::{

@@ -1,7 +1,12 @@
-use btc_heritage::bitcoin::bip32::Fingerprint;
-use serde::{Deserialize, Serialize};
+use btc_heritage::{
+    bitcoin::{bip32::Fingerprint, Txid},
+    heritage_wallet::WalletAddress,
+    AccountXPub, DescriptorsBackup, HeritageConfig, PartiallySignedTransaction,
+};
 
-use crate::service_client::AccountXPubWithStatus;
+use heritage_api_client::{AccountXPubWithStatus, NewTx, TransactionSummary};
+
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LocalHeritageWallet {
@@ -9,9 +14,7 @@ pub struct LocalHeritageWallet {
 }
 
 impl super::WalletOnline for LocalHeritageWallet {
-    fn backup_descriptors(
-        &self,
-    ) -> crate::errors::Result<Vec<btc_heritage::heritage_wallet::DescriptorsBackup>> {
+    fn backup_descriptors(&self) -> crate::errors::Result<Vec<DescriptorsBackup>> {
         todo!()
     }
 
@@ -19,25 +22,23 @@ impl super::WalletOnline for LocalHeritageWallet {
         todo!()
     }
 
+    fn list_addresses(&self) -> crate::errors::Result<Vec<WalletAddress>> {
+        todo!()
+    }
+
     fn list_account_xpubs(&self) -> crate::errors::Result<Vec<AccountXPubWithStatus>> {
         todo!()
     }
 
-    fn feed_account_xpubs(
-        &mut self,
-        account_xpubs: Vec<btc_heritage::AccountXPub>,
-    ) -> crate::errors::Result<()> {
+    fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> crate::errors::Result<()> {
         todo!()
     }
 
-    fn list_heritage_configs(&self) -> crate::errors::Result<Vec<btc_heritage::HeritageConfig>> {
+    fn list_heritage_configs(&self) -> crate::errors::Result<Vec<HeritageConfig>> {
         todo!()
     }
 
-    fn set_heritage_config(
-        &mut self,
-        new_hc: btc_heritage::HeritageConfig,
-    ) -> crate::errors::Result<()> {
+    fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> crate::errors::Result<()> {
         todo!()
     }
 
@@ -51,17 +52,11 @@ impl super::WalletOnline for LocalHeritageWallet {
 
     fn create_psbt(
         &self,
-        new_tx: crate::service_client::NewTx,
-    ) -> crate::errors::Result<(
-        btc_heritage::PartiallySignedTransaction,
-        btc_heritage::heritage_wallet::TransactionSummary,
-    )> {
+        new_tx: NewTx,
+    ) -> crate::errors::Result<(PartiallySignedTransaction, TransactionSummary)> {
         todo!()
     }
-    fn broadcast(
-        &self,
-        psbt: btc_heritage::PartiallySignedTransaction,
-    ) -> crate::errors::Result<btc_heritage::bitcoin::Txid> {
+    fn broadcast(&self, psbt: PartiallySignedTransaction) -> crate::errors::Result<Txid> {
         todo!()
     }
 }
