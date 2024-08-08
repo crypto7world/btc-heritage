@@ -4,19 +4,21 @@ use std::{
     time::Duration,
 };
 
+use crate::{
+    errors::{Error, Result},
+    BoundFingerprint, Broadcaster,
+};
 use btc_heritage::{
     bitcoin::{bip32::Fingerprint, Network, Txid},
     heritage_wallet::WalletAddress,
-    AccountXPub, DescriptorsBackup, HeritageConfig, PartiallySignedTransaction,
+    AccountXPub, HeritageConfig, HeritageWalletBackup, PartiallySignedTransaction,
 };
-
 use heritage_api_client::{
     AccountXPubWithStatus, HeritageServiceClient, HeritageWalletMeta, NewTx, SynchronizationStatus,
     TransactionSummary,
 };
-use serde::{Deserialize, Serialize};
 
-use crate::errors::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServiceBinding {
@@ -46,9 +48,8 @@ impl ServiceBinding {
         service_client: HeritageServiceClient,
         network: Network,
     ) -> Result<Self> {
-        let wallet_id = wallet.id;
         Ok(Self {
-            wallet_id,
+            wallet_id: wallet.id,
             fingerprint: wallet.fingerprint,
             network,
             service_client: Some(service_client),
@@ -68,7 +69,7 @@ impl ServiceBinding {
             return Err(Error::NoServiceWalletFound);
         }
         if wallets.len() > 1 {
-            return Err(Error::MultipleServiceWalletFound);
+            return Err(Error::MultipleServiceWalletsFound);
         }
         ServiceBinding::bind(wallets.pop().unwrap(), service_client, network)
     }
@@ -102,7 +103,7 @@ impl ServiceBinding {
             return Err(Error::NoServiceWalletFound);
         }
         if wallets.len() > 1 {
-            return Err(Error::MultipleServiceWalletFound);
+            return Err(Error::MultipleServiceWalletsFound);
         }
         ServiceBinding::bind(wallets.pop().unwrap(), service_client, network)
     }
@@ -128,7 +129,7 @@ impl ServiceBinding {
 }
 
 impl super::WalletOnline for ServiceBinding {
-    fn backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>> {
+    fn backup_descriptors(&self) -> Result<HeritageWalletBackup> {
         Ok(self
             .service_client()
             .get_wallet_descriptors_backup(&self.wallet_id)?)
@@ -152,15 +153,10 @@ impl super::WalletOnline for ServiceBinding {
             .list_wallet_account_xpubs(&self.wallet_id)?)
     }
     fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()> {
-        let fingerprint = if account_xpubs.len() > 0 {
-            Some(
-                account_xpubs[0]
-                    .descriptor_public_key()
-                    .master_fingerprint(),
-            )
-        } else {
-            None
-        };
+        let fingerprint = account_xpubs
+            .get(0)
+            .map(|axpub| axpub.descriptor_public_key().master_fingerprint());
+
         self.service_client()
             .post_wallet_account_xpubs(&self.wallet_id, account_xpubs)?;
         if self.fingerprint.is_none() {
@@ -175,10 +171,10 @@ impl super::WalletOnline for ServiceBinding {
             .list_wallet_heritage_configs(&self.wallet_id)?)
     }
 
-    fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<()> {
-        self.service_client()
-            .post_wallet_heritage_configs(&self.wallet_id, new_hc)?;
-        Ok(())
+    fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig> {
+        Ok(self
+            .service_client()
+            .post_wallet_heritage_configs(&self.wallet_id, new_hc)?)
     }
 
     fn sync(&mut self) -> Result<()> {
@@ -229,21 +225,18 @@ impl super::WalletOnline for ServiceBinding {
             .service_client()
             .post_wallet_create_unsigned_tx(&self.wallet_id, new_tx)?)
     }
+}
 
+impl Broadcaster for ServiceBinding {
     fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid> {
         Ok(self.service_client().post_broadcast_tx(psbt)?)
     }
 }
 
-impl crate::wallet::WalletCommons for ServiceBinding {
-    fn fingerprint(&self) -> Result<Option<Fingerprint>> {
+impl BoundFingerprint for ServiceBinding {
+    fn fingerprint(&self) -> Result<Fingerprint> {
         Ok(self
-            .service_client()
-            .get_wallet(&self.wallet_id)?
-            .fingerprint)
-    }
-
-    fn network(&self) -> Result<btc_heritage::bitcoin::Network> {
-        todo!()
+            .fingerprint
+            .ok_or(Error::OnlineWalletFingerprintNotPresent)?)
     }
 }

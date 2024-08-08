@@ -1,5 +1,6 @@
 mod commands;
 mod display;
+mod spendflow;
 mod utils;
 
 use clap::Parser;

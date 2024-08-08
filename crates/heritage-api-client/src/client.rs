@@ -2,18 +2,18 @@ pub use crate::auth::Tokens;
 use crate::{
     errors::{Error, Result},
     types::{AccountXPubWithStatus, HeritageWalletMeta, NewTx},
-    Synchronization,
+    Heir, HeirContact, HeirCreate, HeirUpdate, Heritage, Synchronization, UnsignedPsbt,
 };
 use btc_heritage::{
     bitcoin::{psbt::Psbt, Txid},
     heritage_wallet::{HeritageUtxo, TransactionSummary, WalletAddress},
-    BlockInclusionObjective, DescriptorsBackup, HeritageConfig,
+    BlockInclusionObjective, HeritageConfig, HeritageWalletBackup,
 };
-use core::{cell::RefCell, str::FromStr};
+use core::cell::RefCell;
 use reqwest::{blocking::Client, Method};
 use serde::Serialize;
-use serde_json::{json, Value};
-use std::collections::HashMap;
+use serde_json::json;
+use std::collections::{BTreeSet, HashMap};
 
 #[derive(Debug)]
 pub struct HeritageServiceClient {
@@ -40,7 +40,7 @@ pub(crate) fn req_builder_to_body(req: reqwest::blocking::RequestBuilder) -> Res
     })?;
     log::debug!("body_str={body_str}");
     if status_code.is_client_error() || status_code.is_server_error() {
-        log::error!(
+        log::debug!(
             "{} {}: {body_str}",
             status_code.as_u16(),
             status_code.canonical_reason().unwrap_or("UNKNOWN")
@@ -201,7 +201,7 @@ impl HeritageServiceClient {
         Ok(serde_json::from_value(self.api_call_get(&path)?)?)
     }
 
-    pub fn get_wallet_descriptors_backup(&self, wallet_id: &str) -> Result<Vec<DescriptorsBackup>> {
+    pub fn get_wallet_descriptors_backup(&self, wallet_id: &str) -> Result<HeritageWalletBackup> {
         let path = format!("wallets/{wallet_id}/descriptors-backup");
         Ok(serde_json::from_value(self.api_call_get(&path)?)?)
     }
@@ -212,16 +212,9 @@ impl HeritageServiceClient {
         new_tx: NewTx,
     ) -> Result<(Psbt, TransactionSummary)> {
         let path = format!("wallets/{wallet_id}/create-unsigned-tx");
-        let mut ret: HashMap<String, Value> =
+        let res: UnsignedPsbt =
             serde_json::from_value(self.api_call(Method::POST, &path, Some(new_tx))?)?;
-        let psbt_str = ret.remove("psbt").expect("trusting the api for now");
-        let tx_sum =
-            serde_json::from_value(ret.remove("tx_summary").expect("trusting the api for now"))?;
-        Ok((
-            Psbt::from_str(psbt_str.as_str().expect("trusting the api for now"))
-                .expect("trusting the api for now"),
-            tx_sum,
-        ))
+        Ok(res.into())
     }
 
     pub fn post_broadcast_tx(&self, psbt: Psbt) -> Result<Txid> {
@@ -236,34 +229,69 @@ impl HeritageServiceClient {
     ////////////////////////
     //       Heirs        //
     ////////////////////////
-    pub fn list_heirs(&self) -> Result<()> {
-        todo!()
+    pub fn list_heirs(&self) -> Result<Vec<Heir>> {
+        Ok(serde_json::from_value(self.api_call_get("heirs")?)?)
     }
 
-    pub fn post_heirs(&self) -> Result<()> {
-        todo!()
+    pub fn post_heirs(&self, heir_create: HeirCreate) -> Result<Heir> {
+        Ok(serde_json::from_value(self.api_call(
+            Method::POST,
+            "heirs",
+            Some(heir_create),
+        )?)?)
     }
 
-    pub fn patch_heir(&self) -> Result<()> {
-        todo!()
+    pub fn get_heir(&self, heir_id: &str) -> Result<Heir> {
+        let path = format!("heirs/{heir_id}");
+        Ok(serde_json::from_value(self.api_call_get(&path)?)?)
     }
 
-    pub fn post_heir_contacts(&self) -> Result<()> {
-        todo!()
+    pub fn patch_heir(&self, heir_id: &str, heir_update: HeirUpdate) -> Result<Heir> {
+        let path = format!("heirs/{heir_id}");
+        Ok(serde_json::from_value(self.api_call(
+            Method::PATCH,
+            &path,
+            Some(heir_update),
+        )?)?)
     }
 
-    pub fn delete_heir_contacts(&self) -> Result<()> {
-        todo!()
+    pub fn post_heir_contacts(
+        &self,
+        heir_id: &str,
+        contacts_to_add: Vec<HeirContact>,
+    ) -> Result<()> {
+        let path = format!("heirs/{heir_id}/contacts");
+        let contacts_to_add: BTreeSet<HeirContact> = contacts_to_add.into_iter().collect();
+        self.api_call(Method::POST, &path, Some(contacts_to_add))?;
+        Ok(())
+    }
+
+    pub fn delete_heir_contacts(
+        &self,
+        heir_id: &str,
+        contacts_to_delete: Vec<HeirContact>,
+    ) -> Result<()> {
+        let path = format!("heirs/{heir_id}/contacts");
+        let contacts_to_delete: BTreeSet<HeirContact> = contacts_to_delete.into_iter().collect();
+        self.api_call(Method::DELETE, &path, Some(contacts_to_delete))?;
+        Ok(())
     }
 
     ////////////////////////
     //     Heritages      //
     ////////////////////////
-    pub fn list_heritages(&self) -> Result<()> {
-        todo!()
+    pub fn list_heritages(&self) -> Result<Vec<Heritage>> {
+        Ok(serde_json::from_value(self.api_call_get("heritages")?)?)
     }
 
-    pub fn post_heritage_create_unsigned_tx(&self) -> Result<()> {
-        todo!()
+    pub fn post_heritage_create_unsigned_tx(
+        &self,
+        heritage_id: &str,
+        new_tx: NewTx,
+    ) -> Result<(Psbt, TransactionSummary)> {
+        let path = format!("heritages/{heritage_id}/create-unsigned-tx");
+        let res: UnsignedPsbt =
+            serde_json::from_value(self.api_call(Method::POST, &path, Some(new_tx))?)?;
+        Ok(res.into())
     }
 }

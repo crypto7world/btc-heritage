@@ -115,8 +115,8 @@ pub fn extract_tx(psbt: PartiallySignedTransaction) -> Result<Transaction, Error
 }
 
 /// Module allowing Ser/De for the [Amount] struct
-pub(crate) mod amount_serde {
-    use bdk::bitcoin::Amount;
+pub mod amount_serde {
+    use crate::bitcoin::Amount;
 
     pub fn serialize<S>(amount: &Amount, serializer: S) -> Result<S::Ok, S::Error>
     where

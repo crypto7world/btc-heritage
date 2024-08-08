@@ -112,6 +112,12 @@ impl TryFrom<DescriptorPublicKey> for AccountXPub {
                 .ok_or(Error::InvalidDescriptorPublicKey(
                     "DescriptorPublicKey must have origin information",
                 ))?;
+            if !xpub.derivation_path.is_empty() {
+                log::error!("DescriptorPublicKey must have no derivation path after the key");
+                return Err(Error::InvalidDescriptorPublicKey(
+                    "Derivation after the key",
+                ));
+            }
         } else {
             return Err(Error::InvalidDescriptorPublicKey(
                 "Must be a DescriptorPublicKey::XPub variant",

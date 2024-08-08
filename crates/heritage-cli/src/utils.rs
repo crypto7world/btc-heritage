@@ -1,6 +1,13 @@
-use std::io::{stdin, stdout, Write};
+use std::{
+    collections::HashMap,
+    io::{stdin, stdout, Write},
+};
 
-use btc_heritage_wallet::errors::{Error, Result};
+use btc_heritage_wallet::{
+    errors::{Error, Result},
+    heritage_api_client::Fingerprint,
+    BoundFingerprint, Database, DatabaseItem, Heir, HeirWallet, Wallet,
+};
 
 pub fn ask_user_confirmation(prompt: &str) -> Result<bool> {
     print!("{prompt} Answer yes or no (default no): ");
@@ -36,4 +43,24 @@ pub fn prompt_user_for_password(double_check: bool) -> Result<String> {
         }
     }
     Ok(passphrase1)
+}
+
+pub fn get_fingerprints(db: &Database) -> Result<HashMap<Fingerprint, String>> {
+    let mut map = HashMap::new();
+    map.extend(Heir::all_in_db(&db)?.iter().filter_map(|h| {
+        h.fingerprint()
+            .ok()
+            .map(|f| (f, format!("heir:{}", h.name())))
+    }));
+    map.extend(HeirWallet::all_in_db(&db)?.iter().filter_map(|hw| {
+        hw.fingerprint()
+            .ok()
+            .map(|f| (f, format!("heir-wallet:{}", hw.name())))
+    }));
+    map.extend(Wallet::all_in_db(&db)?.iter().filter_map(|w| {
+        w.fingerprint()
+            .ok()
+            .map(|f| (f, format!("wallet:{}", w.name())))
+    }));
+    Ok(map)
 }

@@ -1,15 +1,19 @@
 use crate::errors::{Error, Result};
 use btc_heritage::bitcoin::Network;
 
+mod dbitem;
 mod utils;
 use heritage_api_client::TokenCache;
 use redb::{ReadableTable, TableDefinition};
 use serde::{de::DeserializeOwned, Serialize};
 use utils::prepare_data_dir;
 
+pub use dbitem::DatabaseItem;
+
 const TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new("heritage");
 const TOKEN_KEY: &'static str = "api_auth_tokens";
 
+#[derive(Debug)]
 pub struct Database(redb::Database);
 
 impl Database {
@@ -105,6 +109,36 @@ impl Database {
         Ok(table.get(key)?.is_some())
     }
 
+    /// Returns all the object in the DB whose key begin with `prefix`
+    ///
+    /// # Errors
+    /// Will throw an error if the results from the query are not homogenous (all of the same type).
+    /// Will also throw an error if `prefix` is the empty string
+    pub fn query<T: DeserializeOwned>(&self, prefix: &str) -> Result<Vec<T>> {
+        if prefix.is_empty() {
+            return Err(Error::DatabaseError("prefix must not be empty".to_owned()));
+        }
+        let table = (match self.0.begin_read()?.open_table(TABLE) {
+            Ok(table) => Ok(table),
+            Err(e) => match e {
+                redb::TableError::TableDoesNotExist(_) => return Ok(vec![]),
+                _ => Err(e),
+            },
+        })?;
+
+        let mut prefix_with_next_last_char = prefix.to_owned();
+        let last_char = prefix_with_next_last_char.remove(prefix_with_next_last_char.len() - 1);
+        let next_last_char = (last_char as u8 + 1) as char;
+        prefix_with_next_last_char.push(next_last_char);
+
+        table
+            .range(prefix..prefix_with_next_last_char.as_str())?
+            .filter_map(|e| {
+                e.ok()
+                    .map(|(_, value)| Ok(serde_json::from_slice(&value.value())?))
+            })
+            .collect::<Result<Vec<_>>>()
+    }
     /// List all the keys in the DB
     /// If `prefix` is [Some] and not the empty string, returns only keys that begin with `prefix`
     pub fn list_keys(&self, prefix: Option<&str>) -> Result<Vec<String>> {

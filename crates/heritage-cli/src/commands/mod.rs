@@ -1,5 +1,9 @@
 mod commands;
+mod subcmd_heir;
+mod subcmd_heirwallet;
 mod subcmd_service;
+mod subcmd_service_heir;
+mod subcmd_service_wallet;
 mod subcmd_wallet;
 mod subcmd_wallet_addresses;
 mod subcmd_wallet_axpubs;

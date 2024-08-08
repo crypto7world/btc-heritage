@@ -1,7 +1,7 @@
 use core::str::FromStr;
 
 use bitcoin::hex::{Case, DisplayHex, FromHex};
-use btc_heritage::{AccountXPub, AccountXPubId, DescriptorsBackup};
+use btc_heritage::{AccountXPub, AccountXPubId, SubwalletDescriptorBackup};
 use ledger_bitcoin_client::{WalletPolicy, WalletPubKey};
 use serde::{Deserialize, Serialize};
 
@@ -17,7 +17,7 @@ fn re_descriptor() -> &'static regex::Regex {
 
 fn re_pk() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(:?pkh?|pk_[kh])\((:<key>.+?)\)").unwrap())
+    RE.get_or_init(|| regex::Regex::new(r"(:?pkh?|pk_[kh])\((?<key>.+?)\)").unwrap())
 }
 
 fn re_account_xpub() -> &'static regex::Regex {
@@ -194,12 +194,12 @@ impl From<LedgerPolicy> for WalletPolicy {
     }
 }
 
-impl TryFrom<DescriptorsBackup> for LedgerPolicy {
+impl TryFrom<SubwalletDescriptorBackup> for LedgerPolicy {
     type Error = Error;
 
-    fn try_from(value: DescriptorsBackup) -> Result<Self, Self::Error> {
-        let external_descriptor = value.external_descriptor;
-        let change_descriptor = value.change_descriptor;
+    fn try_from(value: SubwalletDescriptorBackup) -> Result<Self, Self::Error> {
+        let external_descriptor = value.external_descriptor.to_string();
+        let change_descriptor = value.change_descriptor.to_string();
         if !re_account_xpub()
             .captures_iter(&external_descriptor)
             .zip(re_account_xpub().captures_iter(&change_descriptor))
@@ -223,7 +223,7 @@ mod tests {
             "external_descriptor": "tr([9c7088e3/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/0/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(12960),after(1731536000))))",
             "change_descriptor": "tr([9c7088e3/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/1/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1731536000))))"
         }"#;
-        let valid_backup: DescriptorsBackup = serde_json::from_str(valid_backup).unwrap();
+        let valid_backup: SubwalletDescriptorBackup = serde_json::from_str(valid_backup).unwrap();
         assert!(LedgerPolicy::try_from(valid_backup).is_ok())
     }
 
@@ -233,7 +233,8 @@ mod tests {
         "external_descriptor": "tr([44990794/86'/1'/0']tpubDE9DbziEKzUWbomb29YUwersoSERpmogW115aoegGezrf2uKJZfTqNCD5it8u8AzAuDUoCBcGgmwKppcFSEJ4fuLvBTDLsm5hmeK6L7LZcz/0/*,{and_v(v:pk([99ccb69a/86'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b),and_v(v:older(8640),after(1706602192))),{and_v(v:pk([00bdc67c/86'/1'/1751476594'/0/0]03cb072f51f73029ba3023ee0ffb0caa0070ecde5fb849783579c6f8a9b9029157),and_v(v:older(17280),after(1722154192))),and_v(v:pk([53c80c75/86'/1'/1751476594'/0/0]035133a7acfda43784341da5e23a1ecd1ac25be2ded8ceaff151a9a4cd78199b20),and_v(v:older(25920),after(1737706192)))}})#lwjl7p4u",
         "change_descriptor": "tr([44990794/86'/1'/1']tpubDE9DbziEKzUWdSo28yKWmuEcgaXEF6tP11EB39RiZN5DW5XCEXRhWbMVRBsPv7yuWHBuueuN7WAhQ3kbEdvg4uMfCvwEYd8ay344UtfsWtz/1/*,{and_v(v:pk([99ccb69a/86'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b),and_v(v:older(8640),after(1706602192))),{and_v(v:pk([00bdc67c/86'/1'/1751476594'/0/0]03cb072f51f73029ba3023ee0ffb0caa0070ecde5fb849783579c6f8a9b9029157),and_v(v:older(17280),after(1722154192))),and_v(v:pk([53c80c75/86'/1'/1751476594'/0/0]035133a7acfda43784341da5e23a1ecd1ac25be2ded8ceaff151a9a4cd78199b20),and_v(v:older(25920),after(1737706192)))}})#6tf6ymmg"
     }"#;
-        let invalid_backup: DescriptorsBackup = serde_json::from_str(invalid_backup).unwrap();
+        let invalid_backup: SubwalletDescriptorBackup =
+            serde_json::from_str(invalid_backup).unwrap();
         assert!(
             LedgerPolicy::try_from(invalid_backup).is_err_and(|e| match e {
                 Error::LedgerIncompatibleDescriptor(msg) =>

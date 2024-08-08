@@ -68,6 +68,9 @@ impl Tokens {
             if timestamp_now() >= auth_expiration_ts {
                 return Err(Error::AuthenticationProcessExpired);
             }
+            std::thread::sleep(core::time::Duration::from_secs(
+                device_auth_response.interval as u64,
+            ));
 
             log::debug!("Trying to retrieve tokens");
             let req = client.post(auth_url).form(&[
@@ -94,10 +97,6 @@ impl Tokens {
                 },
                 Err(_) => log::debug!("No tokens available yet. Retrying."),
             }
-
-            std::thread::sleep(core::time::Duration::from_secs(
-                device_auth_response.interval as u64,
-            ));
         }
     }
     pub(crate) fn refresh_if_needed(&mut self) -> Result<()> {

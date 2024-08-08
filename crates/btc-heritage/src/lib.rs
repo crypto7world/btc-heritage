@@ -6,16 +6,17 @@ pub mod heritage_wallet;
 pub mod subwallet_config;
 pub mod utils;
 
+pub use crate::bitcoin::{psbt::PartiallySignedTransaction, Amount};
 pub use account_xpub::{AccountXPub, AccountXPubId};
-pub use bdk::bitcoin::{psbt::PartiallySignedTransaction, Amount};
-pub use heritage_config::{heirtypes::*, HeritageConfig};
+pub use heritage_config::{heirtypes::*, HeritageConfig, HeritageConfigVersion};
 pub use heritage_wallet::{
-    BlockInclusionObjective, DescriptorsBackup, HeritageWallet, HeritageWalletBalance, Recipient,
-    SpendingConfig,
+    backup::{HeritageWalletBackup, SubwalletDescriptorBackup},
+    BlockInclusionObjective, HeritageWallet, HeritageWalletBalance, Recipient, SpendingConfig,
 };
 
 pub use bdk::bitcoin;
 pub use bdk::miniscript;
+pub use utils::amount_serde;
 
 #[cfg(any(test, feature = "database-tests"))]
 mod tests {
@@ -306,7 +307,6 @@ mod tests {
 
     pub fn get_test_subwallet_config(ad_index: u32, thc: TestHeritageConfig) -> SubwalletConfig {
         SubwalletConfig::new(
-            ad_index,
             get_test_account_xpub(ad_index),
             get_test_heritage_config(thc),
         )

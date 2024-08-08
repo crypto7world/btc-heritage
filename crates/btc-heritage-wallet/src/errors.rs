@@ -7,32 +7,42 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("This operation cannot be performed because there is no online wallet component")]
+    MissingOnlineWallet,
     #[error(
-        "This operation cannot be performed by this wallet because it has no Online component"
+        "This operation cannot be performed because the online wallet component is not the expected type ({0})"
     )]
-    MissingOnlineComponent,
+    IncorrectOnlineWallet(&'static str),
+    #[error("This operation cannot be performed because there is no key provider component")]
+    MissingKeyProvider,
     #[error(
-        "This operation cannot be performed by this wallet because the Online component is not the expected type ({0})"
+        "This operation cannot be performed because the key provider is not the expected type ({0})"
     )]
-    IncorrectOnlineComponent(&'static str),
-    #[error(
-        "This operation cannot be performed by this wallet because it has no Offline component"
-    )]
-    MissingOfflineComponent,
-    #[error(
-        "This operation cannot be performed by this wallet because the Offline component is not the expected type ({0})"
-    )]
-    IncorrectOfflineComponent(&'static str),
+    IncorrectKeyProvider(&'static str),
+    #[error("This operation cannot be performed because there is no heritage provider component")]
+    MissingHeritageProvider,
     #[error("A wallet cannot have neither online and offline components")]
     NoComponent,
-    #[error("The Online and Offline parts of the wallet don't have the same fingerprint")]
+    #[error("The different parts don't have the same fingerprint")]
     IncoherentFingerprints,
+    #[error("The online wallet does not yet have a bound fingerprint")]
+    OnlineWalletFingerprintNotPresent,
+    #[error("No item named \"{0}\" in the database")]
+    InexistantItem(String),
+    #[error("An item named \"{0}\" is already in the database")]
+    ItemAlreadyExist(String),
     #[error("No wallet named \"{0}\" in the database")]
     InexistantWallet(String),
     #[error("A wallet named \"{0}\" is already in the database")]
     WalletAlreadyExist(String),
+    #[error("No heir named \"{0}\" in the database")]
+    InexistantHeir(String),
+    #[error("An heir named \"{0}\" is already in the database")]
+    HeirAlreadyExist(String),
     #[error("The Descriptor {descriptor} is invalid: {error}")]
     InvalidDescriptor { descriptor: String, error: String },
+    #[error("{0}")]
+    InvalidAddressNetwork(String),
     #[error("Password is missing for LocalKey with password")]
     LocalKeyMissingPassword,
     #[error("The descriptor cannot be transformed in a Ledger wallet policy (reason: {0})")]
@@ -42,13 +52,17 @@ pub enum Error {
     #[error("HeirConfig from Ledger are not supported because we cannot sign Heir transactions at the moment")]
     LedgerHeirUnsupported,
     #[error("It is impossible to extract the wallet Mnemonic from a Ledger device")]
-    LedgerGetMnemonicUnsupported,
-    #[error("No wallet found in the service")]
-    NoServiceWalletFound,
+    LedgerBackupMnemonicUnsupported,
     #[error("The account derivation index {0} is too big (max 2^31-1)")]
     AccountDerivationIndexOutOfBound(u32),
-    #[error("Multiple wallet found in the service")]
-    MultipleServiceWalletFound,
+    #[error("No wallet found in the service")]
+    NoServiceWalletFound,
+    #[error("Multiple wallets found in the service")]
+    MultipleServiceWalletsFound,
+    #[error("No heir found in the service")]
+    NoServiceHeirFound,
+    #[error("Multiple heirs found in the service")]
+    MultipleServiceHeirsFound,
     #[error("The wallet fingerprint on the service is not the one stored in the local database")]
     IncoherentServiceWalletFingerprint,
     #[error("The wallet fingerprint on the connected Ledger is not the one stored in the local database")]

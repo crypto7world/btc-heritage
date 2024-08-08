@@ -18,6 +18,7 @@ serde_json = { workspace = true }
 
 reqwest = { workspace = true }
 open = { workspace = true }
+regex = { workspace = true }
 
 log = { workspace = true }
 thiserror = { workspace = true }

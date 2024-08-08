@@ -288,16 +288,16 @@ pub struct TransactionSummary {
     pub parent_txids: HashSet<Txid>,
 }
 
-/// A descriptors backup to export an HeritageWallet configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
-pub struct DescriptorsBackup {
-    pub external_descriptor: String,
-    pub change_descriptor: String,
-    pub first_use_ts: Option<u64>,
-    pub last_external_index: Option<u32>,
-    pub last_change_index: Option<u32>,
-}
+// /// A descriptors backup to export an HeritageWallet configuration
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// #[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+// pub struct DescriptorsBackup {
+//     pub external_descriptor: String,
+//     pub change_descriptor: String,
+//     pub first_use_ts: Option<u64>,
+//     pub last_external_index: Option<u32>,
+//     pub last_change_index: Option<u32>,
+// }
 
 /// A [Address<NetworkChecked>] with [(Fingerprint, DerivationPath)] informations
 #[derive(Debug, Clone, Serialize, Deserialize)]

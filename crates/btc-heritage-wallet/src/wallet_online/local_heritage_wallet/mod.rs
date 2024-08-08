@@ -1,9 +1,9 @@
+use crate::{BoundFingerprint, Broadcaster};
 use btc_heritage::{
     bitcoin::{bip32::Fingerprint, Txid},
     heritage_wallet::WalletAddress,
-    AccountXPub, DescriptorsBackup, HeritageConfig, PartiallySignedTransaction,
+    AccountXPub, HeritageConfig, HeritageWalletBackup, PartiallySignedTransaction,
 };
-
 use heritage_api_client::{AccountXPubWithStatus, NewTx, TransactionSummary};
 
 use serde::{Deserialize, Serialize};
@@ -14,7 +14,7 @@ pub struct LocalHeritageWallet {
 }
 
 impl super::WalletOnline for LocalHeritageWallet {
-    fn backup_descriptors(&self) -> crate::errors::Result<Vec<DescriptorsBackup>> {
+    fn backup_descriptors(&self) -> crate::errors::Result<HeritageWalletBackup> {
         todo!()
     }
 
@@ -38,7 +38,10 @@ impl super::WalletOnline for LocalHeritageWallet {
         todo!()
     }
 
-    fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> crate::errors::Result<()> {
+    fn set_heritage_config(
+        &mut self,
+        new_hc: HeritageConfig,
+    ) -> crate::errors::Result<HeritageConfig> {
         todo!()
     }
 
@@ -56,17 +59,15 @@ impl super::WalletOnline for LocalHeritageWallet {
     ) -> crate::errors::Result<(PartiallySignedTransaction, TransactionSummary)> {
         todo!()
     }
+}
+
+impl Broadcaster for LocalHeritageWallet {
     fn broadcast(&self, psbt: PartiallySignedTransaction) -> crate::errors::Result<Txid> {
         todo!()
     }
 }
-
-impl crate::wallet::WalletCommons for LocalHeritageWallet {
-    fn fingerprint(&self) -> crate::errors::Result<Option<Fingerprint>> {
-        todo!()
-    }
-
-    fn network(&self) -> crate::errors::Result<btc_heritage::bitcoin::Network> {
+impl BoundFingerprint for LocalHeritageWallet {
+    fn fingerprint(&self) -> crate::errors::Result<Fingerprint> {
         todo!()
     }
 }

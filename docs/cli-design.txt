@@ -11,18 +11,23 @@ heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url 
 heritage-cli [--datadir <datadir>] [--network <network>] service [--service-url <service_URL>] 
 
 
+
+###########
+# Wallets #
+###########
 heritage-cli [--datadir <datadir>] [--network <network>] list-wallets
 
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> create \
-    --online-wallet <none | service | electrum | bitcoin> [--existing-service-wallet <wallet_name>] \
-    --offline-wallet <none | local | ledger> [--word-count <12|18|24>] [--seed <mnemonic>] [--with-password] \
+    --online-wallet <none | local | service> [--existing-service-wallet <wallet_name>] \
+    --key-provider <none | local | ledger> [--word-count <12|18|24>] [--seed <mnemonic>] [--no-password] \
     --auto-feed-xpubs <true | false>
 
 # Wallet setup
 # Heritage configuration
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config set <...>
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config set [--json <JSON>] [--version v1]
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config list
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config show-current
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> heritage-config renew
 
 # Account eXtended Public Keys
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> account-xpubs generate [--count <count>]
@@ -45,48 +50,69 @@ heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> le
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> ledger-policies auto-register
 
 
-
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> balance
 heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> sync
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> status
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> fingerprint
+heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> show-mnemonic
+
+
+#########
+# Heirs #
+#########
+heritage-cli [--datadir <datadir>] [--network <network>] list-heirs
+
+heritage-cli [--datadir <datadir>] [--network <network>] heir <heir-name> create \
+    [--kind <xpub | single-pub>] [--value <heir-config-value>] \
+    --use-case <inherit | declare> \
+    --heritage-provider <none | service | local-wallets> \
+    --key-provider <none | local | ledger> [--word-count <12|18|24>] [--seed <mnemonic>] [--with-password]
 
 
 
+#################################################################
+# A wallet owner wanting to create heirs for his wallet (local) #
+#################################################################
+# First create the owner wallet
+heritage-cli wallet create --online local
+# Then create heirs without heritage provider
+heritage-cli heir heir1 create --heritage-provider none --key-provider local --word-count 12
+heritage-cli heir heir2 create --heritage-provider none --key-provider local --word-count 12
+# Then reference them in the heritage config.
+heritage-cli wallet heritage-config set --heir heir1 --lock 720 --heir heir2 --lock 780
 
+###################################################################
+# A wallet owner wanting to create heirs for his wallet (service) #
+###################################################################
+# First create the owner wallet
+heritage-cli wallet create
+# Then create heirs without heritage provider
+heritage-cli heir heir1 create --heritage-provider none --key-provider local --word-count 12
+heritage-cli heir heir2 create --heritage-provider none --key-provider local --word-count 12
+# Then reference them in the heritage config.
+heritage-cli wallet heritage-config set --heir heir1 --lock 720 --heir heir2 --lock 780
+# And in the service if he wants to
+heritage-cli service heir heir1 create --email john@whatever.com --heir-config heir1
+heritage-cli service heir heir2 create --email bob@whatever.com --heir-config heir2
 
+###############################################################
+# An heir wanting to retrieve an inheritance from the service #
+###############################################################
+heritage-cli heir [<heir_name>] create --key-provider local --seed <...>
+# Then list & retrieve the heritages
+heritage-cli heir [<heir_name>] list-heritages
+heritage-cli heir [<heir_name>] spend-heritages --recipient <address>
 
-heritage-cli [--datadir <datadir>] local [--network <network>] wallet <wallet-name> restore <JSON-backup-file> [--seed <mnemonic> [--with-password] | --ledger]
-heritage-cli [--datadir <datadir>] local [--network <network>] wallet
-
-# Wallets sometime need to be restored, there is 2 fundamentaly different part to restore
-# - the seed; for all things related to private keys
-# - the descriptors; for all things related to TapRoot/Heritage configurations
-# It will happen that only one of the two parts need restoration
-# Furthermore, it's different for the service or for a local wallet
-
-# The procedure will always to first ensure the "public" side is restored
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> restore <JSON-backup-file> [--seed <mnemonic> [--with-password] | --ledger]
-heritage-cli local-wallet <wallet-name> restore <JSON-backup-file> [--seed <mnemonic> [--with-password] | --ledger]
-
-# If the service-wallet already exist
-heritage-cli service-wallet [--service-url <service_URL>] <wallet-name> rebind [--seed <mnemonic> [--with-password] | --ledger]
-
-
-
-
-
-
-# Wallet sync
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> sync
-
-# Wallet addresses
-heritage-cli [--datadir <datadir>] [--network <network>] wallet <wallet-name> get-address
-
-# Wallet PSBT/Sign/Broadcast
-# Will generate the PSBT, present it for validation to the user, then sign and broadcast it
-
-heritage-cli wallet [--service-url <service_URL>] <wallet-name> get-psbt --recipient <address>,<amount> [--sign] [--broadcast]
-heritage-cli wallet [--service-url <service_URL>] <wallet-name> sign-psbt [--broadcast]
-heritage-cli wallet [--service-url <service_URL>] <wallet-name> broadcast-psbt
-
-heritage-cli local-wallet [--network <network>] [--bitcoin-url <btc_url> | --electrum-url <electrum_url> ] <wallet-name> broadcast-psbt
+##################################################################
+# An heir wanting to retrieve an inheritance from a local wallet #
+##################################################################
+# First create the owner wallet
+heritage-cli wallet [<wallet_name>] create --key-provider none --online local
+# Restore the descriptors
+heritage-cli wallet [<wallet_name>] descriptors restore <...>
+# Synchronize
+heritage-cli wallet [<wallet_name>] sync
+# Then create the heir (himself)
+heritage-cli heir [<heir_name>] create --provider local-wallets --key-provider local --seed <...>
+# Then list & retrieve the heritages
+heritage-cli heir [<heir_name>] list-heritages
+heritage-cli heir [<heir_name>] spend-heritages --recipient <address>

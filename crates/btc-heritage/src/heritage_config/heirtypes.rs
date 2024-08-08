@@ -1,4 +1,4 @@
-use core::{fmt::Display, str::FromStr};
+use core::{fmt::Display, hash::Hash, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -189,16 +189,38 @@ impl HeirConfig {
               // }
         }
     }
-    pub fn has_fingerprint(&self, fingerprint: Fingerprint) -> bool {
+
+    pub fn fingerprint(&self) -> Fingerprint {
         match self {
-            HeirConfig::SingleHeirPubkey(xpub) => xpub.0.master_fingerprint() == fingerprint,
-            HeirConfig::HeirXPubkey(xpub) => {
-                xpub.descriptor_public_key().master_fingerprint() == fingerprint
-            } // HeritageMode::SingleHeirPubKeyHash(pubkeyhash) => {
-              //     let s: String = (*pubkeyhash).into();
-              //     format!("vc:expr_raw_pkh({s})")
-              // }
+            HeirConfig::SingleHeirPubkey(xpub) => xpub.0.master_fingerprint(),
+            HeirConfig::HeirXPubkey(xpub) => xpub.descriptor_public_key().master_fingerprint(),
         }
+    }
+}
+
+/// Extract an HeirConfig key from the key fragment of a script
+fn re_heirconfig_key() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"^v:pk\((?<key>.+?)\)$").unwrap())
+}
+impl TryFrom<&str> for HeirConfig {
+    type Error = Error;
+
+    fn try_from(script_fragment: &str) -> Result<Self, Self::Error> {
+        let key = &re_heirconfig_key()
+            .captures(script_fragment)
+            .ok_or(Error::InvalidScriptFragments("heir in"))?["key"];
+
+        match AccountXPub::try_from(key) {
+            Ok(axpub) => return Ok(HeirConfig::HeirXPubkey(axpub)),
+            Err(e) => log::info!("{e}"),
+        }
+        match SingleHeirPubkey::try_from(key) {
+            Ok(shp) => return Ok(HeirConfig::SingleHeirPubkey(shp)),
+            Err(e) => log::info!("{e}"),
+        }
+
+        Err(Error::InvalidScriptFragments("heir in"))
     }
 }
 

@@ -1,14 +1,17 @@
-use bdk::{database::BatchDatabase, Wallet};
-
-pub use crate::bitcoin::psbt::PartiallySignedTransaction;
-use serde::{Deserialize, Serialize};
+use core::str::FromStr;
 
 use crate::{
     account_xpub::AccountXPub,
     errors::{Error, Result},
     heritage_config::HeritageConfig,
-    utils,
+    miniscript::{Descriptor, DescriptorPublicKey},
+    utils, SubwalletDescriptorBackup,
 };
+
+use bdk::{database::BatchDatabase, Wallet};
+use serde::{Deserialize, Serialize};
+
+pub use crate::bitcoin::psbt::PartiallySignedTransaction;
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
@@ -16,7 +19,6 @@ struct SubwalletFirstUseTime(u64);
 impl Default for SubwalletFirstUseTime {
     fn default() -> Self {
         // The current timestamp
-        // In effet, this is "Today at 12:00 (24H)"
         Self(utils::timestamp_now())
     }
 }
@@ -25,54 +27,53 @@ pub type SubwalletId = u32;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SubwalletConfig {
-    subwallet_id: SubwalletId,
-    ext_descriptor: String,
-    change_descriptor: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    subwallet_firstuse_time: Option<SubwalletFirstUseTime>,
+    ext_descriptor: Descriptor<DescriptorPublicKey>,
+    change_descriptor: Descriptor<DescriptorPublicKey>,
     account_xpub: AccountXPub,
     heritage_config: HeritageConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subwallet_firstuse_time: Option<SubwalletFirstUseTime>,
 }
 
 impl SubwalletConfig {
-    pub fn new(
-        subwallet_id: SubwalletId,
-        account_xpub: AccountXPub,
-        heritage_config: HeritageConfig,
-    ) -> Self {
+    // WARNING: We MUST never change that
+    // If we DO change it, old backups will no longer map to the right addresses
+    // At the very least, EXTENSIVE communication should be done so users
+    // re-create backups or modify the existing ones to specify explicitely
+    // the ext_index and change_index values
+    pub const DEFAULT_EXTERNAL_INDEX: u32 = 0;
+    pub const DEFAULT_CHANGE_INDEX: u32 = 1;
+
+    pub fn new(account_xpub: AccountXPub, heritage_config: HeritageConfig) -> Self {
         log::debug!(
-            "SubwalletConfig::new - subwallet_id={subwallet_id} \
+            "SubwalletConfig::new - \
         account_xpub={account_xpub} heritage_config={heritage_config:?}"
         );
-        Self::new_with_custom_indexes(subwallet_id, account_xpub, heritage_config, 0, 1)
+        Self::new_with_custom_indexes(
+            account_xpub,
+            heritage_config,
+            Self::DEFAULT_EXTERNAL_INDEX,
+            Self::DEFAULT_CHANGE_INDEX,
+        )
     }
 
     pub fn new_with_custom_indexes(
-        subwallet_id: SubwalletId,
         account_xpub: AccountXPub,
         heritage_config: HeritageConfig,
         external_index: u32,
         change_index: u32,
     ) -> Self {
         log::debug!(
-            "SubwalletConfig::new_with_custom_indexes - subwallet_id={subwallet_id} \
+            "SubwalletConfig::new_with_custom_indexes - \
         account_xpub={account_xpub} heritage_config={heritage_config:?} \
         external_index={external_index} change_index={change_index}"
         );
 
-        let mut descriptor_iterator = [external_index, change_index].into_iter().map(|index| {
-            let descriptor = account_xpub.child_descriptor_public_key(index);
-            let descriptor_taptree_miniscript_expression =
-                heritage_config.descriptor_taptree_miniscript_expression_for_child(Some(index));
-            match &descriptor_taptree_miniscript_expression {
-                Some(script_paths) => format!("tr({descriptor},{script_paths})"),
-                None => format!("tr({descriptor})"),
-            }
-        });
-
-        let (ext_descriptor, change_descriptor) = (
-            descriptor_iterator.next().unwrap(),
-            descriptor_iterator.next().unwrap(),
+        let (ext_descriptor, change_descriptor) = Self::create_descriptors(
+            &account_xpub,
+            &heritage_config,
+            external_index,
+            change_index,
         );
         log::debug!("SubwalletConfig::new_with_custom_indexes - ext_descriptor={ext_descriptor}");
         log::debug!(
@@ -80,7 +81,6 @@ impl SubwalletConfig {
         );
 
         Self {
-            subwallet_id,
             ext_descriptor,
             change_descriptor,
             subwallet_firstuse_time: None,
@@ -89,10 +89,36 @@ impl SubwalletConfig {
         }
     }
 
+    pub fn create_descriptors(
+        account_xpub: &AccountXPub,
+        heritage_config: &HeritageConfig,
+        external_index: u32,
+        change_index: u32,
+    ) -> (
+        Descriptor<DescriptorPublicKey>,
+        Descriptor<DescriptorPublicKey>,
+    ) {
+        let mut descriptor_iterator = [external_index, change_index].into_iter().map(|index| {
+            let descriptor_public_key = account_xpub.child_descriptor_public_key(index);
+            let descriptor_taptree_miniscript_expression =
+                heritage_config.descriptor_taptree_miniscript_expression_for_child(Some(index));
+            let descriptor_string = match &descriptor_taptree_miniscript_expression {
+                Some(script_paths) => format!("tr({descriptor_public_key},{script_paths})"),
+                None => format!("tr({descriptor_public_key})"),
+            };
+            Descriptor::<DescriptorPublicKey>::from_str(&descriptor_string)
+                .expect("we produce valid descriptor strings")
+        });
+        (
+            descriptor_iterator.next().unwrap(),
+            descriptor_iterator.next().unwrap(),
+        )
+    }
+
     pub fn get_subwallet<DB: BatchDatabase>(&self, subdatabase: DB) -> Wallet<DB> {
         Wallet::new(
-            self.ext_descriptor.as_str(),
-            Some(self.change_descriptor.as_str()),
+            self.ext_descriptor.clone(),
+            Some(self.change_descriptor.clone()),
             *utils::bitcoin_network_from_env(),
             subdatabase,
         )
@@ -100,7 +126,7 @@ impl SubwalletConfig {
     }
 
     pub fn subwallet_id(&self) -> SubwalletId {
-        self.subwallet_id
+        self.account_xpub.descriptor_id()
     }
 
     pub fn subwallet_firstuse_time(&self) -> Option<u64> {
@@ -124,27 +150,84 @@ impl SubwalletConfig {
         &self.heritage_config
     }
 
-    pub fn ext_descriptor(&self) -> &str {
+    pub fn ext_descriptor(&self) -> &Descriptor<DescriptorPublicKey> {
         &self.ext_descriptor
     }
 
-    pub fn change_descriptor(&self) -> &str {
+    pub fn change_descriptor(&self) -> &Descriptor<DescriptorPublicKey> {
         &self.change_descriptor
     }
 
-    /// Consume the [SubwalletConfig] in order to retrieve its [SubwalletId],
+    /// Consume the [SubwalletConfig] in order to retrieve its
     /// [AccountXPub] and [HeritageConfig] without having to clone anything
-    pub fn into_parts(self) -> (SubwalletId, AccountXPub, HeritageConfig) {
-        (self.subwallet_id, self.account_xpub, self.heritage_config)
+    pub fn into_parts(self) -> (AccountXPub, HeritageConfig) {
+        (self.account_xpub, self.heritage_config)
     }
 
     #[cfg(test)]
     fn get_test_subwallet(&self) -> Wallet<bdk::database::AnyDatabase> {
-        bdk::wallet::get_funded_wallet(self.ext_descriptor.as_str()).0
+        bdk::wallet::get_funded_wallet(self.ext_descriptor.to_string().as_str()).0
     }
     #[cfg(test)]
     pub(crate) fn set_subwallet_firstuse(&mut self, ts: u64) {
         self.subwallet_firstuse_time = Some(SubwalletFirstUseTime(ts));
+    }
+}
+
+/// Match a whole Taproot descriptor and allow to retrieve the key and, if present, the scripts
+fn re_descriptor() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"^(?<desc>tr\((?<key>.+?)(?:,(?<scripts>.+))?\))(:?#[a-z0-9]{8})?$")
+            .unwrap()
+    })
+}
+/// Match an [AccountXPub] string and allow to separate the origin/key and the final derivation
+fn re_account_xpub() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(
+            r"(?<key>\[[0-9a-f]{8}\/86['h]\/[01]['h]\/[0-9]+['h]\][tx]pub[1-9A-HJ-NP-Za-km-z]{79,108})(?<derivation>\/\*\*|(:?\/[0-9]+)*\/\*)",
+        )
+        .unwrap()
+    })
+}
+
+impl TryFrom<&SubwalletDescriptorBackup> for SubwalletConfig {
+    type Error = Error;
+
+    fn try_from(sdb: &SubwalletDescriptorBackup) -> std::result::Result<Self, Self::Error> {
+        // First, both descriptor backups keys must
+        // 1 - be the same
+        // 2 - the first must be valid a AccountXPub
+        // 3 - others must be valid heir configs
+        let ext_desc = sdb.external_descriptor.to_string();
+        let chg_desc = sdb.change_descriptor.to_string();
+
+        // Replace all the [AccountXPub]s in both descriptors by removing the post-derivation and verify the two resulting string matches
+        let ext_desc = re_account_xpub().replace_all(&ext_desc, "${key}/*");
+        let chg_desc = re_account_xpub().replace_all(&chg_desc, "${key}/*");
+        if ext_desc != chg_desc {
+            return Err(Error::InvalidBackup(
+                "external and change descriptor are not compatible",
+            ));
+        }
+        // Now we can work only with one of them
+        let desc = ext_desc;
+        let capts = re_descriptor()
+            .captures(&desc)
+            .ok_or(Error::InvalidBackup("descriptors are not Tr"))?;
+
+        let account_xpub = AccountXPub::try_from(&capts["key"])?;
+        let heritage_config = HeritageConfig::try_from(&capts["scripts"])?;
+
+        Ok(Self {
+            ext_descriptor: sdb.external_descriptor.clone(),
+            change_descriptor: sdb.change_descriptor.clone(),
+            account_xpub,
+            heritage_config,
+            subwallet_firstuse_time: sdb.first_use_ts.map(|ts| SubwalletFirstUseTime(ts)),
+        })
     }
 }
 

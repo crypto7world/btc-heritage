@@ -1,150 +1,140 @@
-use bip39::Mnemonic;
 use btc_heritage::{
-    bitcoin::{bip32::Fingerprint, Network, Txid},
-    heritage_wallet::{DescriptorsBackup, TransactionSummary, WalletAddress},
-    AccountXPub, HeirConfig, HeritageConfig, PartiallySignedTransaction,
+    bitcoin::{bip32::Fingerprint, Txid},
+    heritage_wallet::{TransactionSummary, WalletAddress},
+    AccountXPub, HeirConfig, HeritageConfig, HeritageWalletBackup, PartiallySignedTransaction,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    database::Database,
+    database::DatabaseItem,
     errors::{Error, Result},
-    wallet_offline::{AnyWalletOffline, HeirConfigType, WalletOffline},
+    key_provider::{AnyKeyProvider, HeirConfigType, KeyProvider, MnemonicBackup},
     wallet_online::{AnyWalletOnline, WalletOnline},
+    BoundFingerprint, Broadcaster,
 };
-
-pub trait WalletCommons {
-    /// Return the [Fingerprint] of the underlying wallets
-    fn fingerprint(&self) -> Result<Option<Fingerprint>>;
-    /// Return the intended [Network] of the underlying wallets
-    fn network(&self) -> Result<Network>;
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Wallet {
     name: String,
-    offline_wallet: AnyWalletOffline,
+    key_provider: AnyKeyProvider,
     online_wallet: AnyWalletOnline,
+    fingerprints_controlled: bool,
 }
 
 impl Wallet {
     const DB_KEY_PREFIX: &'static str = "wallet#";
+    const DEFAULT_NAME_KEY: &'static str = "default_wallet_name";
 
     pub fn new(
         name: String,
-        offline_wallet: AnyWalletOffline,
+        key_provider: AnyKeyProvider,
         online_wallet: AnyWalletOnline,
     ) -> Result<Self> {
-        if online_wallet.is_none() && offline_wallet.is_none() {
+        if online_wallet.is_none() && key_provider.is_none() {
             Err(Error::NoComponent)
-        } else if !offline_wallet.is_none() && !online_wallet.is_none() && {
-            let online_fp = online_wallet.fingerprint()?;
-            let offline_fp = offline_wallet.fingerprint()?;
-            online_fp.is_some_and(|online_fp| {
-                offline_fp.is_some_and(|offline_fp| online_fp != offline_fp)
-            })
-        } {
-            Err(Error::IncoherentFingerprints)
         } else {
-            Ok(Self {
+            let mut wallet = Self {
                 name,
-                offline_wallet,
+                key_provider,
                 online_wallet,
-            })
+                fingerprints_controlled: false,
+            };
+            wallet.control_fingerprints()?;
+            Ok(wallet)
         }
     }
 
-    fn name_to_key(name: &str) -> String {
-        format!("{}{name}", Self::DB_KEY_PREFIX)
-    }
-    pub fn db_list_names(db: &Database) -> Result<Vec<String>> {
-        let keys_with_prefix = db.list_keys(Some(Self::DB_KEY_PREFIX))?;
-        Ok(keys_with_prefix
-            .into_iter()
-            .map(|k| {
-                k.strip_prefix(Self::DB_KEY_PREFIX)
-                    .expect("we asked for keys with this prefix")
-                    .to_owned()
-            })
-            .collect())
-    }
-    /// Verify that the given Wallet name is not already in the database
-    pub fn verify_name_is_free(db: &Database, name: &str) -> Result<()> {
-        if db.contains_key(&Self::name_to_key(name))? {
-            Err(Error::WalletAlreadyExist(name.to_owned()))
-        } else {
-            Ok(())
+    fn control_fingerprints(&mut self) -> Result<()> {
+        if !self.fingerprints_controlled {
+            if !self.key_provider.is_none() && !self.online_wallet.is_none() {
+                let online_fp = (match self.online_wallet.fingerprint() {
+                    Ok(fp) => Ok(Some(fp)),
+                    Err(e) => match e {
+                        Error::OnlineWalletFingerprintNotPresent => Ok(None),
+                        _ => Err(e),
+                    },
+                })?;
+                if let Some(online_fp) = online_fp {
+                    let offline_fp = self.key_provider.fingerprint()?;
+                    if online_fp != offline_fp {
+                        // The Fingerprint are different!!!
+                        // quit the verification
+                        return Err(Error::IncoherentFingerprints);
+                    }
+                    // Let the function continue to mark fingerprints_controlled = true
+                } else {
+                    // We cannot control the FPs for now, quit the verification
+                    return Ok(());
+                }
+            }
+            // We are here because:
+            // - Either key_provider or online_wallet is none
+            // - They are both not_none, and online_wallet have a fingerprint, and it is coherent with the key_provider
+            self.fingerprints_controlled = true;
         }
-    }
-
-    pub fn create(&self, db: &mut Database) -> Result<()> {
-        db.put_item(&Self::name_to_key(&self.name), self)?;
         Ok(())
     }
 
-    pub fn delete(&self, db: &mut Database) -> Result<()> {
-        let wallet = db.delete_item::<Wallet>(&Self::name_to_key(&self.name))?;
-        log::debug!("{wallet:?}");
-        Ok(())
-    }
-
-    pub fn save(&self, db: &mut Database) -> Result<()> {
-        db.update_item(&Self::name_to_key(&self.name), self)?;
-        Ok(())
-    }
-
-    pub fn load(db: &Database, name: &str) -> Result<Self> {
-        db.get_item(&Self::name_to_key(name))?
-            .ok_or(Error::InexistantWallet(name.to_owned()))
-    }
-
-    pub fn offline_wallet(&self) -> &AnyWalletOffline {
-        &self.offline_wallet
+    pub fn key_provider(&self) -> &AnyKeyProvider {
+        &self.key_provider
     }
     pub fn online_wallet(&self) -> &AnyWalletOnline {
         &self.online_wallet
     }
-    pub fn offline_wallet_mut(&mut self) -> &mut AnyWalletOffline {
-        &mut self.offline_wallet
+    pub fn key_provider_mut(&mut self) -> &mut AnyKeyProvider {
+        &mut self.key_provider
     }
     pub fn online_wallet_mut(&mut self) -> &mut AnyWalletOnline {
         &mut self.online_wallet
     }
 }
 
-impl WalletCommons for Wallet {
-    fn fingerprint(&self) -> Result<Option<Fingerprint>> {
-        if !self.offline_wallet.is_none() {
-            return self.offline_wallet.fingerprint();
-        }
-        if !self.online_wallet.is_none() {
-            return self.online_wallet.fingerprint();
-        }
-        unreachable!("Having both part at None is not allowed")
+impl DatabaseItem for Wallet {
+    fn item_key_prefix() -> &'static str {
+        Self::DB_KEY_PREFIX
+    }
+    fn item_default_name_key_prefix() -> &'static str {
+        Self::DEFAULT_NAME_KEY
     }
 
-    fn network(&self) -> Result<Network> {
-        todo!()
+    fn name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    fn rename(&mut self, new_name: String) {
+        self.name = new_name;
+    }
+
+    fn name_to_key(name: &str) -> String {
+        std::format!("{}{name}", Self::item_key_prefix())
+    }
+
+    fn load(db: &crate::Database, name: &str) -> Result<Self> {
+        let mut wallet = db
+            .get_item::<Self>(&Self::name_to_key(name))?
+            .ok_or(Error::InexistantItem(name.to_owned()))?;
+        wallet.control_fingerprints()?;
+        Ok(wallet)
     }
 }
 
-macro_rules! impl_wallet_offline_fn {
+macro_rules! impl_key_provider_fn {
     ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
         fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
-            $self.offline_wallet.$fn_name($($a),*)
+            $self.key_provider.$fn_name($($a),*)
         }
     };
     ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
         fn $fn_name(& $self $(,$a : $t)*) -> $ret {
-            $self.offline_wallet.$fn_name($($a),*)
+            $self.key_provider.$fn_name($($a),*)
         }
     };
 }
-impl WalletOffline for Wallet {
-    impl_wallet_offline_fn!(sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<usize>);
-    impl_wallet_offline_fn!(derive_accounts_xpubs(&self, range: core::ops::Range<u32>) -> Result<Vec<AccountXPub>>);
-    impl_wallet_offline_fn!(derive_heir_config(&self, heir_config_type: HeirConfigType) -> Result<HeirConfig>);
-    impl_wallet_offline_fn!(get_mnemonic(&self) -> Result<Mnemonic>);
+impl KeyProvider for Wallet {
+    impl_key_provider_fn!(sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<usize>);
+    impl_key_provider_fn!(derive_accounts_xpubs(&self, range: core::ops::Range<u32>) -> Result<Vec<AccountXPub>>);
+    impl_key_provider_fn!(derive_heir_config(&self, heir_config_type: HeirConfigType) -> Result<HeirConfig>);
+    impl_key_provider_fn!(backup_mnemonic(&self) -> Result<MnemonicBackup>);
 }
 macro_rules! impl_wallet_online_fn {
     ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
@@ -159,15 +149,28 @@ macro_rules! impl_wallet_online_fn {
     };
 }
 impl WalletOnline for Wallet {
-    impl_wallet_online_fn!(backup_descriptors(&self) -> Result<Vec<DescriptorsBackup>>);
+    impl_wallet_online_fn!(backup_descriptors(&self) -> Result<HeritageWalletBackup>);
     impl_wallet_online_fn!(get_address(&self) -> Result<String>);
     impl_wallet_online_fn!(list_addresses(&self) -> Result<Vec<WalletAddress>>);
     impl_wallet_online_fn!(list_account_xpubs(&self) -> Result<Vec<heritage_api_client::AccountXPubWithStatus>>);
     impl_wallet_online_fn!(feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>);
     impl_wallet_online_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
-    impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<()>);
+    impl_wallet_online_fn!(set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig>);
     impl_wallet_online_fn!(sync(&mut self) -> Result<()>);
     impl_wallet_online_fn!(get_wallet_info(&self) -> Result<crate::wallet_online::WalletInfo>);
     impl_wallet_online_fn!(create_psbt(&self, new_tx: heritage_api_client::NewTx) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
+}
+impl Broadcaster for Wallet {
     impl_wallet_online_fn!(broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>);
+}
+impl BoundFingerprint for Wallet {
+    fn fingerprint(&self) -> Result<Fingerprint> {
+        if !self.key_provider.is_none() {
+            return self.key_provider.fingerprint();
+        }
+        if !self.online_wallet.is_none() {
+            return self.online_wallet.fingerprint();
+        }
+        unreachable!("Having both part at None is not allowed")
+    }
 }

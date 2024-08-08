@@ -1,4 +1,7 @@
-use crate::errors::{Error, Result};
+use crate::{
+    errors::{Error, Result},
+    BoundFingerprint,
+};
 use bip39::Mnemonic;
 use btc_heritage::{
     bitcoin::{
@@ -20,7 +23,7 @@ use btc_heritage::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::HeirConfigType;
+use super::{HeirConfigType, MnemonicBackup};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalKey {
@@ -137,7 +140,7 @@ impl LocalKey {
     }
 }
 
-impl super::WalletOffline for LocalKey {
+impl super::KeyProvider for LocalKey {
     fn sign_psbt(
         &self,
         psbt: &mut btc_heritage::PartiallySignedTransaction,
@@ -414,7 +417,11 @@ impl super::WalletOffline for LocalKey {
                     .xkey
                     .derive_pub(&secp, &derivation_path)
                     .expect("I really don't see how it could fail");
-                let full_path = heir_xpub.derivation_path.extend(derivation_path);
+                let full_path = heir_xpub
+                    .origin
+                    .expect("origin is present")
+                    .1
+                    .extend(derivation_path);
                 Ok(HeirConfig::SingleHeirPubkey(
                     SingleHeirPubkey::try_from(DescriptorPublicKey::Single(SinglePub {
                         origin: Some((self.fingerprint, full_path)),
@@ -430,17 +437,16 @@ impl super::WalletOffline for LocalKey {
         }
     }
 
-    fn get_mnemonic(&self) -> Result<Mnemonic> {
-        Ok(self.mnemonic.clone())
+    fn backup_mnemonic(&self) -> Result<MnemonicBackup> {
+        Ok(MnemonicBackup {
+            mnemonic: self.mnemonic.clone(),
+            fingerprint: self.fingerprint,
+            with_password: self.with_password,
+        })
     }
 }
-
-impl crate::wallet::WalletCommons for LocalKey {
-    fn fingerprint(&self) -> crate::errors::Result<Option<Fingerprint>> {
-        Ok(Some(self.fingerprint))
-    }
-
-    fn network(&self) -> crate::errors::Result<Network> {
-        todo!()
+impl BoundFingerprint for LocalKey {
+    fn fingerprint(&self) -> Result<Fingerprint> {
+        Ok(self.fingerprint)
     }
 }

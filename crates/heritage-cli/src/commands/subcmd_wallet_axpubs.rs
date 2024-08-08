@@ -2,8 +2,8 @@ use core::{any::Any, cell::RefCell};
 use std::rc::Rc;
 
 use btc_heritage_wallet::{
-    errors::Result, heritage_api_client::AccountXPubWithStatus, AccountXPub, Wallet, WalletOffline,
-    WalletOnline,
+    btc_heritage::AccountXPub, errors::Result, heritage_api_client::AccountXPubWithStatus,
+    KeyProvider, Wallet, WalletOnline,
 };
 
 /// Wallet Account XPubs management subcommand.

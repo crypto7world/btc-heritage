@@ -1,14 +1,21 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, str::FromStr};
 
 use serde::{Deserialize, Serialize};
 
 use super::{heirtypes::HeirConfig, SpendConditions};
-use crate::bitcoin::{
-    absolute::LOCK_TIME_THRESHOLD,
-    bip32::{DerivationPath, Fingerprint},
+use crate::{
+    bitcoin::{
+        absolute::LOCK_TIME_THRESHOLD,
+        bip32::{DerivationPath, Fingerprint},
+    },
+    errors::Error,
 };
 
 const SEC_IN_A_DAY: u64 = 24 * 60 * 60;
+
+// One block every 10min on average
+// 24 hours in a day, 6 blocks per hour
+const BLOCKS_IN_A_DAY: u16 = 24 * 6;
 
 #[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
@@ -23,6 +30,13 @@ impl core::ops::Add<Self> for Days {
 
     fn add(self, rhs: Self) -> Self::Output {
         Days(self.0 + rhs.0)
+    }
+}
+impl FromStr for Days {
+    type Err = <u16 as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Days(s.parse::<u16>()?))
     }
 }
 
@@ -126,12 +140,18 @@ impl ReferenceTimestamp {
         self.0
     }
 }
+
 #[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct MinimumLockTime(Days);
 impl Default for MinimumLockTime {
     fn default() -> Self {
         Self(Days(30))
+    }
+}
+impl From<Days> for MinimumLockTime {
+    fn from(value: Days) -> Self {
+        MinimumLockTime(value)
     }
 }
 impl core::ops::Add<Self> for MinimumLockTime {
@@ -159,9 +179,7 @@ where
 }
 impl MinimumLockTime {
     pub fn as_blocks(&self) -> u16 {
-        // One block every 10min on average
-        // 24 hours in a day, 6 blocks per hour
-        u16::try_from(self.0 .0 * 24 * 6).unwrap_or(u16::MAX)
+        u16::try_from(self.0 .0 * BLOCKS_IN_A_DAY).unwrap_or(u16::MAX)
     }
 
     pub fn as_days(&self) -> &Days {
@@ -342,6 +360,124 @@ impl HeritageConfig {
     }
 }
 
+fn fragment_scripts(scripts: &str) -> Vec<&str> {
+    let mut res = Vec::new();
+
+    let mut inception_lvl = 0u8;
+    let mut star_index = 0usize;
+    for (index, char) in scripts.char_indices() {
+        match char {
+            '{' => {
+                star_index = index + 1;
+                inception_lvl += 1;
+            }
+            ',' => {
+                let s = &scripts[star_index..index];
+                res.push(s);
+                star_index = index + 1;
+            }
+            '}' => {
+                let s = &scripts[star_index..index];
+                res.push(s);
+                inception_lvl -= 1;
+            }
+            _ => (),
+        }
+    }
+    assert_eq!(inception_lvl, 0);
+    if res.len() == 0 && scripts.len() != 0 {
+        res.push(scripts)
+    }
+    res
+}
+/// Extract the component of an Heritage v1 script fragment
+fn re_v1_fragment() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"^and_v\((?<heir>.+?),and_v\(v:older\((?<rlock>[0-9]+?)\),after\((?<alock>[0-9]+?)\)\)\)$").unwrap())
+}
+
+/// TryFrom<ScriptsStr>
+impl TryFrom<&str> for HeritageConfig {
+    type Error = Error;
+
+    fn try_from(scripts: &str) -> Result<Self, Self::Error> {
+        let fragments = fragment_scripts(scripts);
+        if fragments.len() == 0 {
+            return Ok(HeritageConfigBuilder::default().build_v1());
+        }
+        let mut heritage_parts = fragment_scripts(scripts)
+            .into_iter()
+            .map(|fragment| {
+                let caps = re_v1_fragment().captures(fragment).ok_or_else(|| {
+                    log::debug!("Failed to match fragment: {fragment}");
+                    Error::InvalidScriptFragments("v1")
+                })?;
+                let heir_config = HeirConfig::try_from(&caps["heir"])?;
+                let min_locktime: u16 = caps["rlock"].parse().map_err(|e| {
+                    log::debug!("Failed to parse min_locktime: {e}");
+                    Error::InvalidScriptFragments("v1")
+                })?;
+                let absolute_locktime: u64 = caps["alock"].parse().map_err(|e| {
+                    log::debug!("Failed to parse absolute_locktime: {e}");
+                    Error::InvalidScriptFragments("v1")
+                })?;
+                Ok((heir_config, min_locktime, absolute_locktime))
+            })
+            .collect::<Result<Vec<_>, Self::Error>>()?;
+        // Sort that by the absolute lock time
+        heritage_parts.sort_by_key(|e| e.2);
+
+        // The order must also be respected for min_locktimes and they are all successive multiples of the first one
+        let min_lock_time_blocks = heritage_parts[0].1;
+
+        if !heritage_parts
+            .iter()
+            .zip(1u16..)
+            .all(|((_, rlock, _), mult)| {
+                *rlock == min_lock_time_blocks.checked_mul(mult).unwrap_or(u16::MAX)
+            })
+        {
+            log::debug!("Failed the min_lock_time serie control");
+            return Err(Error::InvalidScriptFragments("v1"));
+        }
+
+        if min_lock_time_blocks % BLOCKS_IN_A_DAY != 0 {
+            log::debug!("Failed the min_lock_time serie control, {min_lock_time_blocks} is not divisible by {BLOCKS_IN_A_DAY}");
+            return Err(Error::InvalidScriptFragments("v1"));
+        }
+        let min_lock_time_days = min_lock_time_blocks / BLOCKS_IN_A_DAY;
+
+        // The minimum absolute locktime
+        let min_absolute_lock_timestamp = heritage_parts[0].2;
+        // Assume 1yr lock for the first heir to get the reference timestamp
+        let reference_time = min_absolute_lock_timestamp - SEC_IN_A_DAY * 365;
+
+        // Now compute every Heritage by taking the distance
+        // between reference_time and absolute_locktime of
+        // each heritage_parts
+        let heritages = heritage_parts
+            .into_iter()
+            .map(|(heir_config, _, absolute_locktime)| {
+                let time_diff_in_secs = absolute_locktime - reference_time;
+                if time_diff_in_secs % SEC_IN_A_DAY != 0 {
+                    log::debug!("Failed heritages creation, {time_diff_in_secs} sec is not an exact amount of days");
+                    return Err(Error::InvalidScriptFragments("v1"));
+                }
+                Ok(Heritage {
+                    heir_config,
+                    time_lock: Days((time_diff_in_secs/SEC_IN_A_DAY) as u16),
+                })
+            })
+            .collect::<Result<Vec<_>, Self::Error>>()?;
+
+        Ok(HeritageConfigBuilder::default()
+            .reference_time(reference_time)
+            .minimum_lock_time(min_lock_time_days)
+            .expand_heritages(heritages)
+            .build_v1())
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct HeritageConfigBuilder {
     heritages: Vec<Heritage>,
@@ -371,14 +507,17 @@ impl HeritageConfigBuilder {
         self
     }
     pub fn build(self) -> super::HeritageConfig {
+        super::HeritageConfig(super::InnerHeritageConfig::V1(self.build_v1()))
+    }
+    pub fn build_v1(self) -> HeritageConfig {
         // Create Heritages from the Vec of Heritage and normalize it
         let mut heritages = Heritages(self.heritages);
         heritages.normalize();
-        super::HeritageConfig(super::InnerHeritageConfig::V1(HeritageConfig {
+        HeritageConfig {
             heritages,
             reference_timestamp: self.reference_timestamp,
             minimum_lock_time: self.minimum_lock_time,
-        }))
+        }
     }
 }
 
@@ -408,7 +547,8 @@ impl<'a> super::HeritageExplorerTrait for HeritageExplorer<'a> {
     fn has_fingerprint(&self, fingerprint: Fingerprint) -> bool {
         self.heritage_config.heritages.0[self.heritage_index]
             .get_heir_config()
-            .has_fingerprint(fingerprint)
+            .fingerprint()
+            == fingerprint
     }
 
     fn get_miniscript_expression<'b>(

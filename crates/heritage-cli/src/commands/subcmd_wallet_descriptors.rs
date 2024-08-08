@@ -1,7 +1,9 @@
 use core::{any::Any, cell::RefCell};
 use std::rc::Rc;
 
-use btc_heritage_wallet::{errors::Result, DescriptorsBackup, Wallet, WalletOnline};
+use btc_heritage_wallet::{
+    btc_heritage::HeritageWalletBackup, errors::Result, Wallet, WalletOnline,
+};
 
 /// Wallet Descriptors management subcommand.
 #[derive(Debug, Clone, clap::Subcommand)]
@@ -14,7 +16,7 @@ pub enum WalletDescriptorsSubcmd {
     Restore {
         /// The Descriptors to restore
         #[arg(short, long, required = true, value_parser=parse_descriptor_backup)]
-        descriptors: Vec<DescriptorsBackup>,
+        descriptors: HeritageWalletBackup,
     },
 }
 
@@ -32,6 +34,6 @@ impl super::CommandExecutor for WalletDescriptorsSubcmd {
     }
 }
 
-fn parse_descriptor_backup(val: &str) -> Result<DescriptorsBackup> {
+fn parse_descriptor_backup(val: &str) -> Result<HeritageWalletBackup> {
     Ok(serde_json::from_str(val)?)
 }

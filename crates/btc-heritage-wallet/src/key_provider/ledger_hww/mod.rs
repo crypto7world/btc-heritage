@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     errors::{Error, Result},
-    LedgerPolicy,
+    BoundFingerprint, LedgerPolicy,
 };
 
 use btc_heritage::{
@@ -24,6 +24,8 @@ use ledger_bitcoin_client::{
 use ledger_transport_hid::{hidapi::HidApi, TransportNativeHID};
 use policy::{LedgerPolicyHMAC, LedgerPolicyId};
 use serde::{Deserialize, Serialize};
+
+use super::MnemonicBackup;
 
 pub(crate) mod policy;
 
@@ -163,7 +165,7 @@ impl LedgerKey {
     }
 }
 
-impl super::WalletOffline for LedgerKey {
+impl super::KeyProvider for LedgerKey {
     fn sign_psbt(&self, psbt: &mut btc_heritage::PartiallySignedTransaction) -> Result<usize> {
         // We need to know what AccountXPubId are present in the PSBT inputs
         let account_ids_present: HashSet<AccountXPubId> = psbt
@@ -299,17 +301,13 @@ impl super::WalletOffline for LedgerKey {
         Err(Error::LedgerHeirUnsupported)
     }
 
-    fn get_mnemonic(&self) -> Result<bip39::Mnemonic> {
-        Err(Error::LedgerGetMnemonicUnsupported)
+    fn backup_mnemonic(&self) -> Result<MnemonicBackup> {
+        Err(Error::LedgerBackupMnemonicUnsupported)
     }
 }
 
-impl crate::wallet::WalletCommons for LedgerKey {
-    fn fingerprint(&self) -> crate::errors::Result<Option<Fingerprint>> {
-        Ok(Some(self.fingerprint))
-    }
-
-    fn network(&self) -> crate::errors::Result<Network> {
-        Ok(self.network)
+impl BoundFingerprint for LedgerKey {
+    fn fingerprint(&self) -> crate::errors::Result<Fingerprint> {
+        Ok(self.fingerprint)
     }
 }

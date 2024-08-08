@@ -57,6 +57,16 @@ enum InnerHeritageConfig {
 pub enum HeritageConfigVersion {
     V1 = 1,
 }
+impl FromStr for HeritageConfigVersion {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "1" | "v1" => Ok(Self::V1),
+            _ => Err(Error::InvalidHeritageConfigString(s.to_owned())),
+        }
+    }
+}
 
 impl HeritageConfig {
     /// Return a builder for the default [HeritageConfig] version
@@ -129,6 +139,19 @@ impl HeritageConfig {
                 .get_heritage_explorer(heir_config)
                 .map(|he: v1::HeritageExplorer| HeritageExplorer(InnerHeritageExplorer::V1(he))),
         }
+    }
+}
+
+/// TryFrom<ScriptsStr>
+impl TryFrom<&str> for HeritageConfig {
+    type Error = Error;
+
+    fn try_from(scripts: &str) -> core::result::Result<Self, Self::Error> {
+        match v1::HeritageConfig::try_from(scripts) {
+            Ok(hc_v1) => return Ok(HeritageConfig(InnerHeritageConfig::V1(hc_v1))),
+            Err(e) => log::info!("{e}"),
+        }
+        Err(Error::InvalidScriptFragments("any"))
     }
 }
 
