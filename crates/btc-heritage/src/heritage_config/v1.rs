@@ -363,24 +363,58 @@ impl HeritageConfig {
 fn fragment_scripts(scripts: &str) -> Vec<&str> {
     let mut res = Vec::new();
 
-    let mut inception_lvl = 0u8;
-    let mut star_index = 0usize;
+    let mut inception_lvl = 0u32;
+    let mut star_index = None;
+    let mut start_inception_stack = vec![];
     for (index, char) in scripts.char_indices() {
         match char {
             '{' => {
-                star_index = index + 1;
+                // Open braket means we expect 2 scripts fragment separated by a comma
+                // Potentialy begining at the following index
+                // Mark the begining of the recording
+                star_index = Some(index + 1);
+                // Increment the inception level
                 inception_lvl += 1;
+                // Mark that we expect the comma and closing braket at that inception_lvl
+                start_inception_stack.push(inception_lvl);
             }
             ',' => {
-                let s = &scripts[star_index..index];
-                res.push(s);
-                star_index = index + 1;
+                // If the comma is at the currently expected inception_lvl for the script separation
+                if start_inception_stack
+                    .last()
+                    .is_some_and(|lvl| *lvl == inception_lvl)
+                {
+                    // If there is currently a start_index, indicating that we are indeed recording a fragment
+                    if let Some(star_index) = star_index {
+                        // Then push it
+                        let s = &scripts[star_index..index];
+                        res.push(s);
+                    }
+                    // In any case, mark the begining of the recording of the second part
+                    star_index = Some(index + 1);
+                }
             }
             '}' => {
-                let s = &scripts[star_index..index];
-                res.push(s);
+                // If the closing braket is at the currently expected inception_lvl for a script end
+                if start_inception_stack
+                    .last()
+                    .is_some_and(|lvl| *lvl == inception_lvl)
+                {
+                    // If there is currently a start_index, indicating that we are indeed recording a fragment
+                    if let Some(star_index) = star_index {
+                        let s = &scripts[star_index..index];
+                        res.push(s);
+                    }
+                    // In any case, end recording
+                    star_index = None;
+                }
+                // In any case, decrease inception_lvl
                 inception_lvl -= 1;
+                // We finished processing this inception_lvl, pop it off the stack
+                start_inception_stack.pop();
             }
+            '(' => inception_lvl += 1,
+            ')' => inception_lvl -= 1,
             _ => (),
         }
     }
@@ -396,34 +430,31 @@ fn re_v1_fragment() -> &'static regex::Regex {
     RE.get_or_init(|| regex::Regex::new(r"^and_v\((?<heir>.+?),and_v\(v:older\((?<rlock>[0-9]+?)\),after\((?<alock>[0-9]+?)\)\)\)$").unwrap())
 }
 
-/// TryFrom<ScriptsStr>
-impl TryFrom<&str> for HeritageConfig {
-    type Error = Error;
-
-    fn try_from(scripts: &str) -> Result<Self, Self::Error> {
-        let fragments = fragment_scripts(scripts);
-        if fragments.len() == 0 {
+impl super::FromDescriptorScripts for HeritageConfig {
+    fn from_descriptor_scripts(scripts: &str) -> crate::errors::Result<Self> {
+        let script_fragments = fragment_scripts(scripts);
+        if script_fragments.len() == 0 {
             return Ok(HeritageConfigBuilder::default().build_v1());
         }
-        let mut heritage_parts = fragment_scripts(scripts)
+        let mut heritage_parts = script_fragments
             .into_iter()
             .map(|fragment| {
                 let caps = re_v1_fragment().captures(fragment).ok_or_else(|| {
-                    log::debug!("Failed to match fragment: {fragment}");
+                    log::info!("Failed to match fragment: {fragment}");
                     Error::InvalidScriptFragments("v1")
                 })?;
-                let heir_config = HeirConfig::try_from(&caps["heir"])?;
+                let heir_config = HeirConfig::from_descriptor_scripts(&caps["heir"])?;
                 let min_locktime: u16 = caps["rlock"].parse().map_err(|e| {
-                    log::debug!("Failed to parse min_locktime: {e}");
+                    log::info!("Failed to parse min_locktime: {e}");
                     Error::InvalidScriptFragments("v1")
                 })?;
                 let absolute_locktime: u64 = caps["alock"].parse().map_err(|e| {
-                    log::debug!("Failed to parse absolute_locktime: {e}");
+                    log::info!("Failed to parse absolute_locktime: {e}");
                     Error::InvalidScriptFragments("v1")
                 })?;
                 Ok((heir_config, min_locktime, absolute_locktime))
             })
-            .collect::<Result<Vec<_>, Self::Error>>()?;
+            .collect::<crate::errors::Result<Vec<_>>>()?;
         // Sort that by the absolute lock time
         heritage_parts.sort_by_key(|e| e.2);
 
@@ -437,12 +468,12 @@ impl TryFrom<&str> for HeritageConfig {
                 *rlock == min_lock_time_blocks.checked_mul(mult).unwrap_or(u16::MAX)
             })
         {
-            log::debug!("Failed the min_lock_time serie control");
+            log::info!("Failed the min_lock_time serie control");
             return Err(Error::InvalidScriptFragments("v1"));
         }
 
         if min_lock_time_blocks % BLOCKS_IN_A_DAY != 0 {
-            log::debug!("Failed the min_lock_time serie control, {min_lock_time_blocks} is not divisible by {BLOCKS_IN_A_DAY}");
+            log::info!("Failed the min_lock_time serie control, {min_lock_time_blocks} is not divisible by {BLOCKS_IN_A_DAY}");
             return Err(Error::InvalidScriptFragments("v1"));
         }
         let min_lock_time_days = min_lock_time_blocks / BLOCKS_IN_A_DAY;
@@ -460,7 +491,7 @@ impl TryFrom<&str> for HeritageConfig {
             .map(|(heir_config, _, absolute_locktime)| {
                 let time_diff_in_secs = absolute_locktime - reference_time;
                 if time_diff_in_secs % SEC_IN_A_DAY != 0 {
-                    log::debug!("Failed heritages creation, {time_diff_in_secs} sec is not an exact amount of days");
+                    log::info!("Failed heritages creation, {time_diff_in_secs} sec is not an exact amount of days");
                     return Err(Error::InvalidScriptFragments("v1"));
                 }
                 Ok(Heritage {
@@ -468,7 +499,7 @@ impl TryFrom<&str> for HeritageConfig {
                     time_lock: Days((time_diff_in_secs/SEC_IN_A_DAY) as u16),
                 })
             })
-            .collect::<Result<Vec<_>, Self::Error>>()?;
+            .collect::<crate::errors::Result<Vec<_>>>()?;
 
         Ok(HeritageConfigBuilder::default()
             .reference_time(reference_time)
@@ -564,6 +595,7 @@ impl<'a> super::HeritageExplorerTrait for HeritageExplorer<'a> {
 #[allow(irrefutable_let_patterns)]
 mod tests {
 
+    use crate::heritage_config::FromDescriptorScripts;
     use crate::tests::*;
 
     use super::super::HeritageConfig as VHeritageConfig;
@@ -907,5 +939,100 @@ mod tests {
                 and_v(v:pk({brother_pubkey}),and_v(v:older(38880),after(1800656000)))}}}}"
             )
         );
+    }
+
+    #[test]
+    fn fragment_scripts() {
+        // Test empty fragment
+        assert_eq!(super::fragment_scripts(""), Vec::<&str>::new());
+
+        // Single fragment
+        assert_eq!(
+            super::fragment_scripts("and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*),and_v(v:older(12960),after(1794608000)))"),
+            vec!["and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*),and_v(v:older(12960),after(1794608000)))"]
+        );
+
+        // Made-up invalid miniscripts to test behavior
+        let t = "{()(,),(,)}";
+        let e = vec!["()(,)", "(,)"];
+        assert_eq!(super::fragment_scripts(t), e, "{t}");
+
+        let t = "{{(a(a,a)),(b)(b,b)},(,)}";
+        let e = vec!["(a(a,a))", "(b)(b,b)", "(,)"];
+        assert_eq!(super::fragment_scripts(t), e, "{t}");
+
+        let t = "{(,),{((,)),()(,)}}";
+        let e = vec!["(,)", "((,))", "()(,)"];
+        assert_eq!(super::fragment_scripts(t), e, "{t}");
+
+        let t = "{{a(b(c,d)),e(f(g,h))},{i(j(k,l)),m(n(o,p))}}";
+        let e = vec!["a(b(c,d))", "e(f(g,h))", "i(j(k,l))", "m(n(o,p))"];
+        assert_eq!(super::fragment_scripts(t), e, "{t}");
+
+        let t = "{{a(b,c),{a(b,c),a(b,c)}},{{a(b,c),a(b,c)},{a(b,c),{a(b,c),a(b,c)}}}}";
+        let e = vec![
+            "a(b,c)", "a(b,c)", "a(b,c)", "a(b,c)", "a(b,c)", "a(b,c)", "a(b,c)", "a(b,c)",
+        ];
+        assert_eq!(super::fragment_scripts(t), e, "{t}");
+
+        // Test a real case
+        let script = "{and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*),and_v(v:older(12960),after(1794608000))),{and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}}";
+        let fragments = super::fragment_scripts(script);
+        assert_eq!(fragments, vec![
+        "and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*),and_v(v:older(12960),after(1794608000)))",
+        "and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000)))",
+        "and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))"    
+        ])
+    }
+
+    #[test]
+    fn from_descriptor_scripts() {
+        let hc1 = HeritageConfigV1::builder()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(get_test_heritage(TestHeritage::Wife))
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072000)
+            .minimum_lock_time(90)
+            .build_v1();
+
+        let hc2 = HeritageConfigV1::builder()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(get_test_heritage(TestHeritage::Wife))
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072001)
+            .minimum_lock_time(90)
+            .build_v1();
+        // different minimum_lock_time
+        let hc3 = HeritageConfigV1::builder()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(get_test_heritage(TestHeritage::Wife))
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072000)
+            .minimum_lock_time(91)
+            .build_v1();
+        // Different heritage timelock
+        let hc4 = HeritageConfigV1::builder()
+            .add_heritage(get_test_heritage(TestHeritage::Backup))
+            .add_heritage(
+                super::Heritage::new(get_test_heritage(TestHeritage::Wife).heir_config.clone())
+                    .time_lock(900),
+            )
+            .add_heritage(get_test_heritage(TestHeritage::Brother))
+            .reference_time(1763072000)
+            .minimum_lock_time(91)
+            .build_v1();
+
+        // We very that it works and it is stable
+        // Meaning that the Heritage config recovered from a script fragment should produce the exact same fragment
+        for hc in [hc1, hc2, hc3, hc4] {
+            let fragment = hc
+                .descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap();
+            let restored_hc = HeritageConfigV1::from_descriptor_scripts(&fragment).unwrap();
+            let restored_fragment = restored_hc
+                .descriptor_taptree_miniscript_expression_for_child(None)
+                .unwrap();
+            assert_eq!(fragment, restored_fragment, "Failed for {fragment}");
+        }
     }
 }

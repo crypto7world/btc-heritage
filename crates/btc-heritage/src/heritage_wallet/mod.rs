@@ -1722,7 +1722,7 @@ mod tests {
     }
 
     #[test]
-    fn get_descriptors_backup() {
+    fn generate_backup() {
         let wallet = setup_wallet();
         // To have a last_external_index on the last backup
         let _ = wallet.get_new_address().unwrap();
@@ -1784,6 +1784,47 @@ mod tests {
             },
         ]);
         assert_eq!(wallet.generate_backup().unwrap(), expected)
+    }
+
+    #[test]
+    fn restore_backup() {
+        let wallet = setup_wallet();
+        // To have a last_external_index on the last backup
+        let _ = wallet.get_new_address().unwrap();
+
+        // We expect that if we backup and then restore (i.e. duplicates) the wallet,
+        // we will have effectively the same wallet (same balance, same addresses, etc...)
+
+        let new_wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
+        let backup = wallet.generate_backup().unwrap();
+
+        // Restoration goes ok
+        let r = new_wallet.restore_backup(backup);
+        assert!(r.is_ok(), "{}", r.err().unwrap());
+
+        // New address from both wallet are the same
+        assert_eq!(
+            wallet.get_new_address().unwrap(),
+            new_wallet.get_new_address().unwrap()
+        );
+
+        // Sync
+        new_wallet
+            .sync(FakeBlockchainFactory {
+                current_height: get_present(),
+            })
+            .unwrap();
+
+        // Balance from both wallet are the same
+        assert_eq!(
+            wallet.get_balance().unwrap(),
+            new_wallet.get_balance().unwrap()
+        );
+
+        // Trying to restore another time should fail
+        assert!(new_wallet
+            .restore_backup(wallet.generate_backup().unwrap())
+            .is_err());
     }
 
     #[test]

@@ -142,12 +142,17 @@ impl HeritageConfig {
     }
 }
 
-/// TryFrom<ScriptsStr>
-impl TryFrom<&str> for HeritageConfig {
-    type Error = Error;
+/// Trait providing a way to recover an Heritage structure (HeritageConfig, Subwallet, etc...) from
+/// a Descriptor string with miniscript
+pub trait FromDescriptorScripts {
+    fn from_descriptor_scripts(scripts: &str) -> Result<Self>
+    where
+        Self: Sized;
+}
 
-    fn try_from(scripts: &str) -> core::result::Result<Self, Self::Error> {
-        match v1::HeritageConfig::try_from(scripts) {
+impl FromDescriptorScripts for HeritageConfig {
+    fn from_descriptor_scripts(scripts: &str) -> Result<Self> {
+        match v1::HeritageConfig::from_descriptor_scripts(scripts) {
             Ok(hc_v1) => return Ok(HeritageConfig(InnerHeritageConfig::V1(hc_v1))),
             Err(e) => log::info!("{e}"),
         }
@@ -265,11 +270,10 @@ mod tests {
     fn default_heritage_config_is_v1() {
         #[allow(irrefutable_let_patterns)]
         let HeritageConfig(InnerHeritageConfig::V1(_)) = HeritageConfig::builder().build() else {
-            panic!();
+            panic!("Just a reminder to extra-check things if the default version is changed in the future");
         };
     }
 
-    // Just a reminder to extra-check things if the default version is changed in the future
     #[test]
     fn heritage_config_hash_eq() {
         let reference = HeritageConfig::builder_v1()

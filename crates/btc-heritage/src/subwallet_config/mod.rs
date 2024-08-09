@@ -3,7 +3,7 @@ use core::str::FromStr;
 use crate::{
     account_xpub::AccountXPub,
     errors::{Error, Result},
-    heritage_config::HeritageConfig,
+    heritage_config::{FromDescriptorScripts, HeritageConfig},
     miniscript::{Descriptor, DescriptorPublicKey},
     utils, SubwalletDescriptorBackup,
 };
@@ -201,13 +201,17 @@ impl TryFrom<&SubwalletDescriptorBackup> for SubwalletConfig {
         // 1 - be the same
         // 2 - the first must be valid a AccountXPub
         // 3 - others must be valid heir configs
-        let ext_desc = sdb.external_descriptor.to_string();
-        let chg_desc = sdb.change_descriptor.to_string();
+        // Note: Alternate display prevents the checksum to go in
+        let ext_desc = format!("{:#}", sdb.external_descriptor);
+        let chg_desc = format!("{:#}", sdb.change_descriptor);
 
         // Replace all the [AccountXPub]s in both descriptors by removing the post-derivation and verify the two resulting string matches
         let ext_desc = re_account_xpub().replace_all(&ext_desc, "${key}/*");
         let chg_desc = re_account_xpub().replace_all(&chg_desc, "${key}/*");
         if ext_desc != chg_desc {
+            log::error!("external and change descriptor are not compatible");
+            log::error!("external: {ext_desc}");
+            log::error!("change: {chg_desc}");
             return Err(Error::InvalidBackup(
                 "external and change descriptor are not compatible",
             ));
@@ -219,7 +223,11 @@ impl TryFrom<&SubwalletDescriptorBackup> for SubwalletConfig {
             .ok_or(Error::InvalidBackup("descriptors are not Tr"))?;
 
         let account_xpub = AccountXPub::try_from(&capts["key"])?;
-        let heritage_config = HeritageConfig::try_from(&capts["scripts"])?;
+        let scripts = capts
+            .name("scripts")
+            .map(|cap| cap.as_str())
+            .unwrap_or_default();
+        let heritage_config = HeritageConfig::from_descriptor_scripts(scripts)?;
 
         Ok(Self {
             ext_descriptor: sdb.external_descriptor.clone(),
@@ -479,5 +487,109 @@ mod tests {
             .iter()
             .filter(|e| e.value >= 3_000)
             .all(|e| e.script_pubkey.is_v1_p2tr()));
+    }
+
+    #[test]
+    fn from_subwallet_descriptor_backup() {
+        // Invalid because descriptorschecksum
+        assert!(Descriptor::<DescriptorPublicKey>::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/0/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(8640),after(1783072800))))#0u0qafga").is_err());
+
+        // Invalid because descriptors are not Tr
+        let invalid_backup = SubwalletDescriptorBackup {
+            external_descriptor: Descriptor::from_str("wpkh([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/0/*)").unwrap(),
+            change_descriptor: Descriptor::from_str("wpkh([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/1/*)").unwrap(),
+            first_use_ts: Some(1720879341),
+            last_external_index: None,
+            last_change_index: None,
+        };
+        assert!(SubwalletConfig::try_from(&invalid_backup).is_err());
+
+        // Invalid because descriptors are not compatible (not the same Account)
+        let invalid_backup = SubwalletDescriptorBackup {
+            external_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/0/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(8640),after(1783072800))))").unwrap(),
+            change_descriptor: Descriptor::from_str("tr([44990794/86'/1'/1']tpubDDpFTt9TRJho32GzE4j9D5KHTQtww39w1AJkF9pFW435Zg13dFfzHmDD2iEDRkXhZJm1rxZFy1c4PhcWNLvW2ouEM51SULxXvVAkwhFaeuS/1/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(8640),after(1783072800))))").unwrap(),
+            first_use_ts: Some(1720879341),
+            last_external_index: None,
+            last_change_index: None,
+        };
+        assert!(SubwalletConfig::try_from(&invalid_backup).is_err());
+
+        // Invalid because descriptors are not compatible (not the same scripts)
+        let invalid_backup = SubwalletDescriptorBackup {
+            external_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/0/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(8640),after(1783072800))))").unwrap(),
+            change_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/1/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(8641),after(1783072800))))").unwrap(),
+            first_use_ts: Some(1720879341),
+            last_external_index: None,
+            last_change_index: None,
+        };
+        assert!(SubwalletConfig::try_from(&invalid_backup).is_err());
+
+        // Invalid because descriptors are not compatible (not the same scripts)
+        let invalid_backup = SubwalletDescriptorBackup {
+            external_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/0/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(8640),after(1783072800))))").unwrap(),
+            change_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/1/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(8640),after(1783072801))))").unwrap(),
+            first_use_ts: Some(1720879341),
+            last_external_index: None,
+            last_change_index: None,
+        };
+        assert!(SubwalletConfig::try_from(&invalid_backup).is_err());
+
+        // Invalid because descriptors are not compatible (not the same scripts)
+        let invalid_backup = SubwalletDescriptorBackup {
+            external_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/0/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(8640),after(1783072800))))").unwrap(),
+            change_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/1/*,and_v(v:pk([00bdc67c/86'/1'/1751476594'/0/0]03cb072f51f73029ba3023ee0ffb0caa0070ecde5fb849783579c6f8a9b9029157),and_v(v:older(8640),after(1783072800))))").unwrap(),
+            first_use_ts: Some(1720879341),
+            last_external_index: None,
+            last_change_index: None,
+        };
+        assert!(SubwalletConfig::try_from(&invalid_backup).is_err());
+
+        // Valid
+        let valid_backup = SubwalletDescriptorBackup {
+            external_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/0/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/0/*),and_v(v:older(8640),after(1783072800))))#78zjz03g").unwrap(),
+            change_descriptor: Descriptor::from_str("tr([44990794/86'/1'/0']tpubDDpFTt9TRJhnzh4NfWHN87p8skizWRpq86h6tc5rp9pK1DTLhicYiEumTfDF56DxcrQi6dnq8pCpcwS7RvTZ8vXjTa5LQSXDSKoghvcqhpa/1/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(8640),after(1783072800))))#0u0qafga").unwrap(),
+            first_use_ts: Some(1720879341),
+            last_external_index: None,
+            last_change_index: None,
+        };
+        let swc = SubwalletConfig::try_from(&valid_backup);
+        assert!(swc.is_ok(), "{}", swc.err().unwrap());
+        let swc = swc.unwrap();
+        assert_eq!(swc.subwallet_id(), 0);
+        assert_eq!(swc.subwallet_firstuse_time(), Some(1720879341));
+        assert_eq!(swc.account_xpub().descriptor_id(), 0);
+        assert_eq!(swc.heritage_config().iter_heir_configs().count(), 1);
+
+        // Valid
+        let valid_backup = SubwalletDescriptorBackup {
+            external_descriptor: Descriptor::from_str("tr([44990794/86'/1'/1']tpubDDpFTt9TRJho32GzE4j9D5KHTQtww39w1AJkF9pFW435Zg13dFfzHmDD2iEDRkXhZJm1rxZFy1c4PhcWNLvW2ouEM51SULxXvVAkwhFaeuS/0/*,{and_v(v:pk([99ccb69a/86'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b),and_v(v:older(8640),after(1737706192))),{and_v(v:pk([00bdc67c/86'/1'/1751476594'/0/0]03cb072f51f73029ba3023ee0ffb0caa0070ecde5fb849783579c6f8a9b9029157),and_v(v:older(17280),after(1753258192))),and_v(v:pk([53c80c75/86'/1'/1751476594'/0/0]035133a7acfda43784341da5e23a1ecd1ac25be2ded8ceaff151a9a4cd78199b20),and_v(v:older(25920),after(1768810192)))}})#hjqtx6s0").unwrap(),
+            change_descriptor: Descriptor::from_str("tr([44990794/86'/1'/1']tpubDDpFTt9TRJho32GzE4j9D5KHTQtww39w1AJkF9pFW435Zg13dFfzHmDD2iEDRkXhZJm1rxZFy1c4PhcWNLvW2ouEM51SULxXvVAkwhFaeuS/1/*,{and_v(v:pk([99ccb69a/86'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b),and_v(v:older(8640),after(1737706192))),{and_v(v:pk([00bdc67c/86'/1'/1751476594'/0/0]03cb072f51f73029ba3023ee0ffb0caa0070ecde5fb849783579c6f8a9b9029157),and_v(v:older(17280),after(1753258192))),and_v(v:pk([53c80c75/86'/1'/1751476594'/0/0]035133a7acfda43784341da5e23a1ecd1ac25be2ded8ceaff151a9a4cd78199b20),and_v(v:older(25920),after(1768810192)))}})#vryrfyh7").unwrap(),
+            first_use_ts: Some(1706600000),
+            last_external_index: None,
+            last_change_index: None,
+        };
+        let swc = SubwalletConfig::try_from(&valid_backup);
+        assert!(swc.is_ok(), "{}", swc.err().unwrap());
+        let swc = swc.unwrap();
+        assert_eq!(swc.subwallet_id(), 1);
+        assert_eq!(swc.subwallet_firstuse_time(), Some(1706600000));
+        assert_eq!(swc.account_xpub().descriptor_id(), 1);
+        assert_eq!(swc.heritage_config().iter_heir_configs().count(), 3);
+
+        // Valid
+        let valid_backup = SubwalletDescriptorBackup {
+                    external_descriptor: Descriptor::from_str("tr([44990794/86'/1'/1']tpubDDpFTt9TRJho32GzE4j9D5KHTQtww39w1AJkF9pFW435Zg13dFfzHmDD2iEDRkXhZJm1rxZFy1c4PhcWNLvW2ouEM51SULxXvVAkwhFaeuS/0/*)").unwrap(),
+                    change_descriptor: Descriptor::from_str("tr([44990794/86'/1'/1']tpubDDpFTt9TRJho32GzE4j9D5KHTQtww39w1AJkF9pFW435Zg13dFfzHmDD2iEDRkXhZJm1rxZFy1c4PhcWNLvW2ouEM51SULxXvVAkwhFaeuS/1/*)").unwrap(),
+                    first_use_ts: Some(1706600000),
+                    last_external_index: None,
+                    last_change_index: None,
+                };
+        let swc = SubwalletConfig::try_from(&valid_backup);
+        assert!(swc.is_ok(), "{}", swc.err().unwrap());
+        let swc = swc.unwrap();
+        assert_eq!(swc.subwallet_id(), 1);
+        assert_eq!(swc.subwallet_firstuse_time(), Some(1706600000));
+        assert_eq!(swc.account_xpub().descriptor_id(), 1);
+        assert_eq!(swc.heritage_config().iter_heir_configs().count(), 0);
     }
 }
