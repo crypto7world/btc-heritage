@@ -981,7 +981,7 @@ mod tests {
         assert_eq!(fragments, vec![
         "and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*),and_v(v:older(12960),after(1794608000)))",
         "and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000)))",
-        "and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))"    
+        "and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))"
         ])
     }
 
