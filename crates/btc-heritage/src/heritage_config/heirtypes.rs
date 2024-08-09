@@ -1,4 +1,4 @@
-use core::{fmt::Display, str::FromStr};
+use core::{fmt::Display, hash::Hash, str::FromStr};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -189,21 +189,43 @@ impl HeirConfig {
               // }
         }
     }
-    pub fn has_fingerprint(&self, fingerprint: Fingerprint) -> bool {
+
+    pub fn fingerprint(&self) -> Fingerprint {
         match self {
-            HeirConfig::SingleHeirPubkey(xpub) => xpub.0.master_fingerprint() == fingerprint,
-            HeirConfig::HeirXPubkey(xpub) => {
-                xpub.descriptor_public_key().master_fingerprint() == fingerprint
-            } // HeritageMode::SingleHeirPubKeyHash(pubkeyhash) => {
-              //     let s: String = (*pubkeyhash).into();
-              //     format!("vc:expr_raw_pkh({s})")
-              // }
+            HeirConfig::SingleHeirPubkey(xpub) => xpub.0.master_fingerprint(),
+            HeirConfig::HeirXPubkey(xpub) => xpub.descriptor_public_key().master_fingerprint(),
         }
+    }
+}
+
+/// Extract an HeirConfig key from the key fragment of a script
+fn re_heirconfig_key() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"^v:pk\((?<key>.+?)\)$").unwrap())
+}
+impl super::FromDescriptorScripts for HeirConfig {
+    fn from_descriptor_scripts(script_fragment: &str) -> crate::errors::Result<Self> {
+        let key = &re_heirconfig_key()
+            .captures(script_fragment)
+            .ok_or(Error::InvalidScriptFragments("heir in"))?["key"];
+
+        match AccountXPub::try_from(key) {
+            Ok(axpub) => return Ok(HeirConfig::HeirXPubkey(axpub)),
+            Err(e) => log::info!("{e}"),
+        }
+        match SingleHeirPubkey::try_from(key) {
+            Ok(shp) => return Ok(HeirConfig::SingleHeirPubkey(shp)),
+            Err(e) => log::info!("{e}"),
+        }
+
+        Err(Error::InvalidScriptFragments("heir in"))
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use crate::heritage_config::FromDescriptorScripts;
 
     use super::*;
 
@@ -236,5 +258,25 @@ mod tests {
         assert!(SingleHeirPubkey::try_from("[99ccb69a/86/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b").is_err());
         // Incorrect usage
         assert!(SingleHeirPubkey::try_from("[99ccb69a/87'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b").is_err());
+    }
+
+    #[test]
+    fn from_descriptor_scripts() {
+        let h1_script_fragment = "v:pk([99ccb69a/86'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b)";
+        let hc1 = HeirConfig::from_descriptor_scripts(h1_script_fragment);
+        assert!(hc1.is_ok());
+        let hc1 = hc1.unwrap();
+        assert_eq!(hc1, HeirConfig::SingleHeirPubkey(SingleHeirPubkey::try_from("[99ccb69a/86'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b").unwrap()));
+        assert_eq!(hc1.descriptor_segment(None), h1_script_fragment);
+        assert!(HeirConfig::from_descriptor_scripts("v:pk([99ccb69a/86'/0'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b)").is_err());
+        assert!(HeirConfig::from_descriptor_scripts("pk([99ccb69a/86'/1'/1751476594'/0/0]02ee39732e7f49cf4c9bd9b3faec01ed6f62a668fef33fbec0f2708e4cebf5bc9b)").is_err());
+
+        let h2_script_fragment = "v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*)";
+        let hc2 = HeirConfig::from_descriptor_scripts(h2_script_fragment);
+        assert!(hc2.is_ok());
+        let hc2 = hc2.unwrap();
+        assert_eq!(hc2, HeirConfig::HeirXPubkey(AccountXPub::try_from("[f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*").unwrap()));
+        assert_eq!(hc2.descriptor_segment(None), h2_script_fragment);
+        assert!(HeirConfig::from_descriptor_scripts("v:pk([f0d79bf6/86'/0'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*)").is_err());
     }
 }

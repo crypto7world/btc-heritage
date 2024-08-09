@@ -1,18 +1,10 @@
+pub mod backup;
 #[cfg(any(feature = "online", test))]
 pub mod online;
-
 mod types;
-pub use types::*;
 
 use core::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-use bdk::{
-    bitcoin::Address,
-    database::Database,
-    wallet::{AddressInfo, IsDust},
-    BlockTime, FeeRate as BdkFeeRate, KeychainKind, LocalUtxo, Wallet,
-};
 
 use crate::{
     account_xpub::AccountXPub,
@@ -20,7 +12,7 @@ use crate::{
         absolute::LockTime,
         bip32::Fingerprint,
         psbt::{Input, Output, Psbt},
-        Amount, FeeRate, OutPoint, Script, Sequence, TxOut, Weight,
+        Address, Amount, FeeRate, OutPoint, Script, Sequence, TxOut, Weight,
     },
     database::{
         PartitionableDatabase, SubdatabaseId, TransacHeritageDatabase, TransacHeritageOperation,
@@ -32,6 +24,15 @@ use crate::{
     utils::bitcoin_network_from_env,
     HeirConfig,
 };
+
+use backup::{HeritageWalletBackup, SubwalletDescriptorBackup};
+use bdk::{
+    database::Database,
+    wallet::{AddressIndex, AddressInfo, IsDust},
+    BlockTime, FeeRate as BdkFeeRate, KeychainKind, LocalUtxo, Wallet,
+};
+
+pub use types::*;
 
 #[derive(Debug, Clone)]
 enum Spender {
@@ -51,43 +52,111 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         }
     }
 
-    pub fn get_descriptors_backup(&self) -> Result<Vec<DescriptorsBackup>> {
-        Ok(self
-            .database
-            .borrow()
-            .list_obsolete_subwallet_configs()?
-            .into_iter()
-            .chain(
-                self.database
-                    .borrow()
-                    .get_subwallet_config(SubwalletConfigId::Current)?,
-            )
-            .map(|swc| {
-                let sw = self.get_subwallet(&swc)?;
-                let external_descriptor = sw
-                    .get_descriptor_for_keychain(KeychainKind::External)
-                    .to_string();
-                let change_descriptor = sw
-                    .get_descriptor_for_keychain(KeychainKind::Internal)
-                    .to_string();
-                let last_external_index = sw
-                    .database()
-                    .get_last_index(KeychainKind::External)
-                    .map_err(|e| DatabaseError::Generic(e.to_string()))?;
-                let last_change_index = sw
-                    .database()
-                    .get_last_index(KeychainKind::Internal)
-                    .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+    pub fn generate_backup(&self) -> Result<HeritageWalletBackup> {
+        log::debug!("HeritageWallet::generate_backup");
+        Ok(HeritageWalletBackup(
+            self.database
+                .borrow()
+                .list_obsolete_subwallet_configs()?
+                .into_iter()
+                .chain(
+                    self.database
+                        .borrow()
+                        .get_subwallet_config(SubwalletConfigId::Current)?,
+                )
+                .map(|swc| {
+                    let sw = self.get_subwallet(&swc)?;
+                    let last_external_index = sw
+                        .database()
+                        .get_last_index(KeychainKind::External)
+                        .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+                    let last_change_index = sw
+                        .database()
+                        .get_last_index(KeychainKind::Internal)
+                        .map_err(|e| DatabaseError::Generic(e.to_string()))?;
 
-                Ok(DescriptorsBackup {
-                    external_descriptor,
-                    change_descriptor,
-                    first_use_ts: swc.subwallet_firstuse_time(),
-                    last_external_index,
-                    last_change_index,
+                    Ok(SubwalletDescriptorBackup {
+                        external_descriptor: swc.ext_descriptor().clone(),
+                        change_descriptor: swc.change_descriptor().clone(),
+                        first_use_ts: swc.subwallet_firstuse_time(),
+                        last_external_index,
+                        last_change_index,
+                    })
                 })
-            })
-            .collect::<Result<_>>()?)
+                .collect::<Result<_>>()?,
+        ))
+    }
+
+    pub fn restore_backup(&self, backup: HeritageWalletBackup) -> Result<()> {
+        log::debug!("HeritageWallet::restore_backup - backup={backup:?}");
+        if backup.0.len() == 0 {
+            return Ok(());
+        }
+
+        log::info!(
+            "HeritageWallet::restore_backup - \
+        Trying to restore backup with {} SubwalletDescriptorBackup(s)",
+            backup.0.len()
+        );
+        // See if we can get all the configs
+        let mut swc_and_backups = backup
+            .into_iter()
+            .map(|swc_backup| Ok((SubwalletConfig::try_from(&swc_backup)?, swc_backup)))
+            .collect::<Result<Vec<_>>>()?;
+
+        log::info!("HeritageWallet::restore_backup - All SubwalletConfig(s) created");
+        // Ensure they are sorted by ID
+        swc_and_backups.sort_by_key(|(swc, _)| swc.subwallet_id());
+
+        // Try to commit everything in one transaction
+        let last_id = swc_and_backups
+            .last()
+            .expect("At least one")
+            .0
+            .subwallet_id();
+        log::debug!("HeritageWallet::restore_backup - last_id={last_id}");
+        let mut transaction = self.database.borrow().begin_transac();
+        for (swc, _) in swc_and_backups.iter() {
+            let swc_id = swc.subwallet_id();
+            let swc_id = if swc_id == last_id {
+                SubwalletConfigId::Current
+            } else {
+                SubwalletConfigId::Id(swc_id)
+            };
+            log::debug!(
+                "HeritageWallet::restore_backup - \
+            swc_id={swc_id:?} swc={swc:?}"
+            );
+            transaction.put_subwallet_config(swc_id, swc)?;
+        }
+        self.database.borrow_mut().commit_transac(transaction)?;
+        log::info!("HeritageWallet::restore_backup - All SubwalletConfig(s) written to DB");
+
+        for (swc, swc_backup) in swc_and_backups.into_iter() {
+            if swc_backup.last_external_index.is_some() || swc_backup.last_change_index.is_some() {
+                let sw = self.get_subwallet(&swc)?;
+                if let Some(last_external_index) = swc_backup.last_external_index {
+                    log::info!(
+                        "HeritageWallet::restore_backup - \
+                    SubwalletConfigId({}) reset external index {last_external_index}",
+                        swc.subwallet_id()
+                    );
+                    sw.get_address(AddressIndex::Reset(last_external_index))
+                        .map_err(|e| Error::FailedToResetAddressIndex(e.to_string()))?;
+                }
+                if let Some(last_change_index) = swc_backup.last_change_index {
+                    log::info!(
+                        "HeritageWallet::restore_backup - \
+                    SubwalletConfigId({}) reset change index {last_change_index}",
+                        swc.subwallet_id()
+                    );
+                    sw.get_internal_address(AddressIndex::Reset(last_change_index))
+                        .map_err(|e| Error::FailedToResetAddressIndex(e.to_string()))?;
+                }
+            }
+        }
+        log::info!("HeritageWallet::restore_backup - Done");
+        Ok(())
     }
 
     pub fn list_wallet_addresses(&self) -> Result<Vec<WalletAddress>> {
@@ -421,7 +490,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 "HeritageWallet::update_heritage_config - current_subwallet_config.subwallet_firstuse_time().is_none()"
             );
             let new_subwallet_config = SubwalletConfig::new(
-                current_subwallet_config.subwallet_id(),
                 current_subwallet_config.account_xpub().clone(),
                 new_heritage_config,
             );
@@ -454,7 +522,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .database
             .borrow()
             .get_subwallet_config(SubwalletConfigId::Current)
-            .map(|subwallet_config| subwallet_config.map(|s| s.into_parts().2))?;
+            .map(|subwallet_config| subwallet_config.map(|s| s.into_parts().1))?;
         log::debug!("HeritageWallet::get_current_heritage_config - res={res:?}");
         Ok(res)
     }
@@ -468,7 +536,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .borrow()
             .list_obsolete_subwallet_configs()?
             .into_iter()
-            .map(|subwallet_config| subwallet_config.into_parts().2)
+            .map(|subwallet_config| subwallet_config.into_parts().1)
             .collect();
         log::debug!("HeritageWallet::list_obsolete_heritage_configs - res={res:?}");
         Ok(res)
@@ -1105,11 +1173,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         );
         let mut transaction = self.database.borrow().begin_transac();
         transaction.delete_unused_account_xpub(&new_account_xpub)?;
-        let new_subwallet_config = SubwalletConfig::new(
-            new_account_xpub.descriptor_id(),
-            new_account_xpub,
-            heritage_config,
-        );
+        let new_subwallet_config = SubwalletConfig::new(new_account_xpub, heritage_config);
         log::info!("HeritageWallet::update_heritage_config - Creating a new SubwalletConfig for the new HeritageConfig");
         log::debug!(
             "HeritageWallet::update_heritage_config - new_subwallet_config={new_subwallet_config:?}"
@@ -1176,7 +1240,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             KeychainKind::External => {
                 log::debug!("HeritageWallet::internal_get_new_address - subwallet.get_address");
                 subwallet
-                    .get_address(bdk::wallet::AddressIndex::New)
+                    .get_address(AddressIndex::New)
                     .map_err(|e| match e {
                         bdk::Error::ScriptDoesntHaveAddressForm => Error::Unknown(
                             "ScriptDoesntHaveAddressForm: Invalid script retrieved from database"
@@ -1190,7 +1254,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     "HeritageWallet::internal_get_new_address - subwallet.get_internal_address"
                 );
                 subwallet
-                    .get_internal_address(bdk::wallet::AddressIndex::New)
+                    .get_internal_address(AddressIndex::New)
                     .map_err(|e| match e {
                         bdk::Error::ScriptDoesntHaveAddressForm => Error::Unknown(
                             "ScriptDoesntHaveAddressForm: Invalid script retrieved from database"
@@ -1452,9 +1516,11 @@ mod tests {
         },
         database::{memory::HeritageMemoryDatabase, HeritageDatabase, TransacHeritageOperation},
         heritage_wallet::{
-            get_expected_tx_weight, BlockInclusionObjective, DescriptorsBackup, HeritageWallet,
-            HeritageWalletBalance, Recipient, SpendingConfig, SubwalletConfigId,
+            backup::{HeritageWalletBackup, SubwalletDescriptorBackup},
+            get_expected_tx_weight, BlockInclusionObjective, HeritageWallet, HeritageWalletBalance,
+            Recipient, SpendingConfig, SubwalletConfigId,
         },
+        miniscript::{Descriptor, DescriptorPublicKey},
         tests::*,
         utils::{extract_tx, string_to_address},
         HeritageConfig,
@@ -1656,59 +1722,109 @@ mod tests {
     }
 
     #[test]
-    fn get_descriptors_backup() {
+    fn generate_backup() {
         let wallet = setup_wallet();
         // To have a last_external_index on the last backup
         let _ = wallet.get_new_address().unwrap();
         // We expect the values set in the tests mod of lib.rs
-        let expected = vec![
-            DescriptorsBackup {
-                external_descriptor:
+        let expected = HeritageWalletBackup(vec![
+            SubwalletDescriptorBackup {
+                external_descriptor: Descriptor::<DescriptorPublicKey>::from_str(
                     get_default_test_subwallet_config_expected_external_descriptor(
                         TestHeritageConfig::BackupWifeY2,
-                    )
-                    .to_owned(),
-                change_descriptor: get_default_test_subwallet_config_expected_change_descriptor(
-                    TestHeritageConfig::BackupWifeY2,
+                    ),
                 )
-                .to_owned(),
+                .unwrap(),
+                change_descriptor: Descriptor::<DescriptorPublicKey>::from_str(
+                    get_default_test_subwallet_config_expected_change_descriptor(
+                        TestHeritageConfig::BackupWifeY2,
+                    ),
+                )
+                .unwrap(),
                 first_use_ts: get_default_test_subwallet_config(TestHeritageConfig::BackupWifeY2)
                     .subwallet_firstuse_time(),
                 last_external_index: None,
                 last_change_index: None,
             },
-            DescriptorsBackup {
-                external_descriptor:
+            SubwalletDescriptorBackup {
+                external_descriptor: Descriptor::<DescriptorPublicKey>::from_str(
                     get_default_test_subwallet_config_expected_external_descriptor(
                         TestHeritageConfig::BackupWifeY1,
-                    )
-                    .to_owned(),
-                change_descriptor: get_default_test_subwallet_config_expected_change_descriptor(
-                    TestHeritageConfig::BackupWifeY1,
+                    ),
                 )
-                .to_owned(),
+                .unwrap(),
+                change_descriptor: Descriptor::<DescriptorPublicKey>::from_str(
+                    get_default_test_subwallet_config_expected_change_descriptor(
+                        TestHeritageConfig::BackupWifeY1,
+                    ),
+                )
+                .unwrap(),
                 first_use_ts: get_default_test_subwallet_config(TestHeritageConfig::BackupWifeY1)
                     .subwallet_firstuse_time(),
                 last_external_index: None,
                 last_change_index: None,
             },
-            DescriptorsBackup {
-                external_descriptor:
+            SubwalletDescriptorBackup {
+                external_descriptor: Descriptor::<DescriptorPublicKey>::from_str(
                     get_default_test_subwallet_config_expected_external_descriptor(
                         TestHeritageConfig::BackupWifeBro,
-                    )
-                    .to_owned(),
-                change_descriptor: get_default_test_subwallet_config_expected_change_descriptor(
-                    TestHeritageConfig::BackupWifeBro,
+                    ),
                 )
-                .to_owned(),
+                .unwrap(),
+                change_descriptor: Descriptor::<DescriptorPublicKey>::from_str(
+                    get_default_test_subwallet_config_expected_change_descriptor(
+                        TestHeritageConfig::BackupWifeBro,
+                    ),
+                )
+                .unwrap(),
                 first_use_ts: get_default_test_subwallet_config(TestHeritageConfig::BackupWifeBro)
                     .subwallet_firstuse_time(),
                 last_external_index: Some(0),
                 last_change_index: None,
             },
-        ];
-        assert_eq!(wallet.get_descriptors_backup().unwrap(), expected)
+        ]);
+        assert_eq!(wallet.generate_backup().unwrap(), expected)
+    }
+
+    #[test]
+    fn restore_backup() {
+        let wallet = setup_wallet();
+        // To have a last_external_index on the last backup
+        let _ = wallet.get_new_address().unwrap();
+
+        // We expect that if we backup and then restore (i.e. duplicates) the wallet,
+        // we will have effectively the same wallet (same balance, same addresses, etc...)
+
+        let new_wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
+        let backup = wallet.generate_backup().unwrap();
+
+        // Restoration goes ok
+        let r = new_wallet.restore_backup(backup);
+        assert!(r.is_ok(), "{}", r.err().unwrap());
+
+        // New address from both wallet are the same
+        assert_eq!(
+            wallet.get_new_address().unwrap(),
+            new_wallet.get_new_address().unwrap()
+        );
+
+        // Sync
+        new_wallet
+            .sync(FakeBlockchainFactory {
+                current_height: get_present(),
+            })
+            .unwrap();
+
+        // Balance from both wallet are the same
+        assert_eq!(
+            wallet.get_balance().unwrap(),
+            new_wallet.get_balance().unwrap()
+        );
+
+        // Trying to restore another time should fail
+        assert!(new_wallet
+            .restore_backup(wallet.generate_backup().unwrap())
+            .is_err());
     }
 
     #[test]

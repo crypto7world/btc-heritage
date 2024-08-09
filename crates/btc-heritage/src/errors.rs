@@ -32,12 +32,20 @@ pub enum Error {
     InvalidAccountXPub,
     #[error("HeritageConfig is not the expected version: {0}")]
     InvalidHeritageConfigVersion(&'static str),
+    #[error("{0} cannot be parsed into an HeritageConfigVersion")]
+    InvalidHeritageConfigString(String),
     #[error("Invalid DescriptorPublicKey for AccountXPub: {0}")]
     InvalidDescriptorPublicKey(&'static str),
+    #[error("Invalid backup: {0}")]
+    InvalidBackup(&'static str),
+    #[error("Invalid script fragments to recompose {0} Heritage Config")]
+    InvalidScriptFragments(&'static str),
     #[error("Database error: {0}")]
     DatabaseError(#[from] DatabaseError),
     #[error("Policy extract error while constructing the PSBT: {0}")]
     FailToExtractPolicy(bdk::descriptor::policy::PolicyError),
+    #[error("Failed to reset the address index: {0}")]
+    FailedToResetAddressIndex(String),
     #[error("PSBT creation error: {0}")]
     PsbtCreationError(String),
     #[error("Error while interacting with the Blockchain provider: {0}")]

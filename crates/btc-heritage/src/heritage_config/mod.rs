@@ -57,6 +57,16 @@ enum InnerHeritageConfig {
 pub enum HeritageConfigVersion {
     V1 = 1,
 }
+impl FromStr for HeritageConfigVersion {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "1" | "v1" => Ok(Self::V1),
+            _ => Err(Error::InvalidHeritageConfigString(s.to_owned())),
+        }
+    }
+}
 
 impl HeritageConfig {
     /// Return a builder for the default [HeritageConfig] version
@@ -129,6 +139,24 @@ impl HeritageConfig {
                 .get_heritage_explorer(heir_config)
                 .map(|he: v1::HeritageExplorer| HeritageExplorer(InnerHeritageExplorer::V1(he))),
         }
+    }
+}
+
+/// Trait providing a way to recover an Heritage structure (HeritageConfig, Subwallet, etc...) from
+/// a Descriptor string with miniscript
+pub trait FromDescriptorScripts {
+    fn from_descriptor_scripts(scripts: &str) -> Result<Self>
+    where
+        Self: Sized;
+}
+
+impl FromDescriptorScripts for HeritageConfig {
+    fn from_descriptor_scripts(scripts: &str) -> Result<Self> {
+        match v1::HeritageConfig::from_descriptor_scripts(scripts) {
+            Ok(hc_v1) => return Ok(HeritageConfig(InnerHeritageConfig::V1(hc_v1))),
+            Err(e) => log::info!("{e}"),
+        }
+        Err(Error::InvalidScriptFragments("any"))
     }
 }
 
@@ -242,11 +270,10 @@ mod tests {
     fn default_heritage_config_is_v1() {
         #[allow(irrefutable_let_patterns)]
         let HeritageConfig(InnerHeritageConfig::V1(_)) = HeritageConfig::builder().build() else {
-            panic!();
+            panic!("Just a reminder to extra-check things if the default version is changed in the future");
         };
     }
 
-    // Just a reminder to extra-check things if the default version is changed in the future
     #[test]
     fn heritage_config_hash_eq() {
         let reference = HeritageConfig::builder_v1()
