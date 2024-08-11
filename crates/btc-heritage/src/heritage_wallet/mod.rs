@@ -93,6 +93,9 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             return Ok(());
         }
 
+        // Control the fingerprints
+        backup.fingerprint()?;
+
         log::info!(
             "HeritageWallet::restore_backup - \
         Trying to restore backup with {} SubwalletDescriptorBackup(s)",
