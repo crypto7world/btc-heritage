@@ -15,7 +15,7 @@ use crate::{
     errors::{DatabaseError, Error, Result},
     heritage_wallet::TransactionSummaryOwnedIO,
     subwallet_config::SubwalletConfig,
-    utils::sort_transaction_details_with_raw,
+    utils::sort_transactions_with_parents,
 };
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
@@ -255,7 +255,26 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             let mut subwallet_txs = subwallet
                 .list_transactions(true)
                 .map_err(|e| DatabaseError::Generic(e.to_string()))?;
-            sort_transaction_details_with_raw(&mut subwallet_txs);
+            // Sort them to ensure with process them from oldest to newest
+            sort_transactions_with_parents(
+                &mut subwallet_txs,
+                |tx_details| {
+                    (
+                        tx_details.txid,
+                        tx_details.confirmation_time.as_ref().map(|ct| ct.height),
+                    )
+                },
+                |tx_details| {
+                    tx_details
+                        .transaction
+                        .as_ref()
+                        .expect("we asked it to be included")
+                        .input
+                        .iter()
+                        .map(|txin| txin.previous_output.txid)
+                        .collect()
+                },
+            );
 
             // Retrieve the subwallet scriptpubkeys
             let subwallet_spks = subwallet

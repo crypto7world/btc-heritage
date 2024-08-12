@@ -1,5 +1,8 @@
-use core::{fmt::Write, str::FromStr};
-use std::sync::OnceLock;
+use core::{cmp::Ordering, fmt::Write, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::OnceLock,
+};
 
 use crate::{
     bitcoin::{
@@ -9,6 +12,7 @@ use crate::{
     miniscript::psbt::PsbtExt,
 };
 
+use bdk::bitcoin::Txid;
 use serde_json::json;
 
 /// The average time, in second, to produce a block
@@ -161,84 +165,126 @@ pub mod amount_serde {
     }
 }
 
-/// Sort a [Vec] of [bdk::TransactionDetails]
+type BlockHeight = Option<u32>;
+/// Sort a [Vec] of Transaction-like objects that have
+/// parents information using the provided functions that
+/// for any T can extract a [BlockHeight], a [Txid] and a HashSet of parents
 ///
-/// # Panics
-/// Panics if the [TransactionDetails] does not contain the raw transaction
-#[cfg(any(feature = "online", test))]
-pub(crate) fn sort_transaction_details_with_raw(v: &mut Vec<bdk::TransactionDetails>) {
+/// `extract_txid_and_bh` is separate from `extract_parents` because we expect
+/// that `extract_txid_and_bh` is virtually free whereas `extract_parents` could be more costly
+pub fn sort_transactions_with_parents<T, F, P>(
+    v: &mut Vec<T>,
+    extract_txid_and_bh: F,
+    extract_parents: P,
+) where
+    F: Fn(&T) -> (Txid, BlockHeight),
+    P: Fn(&T) -> HashSet<Txid>,
+{
     // We must sort the transactions so they are in the correct order, from oldest to newest
     // Trivialy, TXs in older blocks are older. For TXs in the same block, we must order them so
     // that if any TX "A" uses an UTXO of another TX "B", "A" comes after "B".
-
-    use core::cmp::Ordering;
-    let mut tx_index = std::collections::HashMap::new();
+    let mut tx_index = HashMap::new();
     // First pass, each TX simply stores its block_height and the TX ids it depends on
     for tx in v.iter() {
-        let block_height = tx.confirmation_time.as_ref().map(|ct| ct.height);
-        let txid_iter = tx
-            .transaction
-            .as_ref()
-            .expect("we asked it to be included")
-            .input
-            .iter()
-            .map(|txin| txin.previous_output.txid)
-            .collect::<std::collections::HashSet<_>>();
-        tx_index.insert(tx.txid, (block_height, txid_iter));
+        let (tx_id, bh) = extract_txid_and_bh(tx);
+        let parents_txid_set = extract_parents(tx);
+        tx_index.insert(tx_id, (bh, parents_txid_set));
     }
     // Now sort
     v.sort_by(|a, b| {
-        // a < b if a.confirmation_time < b.confirmation_time
-        // for confirmation_time  Some < None.
-        (match (a.confirmation_time.is_some(), b.confirmation_time.is_some()) {
-            (true, false) => Ordering::Less,
-            (false, true) => Ordering::Greater,
-            _ => Ordering::Equal,
+        let (a_tx_id, a_bh) = extract_txid_and_bh(a);
+        let (b_tx_id, b_bh) = extract_txid_and_bh(b);
+        // a < b if BlockHeight(a) < BlockHeight(b)
+        // for BlockHeight Some < None (None means the TX has not been included in the
+        // blockchain yet so it comes after a TX already included)
+        (match (a_bh, b_bh) {
+            (Some(a_bh), Some(b_bh)) => a_bh.cmp(&b_bh),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
         })
-        .then_with(|| a.confirmation_time.cmp(&b.confirmation_time))
+        // Then consider the dependencies
+        // a < b if a appears in the dependencies of b (recursively)
+        // b < a if b appears in the dependencies of a (recursively)
         .then_with(|| {
-            let confirmation_time_of_interest = b.confirmation_time.as_ref().map(|ct| ct.height);
-            let mut stack_deps_a = vec![];
-            stack_deps_a.extend(
-                tx_index
-                    .get(&a.txid)
-                    .expect("a is in the HashMap")
-                    .1
-                    .iter()
-                    .cloned(),
-            );
-            while let Some(deps_id) = stack_deps_a.pop() {
-                if deps_id == b.txid {
-                    return core::cmp::Ordering::Greater;
-                }
-                if let Some((bh, deps)) = tx_index.get(&deps_id) {
-                    if confirmation_time_of_interest == *bh {
-                        stack_deps_a.extend(deps)
+            // We will only consider the dependencies that are in the same block
+            // We are here because a and b are in the same block, so there is no point
+            // constructing a dependency tree further than the common block of a and b
+            // as our goal is to see iff either one appears in the dependencies of the other
+            let block_height_of_interest = a_bh;
+            let x_depends_on_y = |x_tx_id, y_tx_id| {
+                let mut stack_deps_x = vec![];
+                // Initialy, add the direct dependencies of x in the stack
+                stack_deps_x.extend(
+                    tx_index
+                        .get(&x_tx_id)
+                        .expect("txid of x is in the HashMap")
+                        .1
+                        .iter()
+                        .cloned(),
+                );
+                // Now pop through all the elements of the stack
+                while let Some(deps_id) = stack_deps_x.pop() {
+                    // If we find y, then x depends on y
+                    if deps_id == y_tx_id {
+                        return true;
+                    }
+                    // If the dependency is a transaction we have in our index
+                    if let Some((bh, deps)) = tx_index.get(&deps_id) {
+                        // And the block height of this transaction is our block_height_of_interest
+                        if block_height_of_interest == *bh {
+                            // Then add the dependencies of this transaction to the stack of dependencies of x
+                            stack_deps_x.extend(deps)
+                        }
                     }
                 }
+                false
+            };
+            // If a depends on b, then a is greater (it comes after)
+            if x_depends_on_y(a_tx_id, b_tx_id) {
+                Ordering::Greater
             }
-            let mut stack_deps_b = vec![];
-            stack_deps_b.extend(
-                tx_index
-                    .get(&b.txid)
-                    .expect("b is in the HashMap")
-                    .1
-                    .iter()
-                    .cloned(),
-            );
-            while let Some(deps_id) = stack_deps_b.pop() {
-                if deps_id == a.txid {
-                    return core::cmp::Ordering::Less;
-                }
-                if let Some((bh, deps)) = tx_index.get(&deps_id) {
-                    if confirmation_time_of_interest == *bh {
-                        stack_deps_b.extend(deps)
-                    }
-                }
+            // Else if b depends on a, the a is less (it comes before)
+            else if x_depends_on_y(b_tx_id, a_tx_id) {
+                Ordering::Less
             }
-            core::cmp::Ordering::Equal
+            // Else equal
+            else {
+                // At this point, we found no direct dependency between a and b
+                // Note than it does not mean there is none. But if there is a dependency
+                // it is through transactions that we do not know of (outside of our wallet)
+                Ordering::Equal
+            }
         })
-        .then_with(|| a.txid.cmp(&b.txid))
+        // If TXs are in the same block and have no direct depedencies between them
+        // We consider that the TX that have depencies outside of the block
+        // are likely to comes before
+        .then_with(|| {
+            let block_height_of_interest = a_bh;
+            let has_out_of_block_dependencies = |tx_id| {
+                tx_index
+                    .get(tx_id)
+                    .expect("txid of a is in the HashMap")
+                    .1
+                    .iter()
+                    .any(|dep_id| {
+                        tx_index
+                            .get(dep_id)
+                            .is_some_and(|(bh, _)| *bh != block_height_of_interest)
+                    })
+            };
+            let a_has_out_of_block_dependencies = has_out_of_block_dependencies(&a_tx_id);
+            let b_has_out_of_block_dependencies = has_out_of_block_dependencies(&b_tx_id);
+            match (
+                a_has_out_of_block_dependencies,
+                b_has_out_of_block_dependencies,
+            ) {
+                (true, false) => Ordering::Less,
+                (false, true) => Ordering::Greater,
+                _ => Ordering::Equal,
+            }
+        })
+        .then_with(|| a_tx_id.cmp(&b_tx_id))
     });
 }
 
