@@ -113,10 +113,10 @@ You can find precompiled binaries for the major platforms in the Release section
 
 [Latest version](https://github.com/crypto7world/btc-heritage/releases/latest) - [All releases](https://github.com/crypto7world/btc-heritage/releases)
 
-If you wish to install the `v0.1.0` for Linux, you can run:
+If you wish to install the `v0.1.0-alpha` for Linux, you can run:
 
 ```shell
-version="v0.1.0"
+version="v0.1.0-alpha"
 wget https://github.com/crypto7world/btc-heritage/releases/download/${version}/heritage-cli-${version}-x86_64-unknown-linux-gnu.tar.gz
 tar xvzf heritage-cli-${version}-x86_64-unknown-linux-gnu.tar.gz
 ./heritage-cli # to verify it worked, should display usage instructions
@@ -130,12 +130,18 @@ To install a dev version of `heritage-cli` from sources, make sure you have Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
+On Linux, you need to install the `libudev` package, for example on Ubuntu:
+
+```shell
+sudo apt-get install -y libudev-dev
+```
+
 Then clone this repo, `cd` into it and run cargo install:
 
 ```shell
 git clone https://github.com/crypto7world/btc-heritage
 cd btc-heritage
-cargo install --bin heritage-cli --path .
+cargo install --bin heritage-cli --path crates/heritage-cli
 export PATH="$PATH:$HOME/.cargo/bin" # Make sure cargo installation path is in your PATH
 heritage-cli # to verify it worked, should display usage instructions
 ```
