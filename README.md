@@ -1,5 +1,5 @@
+<!-- markdownlint-disable MD033 MD041 -->
 <div id="top"></div>
-
 
 <!-- PROJECT SHIELDS -->
 <!--
@@ -9,12 +9,12 @@
 *** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
 *** https://www.markdownguide.org/basic-syntax/#reference-style-links
 -->
+
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
-
 
 <!-- PROJECT LOGO -->
 <br />
@@ -54,9 +54,10 @@
 </details>
 
 <!-- ABOUT THE PROJECT -->
+
 ## About The Project
 
-The `btc-heritage` library provides the fundations of the **Heritage wallet**: a Taproot Bitcoin wallet developped in *Rust* with built-in, on-chain protections against loosing your coins.
+The `btc-heritage` library provides the fundations of the **Heritage wallet**: a Taproot Bitcoin wallet developped in _Rust_ with built-in, on-chain protections against loosing your coins and inheritance.
 
 The basic principle is a dead-man switch: should you become unable to spend your coins for whatever reasons, alternative spending paths (i.e. TapScripts) will eventualy open, allowing other private keys to spend your coins, following a schedule you configure **enforced by the Bitcoin blockchain**. On the other hand, if you are able to spend your coin you can regularly "reset" this schedule simply by moving your coins to a new address of your wallet.
 
@@ -70,34 +71,33 @@ In both cases, using the **Heritage wallet**, your coins will be recoverable aft
 Usually, protecting yourself against those situations require one or more trusted third-party with whom you share control of your coins to various degrees. The **Heritage wallet** offers a solution without such compromise: you retain exclusive control of your coins.
 
 ## Usage
+
 Visit [btcherit.com][heritage-wallet-service], the online service built upon the `btc-heritage` library, to start using the **Heritage wallet** and learn more.
 
-If you do not wish to use an online service, star/watch the project and be patient: it is coming soon!
+You will need to install the [heritage-cli](crates/heritage-cli/README.md).
 
-The project is just a Most Valuable Product (MVP) right now: I use it to manage my own BTC confidently and so can you. But for now only one use-case is available: using the public service [btcherit.com][heritage-wallet-service] for the on-chain wallet management and the [heritage-offline-cli][offline-cli-repo-url] (preferably on an air-gapped computer) for private key management.
+The project is a Most Valuable Product (MVP) right now: I use it to manage my own BTC confidently and so can you. But for now only one use-case is available: using the public service [btcherit.com][heritage-wallet-service] for the on-chain wallet management and the [heritage-cli](crates/heritage-cli/README.md) for key management, preferably with a [Ledger](https://www.ledger.com/) hardware-wallet device.
 
-I want to quickly (meaning, mid-2024) support two more use-cases:
-- managing BTC completely off-service, purely with the CLI on your computer with your own Bitcoin node as a backend,
-- adding support for hardware wallets.
-
-While I hope the [btcherit.com][heritage-wallet-service] service will help me pay my bills, I do not wish to lock users in and it is very important for me to allow people to manage their coins on their own if they wish to.
+While I hope the [btcherit.com][heritage-wallet-service] service will help me pay my bills, I do not wish to lock users in and it is very important for me to allow people to manage their coins on their own if they wish to. So if you do not wish to use an online service, star/watch the project and be patient: it is coming before the end of 2024!
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- ROADMAP -->
+
 ## Roadmap
 
 The roadmap is accurate regarding my immediate goals for the project.
 
 - [x] Add on-chain/public TapRoot wallet capabilities to manage an Heritage wallet (wallet with an inheritance configuration you choose)
-- [ ] Add off-chain/private TapRoot wallet capabilities, i.e. private key management (see [heritage-offline-cli][offline-cli-repo-url] on Github in the time being)
-- [ ] Add support for hardware wallets:
-  - [ ] Ledger ([ledger.com](https://www.ledger.com/))
-  - [ ] Trezor ([trezor.io](https://trezor.io/))
-- [ ] Create a new CLI Heritage wallet tool (see [heritage-offline-cli][offline-cli-repo-url] on Github in the time being)
+- [x] Add off-chain/private TapRoot wallet capabilities, i.e. private key management, the ability to sign transactions
+- [x] Create a new CLI Heritage wallet tool
+- [x] Add support for hardware wallets:
+  - [x] Ledger ([ledger.com](https://www.ledger.com/))
+  - [ ] ~~Trezor~~ (unfortunately Taproot script paths not supported currently) ([trezor.io](https://trezor.io/))
 - [ ] Create a GUI Heritage wallet tool (see [btcherit.com][heritage-wallet-service], the online service born from this lib in the time being)
+- [ ] Add support for MultiSig N-of-M Heir to allow kind-of inheritance sharing
 - [ ] Add lightning support
-
+- [ ] Eliminate dependency to BDK
 
 See the [open issues](https://github.com/crypto7world/btc-heritage/issues) for a full list of proposed features (and known issues).
 
@@ -109,22 +109,26 @@ See the [open issues](https://github.com/crypto7world/btc-heritage/issues) for a
 
 And based upon 3 Rust projects without which I would not have gotten that far:
 
-* [`bdk`]
-* [`rust-miniscript`]
-* [`rust-bitcoin`]
+- [`bdk`]
+- [`rust-miniscript`]
+- [`rust-bitcoin`]
 
 Thanks.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
+<!-- MSRV -->
 
 ## Minimum Supported Rust Version (MSRV)
-This library compile with Rust 1.74.1.
 
-While I will always remain on stable Rust (i.e. *NOT* depend on nightly), I do not plan on being conservative on the MSRV. If at some point a mildly interesting feature pops in a new Rust version, I will happily bump up the MSRV.
+This library compile with Rust 1.79.0.
 
+While I will always remain on stable Rust (i.e. _NOT_ depend on nightly), I do not plan on being conservative on the MSRV. If at some point a mildly interesting feature pops in a new Rust version, I will happily bump up the MSRV.
+
+<p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- CONTRIBUTING -->
+
 ## Contributing
 
 Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
@@ -143,6 +147,7 @@ Your contribution will be licensed under the MIT license of this repository.
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- LICENSE -->
+
 ## License
 
 Distributed under the MIT License. See [`LICENSE`][license-url] for more information.
@@ -150,33 +155,34 @@ Distributed under the MIT License. See [`LICENSE`][license-url] for more informa
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- CONTACT -->
+
 ## Contact
 
-John Galt - [@Crypto7W](https://twitter.com/Crypto7W) - john@crypto7.world
+John Galt - [@Crypto7W](https://twitter.com/Crypto7W) - <john@crypto7.world>
 
-Though my real name is Jérémie Rodon ([LinkedIn][jr-linkedin-url], [GitHub][jr-github-url]), I operate this project under the pseudonym John Galt in reference to the character of *Ayn Rand* novel [**Atlas Shrugged**](https://www.amazon.com/Atlas-Shrugged-Ayn-Rand-ebook/dp/B003V8B5XO) (and, yes, I obviously embrace John Galt philosophy).
+Though my real name is Jérémie Rodon ([LinkedIn][jr-linkedin-url], [GitHub][jr-github-url]), I operate this project under the pseudonym John Galt in reference to the character of _Ayn Rand_ novel [**Atlas Shrugged**](https://www.amazon.com/Atlas-Shrugged-Ayn-Rand-ebook/dp/B003V8B5XO) (and, yes, I obviously embrace John Galt philosophy).
 
 Project Link: [https://github.com/crypto7world/btc-heritage][repo-url]
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
 <!-- ACKNOWLEDGMENTS -->
+
 ## Acknowledgments
 
-* [`rust-miniscript`]
-* [`rust-bitcoin`]
-* [`bdk`]
-* [Best Readme Template](https://github.com/othneildrew/Best-README-Template)
-* [Img Shields](https://shields.io)
+- [`rust-miniscript`]
+- [`rust-bitcoin`]
+- [`bdk`]
+- [Best Readme Template](https://github.com/othneildrew/Best-README-Template)
+- [Img Shields](https://shields.io)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
-
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+
 [heritage-wallet-service]: https://btcherit.com
 [repo-url]: https://github.com/crypto7world/btc-heritage
-[offline-cli-repo-url]: https://github.com/crypto7world/heritage-offline-cli
 [contributors-shield]: https://img.shields.io/github/contributors/crypto7world/btc-heritage.svg?style=for-the-badge
 [contributors-url]: https://github.com/crypto7world/btc-heritage/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/crypto7world/btc-heritage.svg?style=for-the-badge
@@ -190,7 +196,7 @@ Project Link: [https://github.com/crypto7world/btc-heritage][repo-url]
 [jr-linkedin-url]: https://linkedin.com/in/JeremieRodon
 [jr-github-url]: https://github.com/JeremieRodon
 [rust-shield]: https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white
-[rust-url]: https://https://www.rust-lang.org/ 
+[rust-url]: https://https://www.rust-lang.org/
 [`rust-miniscript`]: https://github.com/rust-bitcoin/rust-miniscript
 [`rust-bitcoin`]: https://github.com/rust-bitcoin/rust-bitcoin
 [`bdk`]: https://github.com/bitcoindevkit/bdk

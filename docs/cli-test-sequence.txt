@@ -1,0 +1,145 @@
+##########################################
+#               PREPARATIONS             #
+##########################################
+export BITCOIN_NETWORK=testnet
+export HERITAGE_SERVICE_API_URL=https://api.heritage.develop.dev.crypto7.world/v1
+export HERITAGE_AUTH_URL=https://device.develop.dev.crypto7.world/token
+export HERITAGE_AUTH_CLIENT_ID=3a69c631c97e80c71048434da412e950
+
+# Login to the service
+heritage-cli service login
+
+
+##########################################
+#          CREATE A NEW WALLET           #
+##########################################
+# Create a wallet (service/ledger)
+heritage-cli wallet test_owner create
+
+# Create a backup heir in the service
+heritage-cli heir backup create --email john@crypto7.world --perms is-heir,owner-email,amount,maturity,position
+
+# Create a wife heir in the service
+heritage-cli heir wife create --email christine.grassi@hotmail.com --email chr.grassi@gmail.com --perms owner-email,amount,maturity,position --custom-message "Salut p'tit chat, je suis mort :'("
+
+# Create a browser heir in the service
+heritage-cli heir bro create
+heritage-cli heir bro export --email sylvain.rodon@gmail.com --perms is-heir,owner-email
+heritage-cli heir bro rename brother
+
+# Create an Heritage Configuration
+heritage-cli wallet test_owner heritage-configs set --service-heir backup:720 --sh bro:870 --sh wife:780
+
+# Get a new address
+heritage-cli wallet test_owner new-address
+
+##########################################
+#            SEND SOME COINS             #
+##########################################
+# here we send some coins #
+# here we send some coins #
+# here we send some coins #
+###########################
+
+# Display infos
+heritage-cli wallet test_owner fingerprint
+heritage-cli wallet test_owner balance
+heritage-cli wallet test_owner block-inclusion-objective
+
+# Change the bio
+heritage-cli wallet test_owner bio --set 1000
+
+# Sync
+heritage-cli wallet test_owner sync
+
+# Display infos
+heritage-cli wallet test_owner status
+
+##########################################
+#     DUPLICATE WALLET AS WATCH-ONLY     #
+##########################################
+# Backup descriptors
+heritage-cli wallet test_owner backup --file owner-backup.json --overwrite
+
+# Create a clone
+heritage-cli wallet owner_clone create -k none --backup-file owner-backup.json
+
+# Verify Heritage config
+heritage-cli wallet owner_clone heritage-configs list
+heritage-cli wallet owner_clone heritage-configs show-current
+
+# Sync
+heritage-cli wallet owner_clone sync
+
+# Display infos
+heritage-cli wallet test_owner status # should be the same
+heritage-cli wallet owner_clone status # should be the same
+
+
+##########################################
+#          VERIFY HEIR WALLET            #
+##########################################
+# Create the Heir wallet for backup or Wife
+heritage-cli heir backup backup-mnemonic
+heritage-cli heir-wallet backup create --seed ...
+
+# Verify info
+heritage-cli heir-wallet backup fingerprint
+# No heritage at this point
+heritage-cli heir-wallet backup list-heritages
+
+##########################################
+#      EXPIRED HERITAGE CONFIGURATION    #
+##########################################
+# Create a new Heir Config, purposedly set to be expired for backup and wife, but no bro
+heritage-cli wallet test_owner heritage-configs set --service-heir backup:720 --sh wife:780 --sh bro:3650 --reference-date 2022-01-01
+
+# Display
+heritage-cli wallet test_owner heritage-configs list
+
+# Get a new address
+heritage-cli wallet test_owner new-address
+
+##########################################
+#           SPEND FROM LEDGER            #
+##########################################
+# get psbt
+heritage-cli wallet test_owner send-bitcoins -r <address>:1mbtc
+
+# Try to send BTC, will fail because Ledger policies not registered
+heritage-cli wallet test_owner sign-psbt <psbt> --broadcast
+
+# Register the policy
+heritage-cli wallet test_owner ledger-policies list
+heritage-cli wallet test_owner ledger-policies list-registered
+heritage-cli wallet test_owner ledger-policies auto-register
+heritage-cli wallet test_owner ledger-policies list
+
+# Send BTC
+heritage-cli wallet test_owner sign-psbt <psbt> --broadcast
+
+##########################################
+#                INHERIT                 #
+##########################################
+# Sync
+heritage-cli wallet test_owner sync
+
+# The heir should see an heritage (well, 2 actually)
+heritage-cli heir-wallet backup list-heritages
+
+# Spend it to the original wallet
+heritage-cli heir-wallet backup spend-heritages --id <> -r <> --sign --broadcast
+
+
+##########################################
+#                 CLEANUP                #
+##########################################
+# Remove heirs
+heritage-cli heir-wallet backup remove
+heritage-cli heir-wallet wife remove
+heritage-cli heir backup remove
+heritage-cli heir wife remove
+heritage-cli heir brother remove
+heritage-cli wallet test_owner remove
+
+python3 ./cleanup_user_from_dynamodb.py dyndb-c7w-heritage-backend-develop 0511a752-c8b1-4b3a-8e13-81ed103b9c5a
