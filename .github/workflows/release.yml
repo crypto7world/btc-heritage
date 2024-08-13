@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Extract version
-        run: echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})" >> $GITHUB_OUTPUT
+        run: echo "VERSION=$(echo ${GITHUB_REF#refs/tags/})" | sed -r 's/cli-//' >> $GITHUB_OUTPUT
         id: extract_version
     outputs:
       VERSION: ${{ steps.extract_version.outputs.VERSION }}
@@ -57,26 +57,20 @@ jobs:
           rustup toolchain install $RUST_VERSION
           rustup default $RUST_VERSION
 
+      - name: Install deps for Linux
+        if: matrix.arch == 'aarch64-unknown-linux-gnu' || matrix.arch == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libusb-1.0-0-dev libudev-dev libhidapi-dev
+
       # ==============================
       #       Builds
       # ==============================
       - name: Remove rust-toolchain.toml
         run: rm rust-toolchain.toml
 
-      - name: Build for Linux
-        if: matrix.arch == 'aarch64-unknown-linux-gnu' || matrix.arch == 'x86_64-unknown-linux-gnu'
-        run: |
-          cargo install cross
-          cross build --bin heritage-cli --target ${{ matrix.arch }} --profile release
-          mv target/${{ matrix.arch }}/release/heritage-cli ~/.cargo/bin/heritage-cli
-
-      - name: Build for Mac
-        if: matrix.arch == 'x86_64-apple-darwin'
-        run: cargo install --bin heritage-cli --path . --force --locked --profile release
-
-      - name: Build for Windows
-        if: matrix.arch == 'x86_64-windows'
-        run: cargo install --bin heritage-cli --path . --force --locked --profile release
+      - name: Build
+        run: cargo install --bin heritage-cli --path crates/heritage-cli --force --locked --profile release
 
       - name: Create artifacts
         if: matrix.arch != 'x86_64-windows'
