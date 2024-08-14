@@ -1,6 +1,6 @@
 [package]
 name = "heritage-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "The Heritage wallet CLI, a Bitcoin Taproot wallet managing on-chain inheritance of bitcoins"
 repository.workspace = true
 edition.workspace = true

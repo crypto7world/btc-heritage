@@ -88,7 +88,7 @@ pub enum WalletSubcmd {
         #[arg(long, visible_alias = "no-auto", default_value_t = false)]
         no_auto_feed_xpubs: bool,
         /// The mnemonic phrase to restore as a seed for the local key-provider (12, 18 or 24 words).
-        #[arg(long, value_name = "WORD", num_args=2..24, group="localgen")]
+        #[arg(long, value_name = "WORD", num_args=2..=24, group="localgen")]
         seed: Option<Vec<String>>,
         /// The length of the mnemonic phrase to generate as a seed for the local key-provider.
         #[arg(

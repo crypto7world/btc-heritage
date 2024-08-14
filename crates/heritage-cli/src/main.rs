@@ -8,7 +8,7 @@ use commands::CliParser;
 
 fn main() {
     env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("warn,tracing::span=warn"),
+        env_logger::Env::default().default_filter_or("error,tracing::span=warn"),
     )
     .format_timestamp_micros()
     .init();
