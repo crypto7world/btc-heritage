@@ -22,6 +22,15 @@ struct TokenResponse {
     expires_in: u32,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "error", rename_all = "snake_case")]
+enum DeviceFlowError {
+    AccessDenied,
+    ExpiredToken,
+    AuthorizationPending,
+    SlowDown,
+}
+
 /// A trait providing methods for the OAuth tokens to be cached and retrieved
 pub trait TokenCache {
     fn save_tokens(&mut self, tokens: &Tokens) -> Result<()>;
@@ -78,9 +87,11 @@ impl Tokens {
                 ("device_code", &device_auth_response.device_code),
                 ("client_id", client_id),
             ]);
+
             match crate::client::req_builder_to_body(req) {
-                Ok(body) => match serde_json::from_str::<TokenResponse>(&body) {
-                    Ok(tokens) => {
+                Ok(body) => {
+                    log::debug!("Got a 2XX response from the device token API");
+                    if let Ok(tokens) = serde_json::from_str::<TokenResponse>(&body) {
                         log::debug!("Got tokens!");
                         return Ok(Self {
                             id_token: tokens.id_token,
@@ -92,10 +103,29 @@ impl Tokens {
                             token_endpoint: auth_url.to_owned(),
                             client_id: client_id.to_owned(),
                         });
+                    } else {
+                        log::error!("Invalid response from the device token API: {body}");
+                        return Err(Error::Generic(format!(
+                            "Invalid response from the device token API: {body}"
+                        )));
                     }
-                    Err(_) => log::debug!("No tokens available yet. Retrying."),
-                },
-                Err(_) => log::debug!("No tokens available yet. Retrying."),
+                }
+                Err(Error::ApiErrorResponse { code, message }) if code == 400 => {
+                    log::debug!("Got a 400 response from the device token API: {message}");
+                    match serde_json::from_str::<DeviceFlowError>(&message)? {
+                        DeviceFlowError::AccessDenied => return Err(Error::AuthenticationDenied),
+                        DeviceFlowError::ExpiredToken => {
+                            return Err(Error::AuthenticationProcessExpired)
+                        }
+                        DeviceFlowError::AuthorizationPending => {
+                            log::debug!("No tokens available yet. Retrying.")
+                        }
+                        DeviceFlowError::SlowDown => log::warn!(
+                            "Got a slow_down response from the token endpoint, it should not happen."
+                        ),
+                    }
+                }
+                Err(error) => return Err(error.into()),
             }
         }
     }

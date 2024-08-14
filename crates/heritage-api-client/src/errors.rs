@@ -8,6 +8,8 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     #[error("The authentication process expired")]
     AuthenticationProcessExpired,
+    #[error("The authentication was denied")]
+    AuthenticationDenied,
     #[error("The client is not authenticated to the Heritage service API.")]
     Unauthenticated,
     #[error("The client received an unexpected response that could not be parsed: {source}")]
