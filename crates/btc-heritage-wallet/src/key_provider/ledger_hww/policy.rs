@@ -64,8 +64,7 @@ macro_rules! new_byte_type {
             type Error = Error;
 
             fn try_from(value: &str) -> Result<Self, Self::Error> {
-                let bytes =
-                    <[u8; 32]>::from_hex(value).map_err(Error::generic)?;
+                let bytes = <[u8; 32]>::from_hex(value).map_err(Error::generic)?;
                 Ok(Self(bytes))
             }
         }
@@ -157,13 +156,13 @@ impl TryFrom<String> for LedgerPolicy {
 impl From<&LedgerPolicy> for WalletPolicy {
     fn from(value: &LedgerPolicy) -> Self {
         let descriptor = &value.0;
-        println!("descriptor={descriptor}");
+        log::debug!("descriptor={descriptor}");
         let mut descriptor_template = descriptor.clone();
         let mut keys: Vec<WalletPubKey> = Vec::new();
         for account_xpub in re_account_xpub().captures_iter(descriptor) {
-            println!("account_xpub={account_xpub:?}");
+            log::debug!("account_xpub={account_xpub:?}");
             let key = &account_xpub["key"];
-            println!("key={key}");
+            log::debug!("key={key}");
             let pubkey = WalletPubKey::from_str(key).expect("xpub format is correct");
             let desc_index = if let Some(i) = keys.iter().position(|e| e == &pubkey) {
                 i
@@ -172,13 +171,13 @@ impl From<&LedgerPolicy> for WalletPolicy {
                 keys.len() - 1
             };
 
-            println!("replace={} by @{}/**", &account_xpub[0], desc_index);
+            log::debug!("replace={} by @{}/**", &account_xpub[0], desc_index);
 
             descriptor_template =
                 descriptor_template.replace(&account_xpub[0], &format!("@{}/**", desc_index));
         }
 
-        println!("descriptor_template={descriptor_template}");
+        log::debug!("descriptor_template={descriptor_template}");
         Self {
             name: "Heritage".to_owned(),
             version: ledger_bitcoin_client::wallet::Version::V2,

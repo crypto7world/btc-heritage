@@ -2303,9 +2303,6 @@ mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         let tx_sums = res.unwrap();
         assert_eq!(tx_sums.len(), 5);
-        for tx_sum in tx_sums.iter() {
-            println!("{tx_sum:?}");
-        }
         assert!(tx_sums.iter().all(|txs| txs.owned_outputs.len() == 1
             && txs.owned_outputs[0].1 == Amount::from_btc(1.0).unwrap()
             && txs.owned_inputs.len() == 0));
