@@ -113,10 +113,10 @@ You can find precompiled binaries for the major platforms in the Release section
 
 [Latest version](https://github.com/crypto7world/btc-heritage/releases/latest) - [All releases](https://github.com/crypto7world/btc-heritage/releases)
 
-If you wish to install the `v0.1.0-alpha` for Linux, you can run:
+If you wish to install the `v0.1.1-alpha` for Linux, you can run:
 
 ```shell
-version="v0.1.0-alpha"
+version="v0.1.1-alpha"
 wget https://github.com/crypto7world/btc-heritage/releases/download/${version}/heritage-cli-${version}-x86_64-unknown-linux-gnu.tar.gz
 tar xvzf heritage-cli-${version}-x86_64-unknown-linux-gnu.tar.gz
 ./heritage-cli # to verify it worked, should display usage instructions
