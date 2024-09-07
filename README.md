@@ -82,6 +82,21 @@ While I hope the [btcherit.com][heritage-wallet-service] service will help me pa
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
+<!-- STABILITY AND VERSIONING -->
+
+## Stability and versioning
+
+All the software provided (libs and bins) is working and can be safely used for Bitcoin's holdings.
+
+We are using [Semantic Versioning](https://github.com/semver/semver) (MAJOR.MINOR.PATCH) for the following crates:
+
+- btc-heritage
+- heritage-cli
+
+The other crates version are managed more "freely" (if at all) for now.
+
+Everything is still in the initial-development stage (version 0.x.x). While you can expect every new version to be in working order, you _SHOULD NOT_ expect the APIs or the CLI to be stable. That being said, new features and breaking changes will only happen on MINOR version increment, not on PATCH version increment.
+
 <!-- ROADMAP -->
 
 ## Roadmap
@@ -94,12 +109,13 @@ The roadmap is accurate regarding my immediate goals for the project.
 - [x] Add support for hardware wallets:
   - [x] Ledger ([ledger.com](https://www.ledger.com/))
   - [ ] ~~Trezor~~ (unfortunately Taproot script paths not supported currently) ([trezor.io](https://trezor.io/))
+- [ ] Capability for the CLI to use a user-provided Bitcoin Core or Electrum node instead of the service
 - [ ] Create a GUI Heritage wallet tool (see [btcherit.com][heritage-wallet-service], the online service born from this lib in the time being)
 - [ ] Add support for MultiSig N-of-M Heir to allow kind-of inheritance sharing
 - [ ] Add lightning support
 - [ ] Eliminate dependency to BDK
 
-See the [open issues](https://github.com/crypto7world/btc-heritage/issues) for a full list of proposed features (and known issues).
+Also consult the [open issues](https://github.com/crypto7world/btc-heritage/issues) for other proposed features and known issues.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
