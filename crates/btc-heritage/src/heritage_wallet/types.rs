@@ -2,7 +2,7 @@ use core::{fmt::Display, ops::Deref, str::FromStr};
 use std::collections::HashSet;
 
 use bdk::{
-    bitcoin::{Script, ScriptBuf},
+    bitcoin::{FeeRate, Script, ScriptBuf},
     Balance, BlockTime,
 };
 use serde::{Deserialize, Serialize};
@@ -113,6 +113,22 @@ impl TryFrom<Vec<(String, Amount)>> for SpendingConfig {
                 .collect::<Result<_, _>>()?,
         ))
     }
+}
+
+/// The policy to compute the fee of a new transaction
+#[derive(Debug, Clone)]
+pub enum FeePolicy {
+    /// The new transaction will have the exact fee amount
+    Absolute(Amount),
+    /// The new transaction will use the given fee rate to compute the fee
+    FeeRate(FeeRate),
+}
+
+/// Options used to customize the behavior of [super::HeritageWallet::create_psbt]
+#[derive(Debug, Clone, Default)]
+pub struct CreatePsbtOptions {
+    pub fee_policy: Option<FeePolicy>,
+    pub assume_blocktime: Option<BlockTime>,
 }
 
 /// An [HeritageWallet] configuration used to query the appropriate [crate::bitcoin::FeeRate]

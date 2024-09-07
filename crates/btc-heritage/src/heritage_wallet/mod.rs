@@ -579,33 +579,37 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn create_owner_psbt(
         &self,
         spending_config: SpendingConfig,
+        options: CreatePsbtOptions,
     ) -> Result<(Psbt, TransactionSummary)> {
-        log::debug!("HeritageWallet::create_owner_psbt - spending_config={spending_config:?}");
-        self.create_psbt(Spender::Owner, spending_config, None)
+        log::debug!(
+            "HeritageWallet::create_owner_psbt - spending_config={spending_config:?} \
+            options={options:?}"
+        );
+        self.create_psbt(Spender::Owner, spending_config, options)
     }
 
     pub fn create_heir_psbt(
         &self,
         heir_config: HeirConfig,
         spending_config: SpendingConfig,
-        assume_blocktime: Option<BlockTime>,
+        options: CreatePsbtOptions,
     ) -> Result<(Psbt, TransactionSummary)> {
-        log::debug!("HeritageWallet::create_heir_psbt - heir_config={heir_config:?} spending_config={spending_config:?}");
-        self.create_psbt(
-            Spender::Heir(heir_config),
-            spending_config,
-            assume_blocktime,
-        )
+        log::debug!(
+            "HeritageWallet::create_heir_psbt - heir_config={heir_config:?} \
+        spending_config={spending_config:?} options={options:?}"
+        );
+        self.create_psbt(Spender::Heir(heir_config), spending_config, options)
     }
 
     fn create_psbt(
         &self,
         spender: Spender,
         spending_config: SpendingConfig,
-        assume_blocktime: Option<BlockTime>,
+        options: CreatePsbtOptions,
     ) -> Result<(Psbt, TransactionSummary)> {
         log::debug!(
-            "HeritageWallet::create_psbt - spender={spender:?} spending_config={spending_config:?} assume_blocktime={assume_blocktime:?}"
+            "HeritageWallet::create_psbt - spender={spender:?} \
+            spending_config={spending_config:?} options={options:?}"
         );
         // When the owner is spending, we want to drain all the obsolete wallets.
         // The current wallet is used only if draining old wallets is not enough to fullfil the requested paiement
@@ -655,7 +659,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Here we compute what will be the "present" for this PSBT creation
         // If we got it as a paramter, just use it
         // Else we create a fake BlockTime with the last synchronization height and the current timestamp
-        let block_time = match assume_blocktime {
+        let block_time = match options.assume_blocktime {
             Some(block_time) => block_time,
             None => {
                 let mut bt = self.get_sync_time()?.ok_or(Error::UnsyncedWallet)?;
@@ -720,12 +724,12 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         log::debug!("HeritageWallet::create_psbt - wallet.build_tx()");
         let mut tx_builder = current_subwallet.build_tx();
 
-        // We will always use offline signing so we include the redeem witness scripts
-        // TODO: Verify if this is actually necessary
-        log::debug!(
-            "HeritageWallet::create_psbt - tx_builder.include_output_redeem_witness_script()"
-        );
-        tx_builder.include_output_redeem_witness_script();
+        // // We will always use offline signing so we include the redeem witness scripts
+        // // TODO: Verify if this is actually necessary => Seems completely useless
+        // log::debug!(
+        //     "HeritageWallet::create_psbt - tx_builder.include_output_redeem_witness_script()"
+        // );
+        // tx_builder.include_output_redeem_witness_script();
 
         // Assume block height
         log::debug!(
@@ -773,13 +777,34 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         }
 
         // Set FeeRate
-        let fee_rate = self.database.borrow().get_fee_rate()?.unwrap_or_else(||{
-            log::warn!("HeritageWallet::create_psbt - No FeeRate in the database. Maybe call sync_fee_rate");
-            FeeRate::BROADCAST_MIN
+        let fee_rate = match options.fee_policy {
+            Some(fee_policy) => match fee_policy {
+                FeePolicy::Absolute(amount) => {
+                    let amount = amount.to_sat();
+                    log::debug!(
+                        "HeritageWallet::create_psbt - tx_builder.fee_absolute - amount={amount}"
+                    );
+                    tx_builder.fee_absolute(amount);
+                    None
+                },
+                FeePolicy::FeeRate(fee_rate) => Some(fee_rate),
+            },
+            None => {
+                Some(self.database.borrow().get_fee_rate()?.unwrap_or_else(||{
+                    log::warn!("HeritageWallet::create_psbt - No FeeRate in the database. Maybe call sync_fee_rate");
+                    FeeRate::BROADCAST_MIN
+                }))
+            }
+        };
+        // Map the Option<bitcoin::FeeRate> to a Option<BdkFeerate>
+        let fee_rate = fee_rate.map(|fee_rate| {
+            let fee_rate = BdkFeeRate::from_sat_per_kwu(fee_rate.to_sat_per_kwu() as f32);
+            log::debug!(
+                "HeritageWallet::create_psbt - tx_builder.fee_rate - fee_rate={fee_rate:?}"
+            );
+            tx_builder.fee_rate(fee_rate);
+            fee_rate
         });
-        let fee_rate = BdkFeeRate::from_sat_per_kwu(fee_rate.to_sat_per_kwu() as f32);
-        log::debug!("HeritageWallet::create_psbt - tx_builder.fee_rate - fee_rate={fee_rate:?}");
-        tx_builder.fee_rate(fee_rate);
 
         // Extract the HeritageExplorer if we are with an Heir spending and if any
         let heritage_explorer = if let Spender::Heir(heir_config) = &spender {
@@ -919,45 +944,49 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             psbt.unsigned_tx.version = 2;
         }
 
-        // Adjust the fee because BDK computes it with laaaaaarge margin
-        // As we are only using TapRoot inputs, we can do a lot better withtout too much difficulties
+        // If there is a fee rate, adjust the fee because BDK computes it with laaaaaarge margin
+        // As we are only using TapRoot inputs, we can do a lot better without too much difficulties
         // We just have to find the "change" output
-        let adjustable_output_index = if let Some(adjustable_output_index) = psbt
-            .unsigned_tx
-            .output
-            .iter()
-            .position(|o| o.script_pubkey == drain_script)
-        {
-            adjustable_output_index
-        } else {
-            log::info!("HeritageWallet::create_psbt - This psbt does not have change, adding one");
-            // We are in the remote possibility where we try to send exactly the right amount
-            // so that there is no need to change
-            // In that case just add the output, process the psbt, and see what happen
-            let drain_output = TxOut {
-                value: 0,
-                script_pubkey: drain_script.clone(),
+        if let Some(fee_rate) = fee_rate {
+            let adjustable_output_index = if let Some(adjustable_output_index) = psbt
+                .unsigned_tx
+                .output
+                .iter()
+                .position(|o| o.script_pubkey == drain_script)
+            {
+                adjustable_output_index
+            } else {
+                log::info!(
+                    "HeritageWallet::create_psbt - This psbt does not have change, adding one"
+                );
+                // We are in the remote possibility where we try to send exactly the right amount
+                // so that there is no need to change
+                // In that case just add the output, process the psbt, and see what happen
+                let drain_output = TxOut {
+                    value: 0,
+                    script_pubkey: drain_script.clone(),
+                };
+                psbt.unsigned_tx.output.push(drain_output);
+                psbt.outputs.push(Output::default());
+                let adjustable_output_index = psbt.unsigned_tx.output.len() - 1;
+                adjustable_output_index
             };
-            psbt.unsigned_tx.output.push(drain_output);
-            psbt.outputs.push(Output::default());
-            let adjustable_output_index = psbt.unsigned_tx.output.len() - 1;
-            adjustable_output_index
-        };
 
-        log::debug!("HeritageWallet::create_psbt - adjust_with_real_fee(psbt, {fee_rate:?}, {adjustable_output_index})");
-        let adjustment = adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index);
-        log::info!("HeritageWallet::create_psbt - Fee adjustment: {adjustment}");
+            log::debug!("HeritageWallet::create_psbt - adjust_with_real_fee(psbt, {fee_rate:?}, {adjustable_output_index})");
+            let adjustment = adjust_with_real_fee(&mut psbt, &fee_rate, adjustable_output_index);
+            log::info!("HeritageWallet::create_psbt - Fee adjustment: {adjustment}");
 
-        // If the resulting amount is below dust treshold, just pop the output (and therefor give that amount to the miners)
-        if psbt.unsigned_tx.output[adjustable_output_index]
-            .value
-            .is_dust(&drain_script)
-        {
-            // In that case, the adjustment is 0 because the only way we are here
-            // is that we where in the case "remote possibility where we try to send exactly the right amount"
-            // and we added the output drain and it happens to be too small so we just go back to the old fee.
-            psbt.unsigned_tx.output.remove(adjustable_output_index);
-            psbt.outputs.remove(adjustable_output_index);
+            // If the resulting amount is below dust treshold, just pop the output (and therefor give that amount to the miners)
+            if psbt.unsigned_tx.output[adjustable_output_index]
+                .value
+                .is_dust(&drain_script)
+            {
+                // In that case, the adjustment is 0 because the only way we are here
+                // is that we where in the case "remote possibility where we try to send exactly the right amount"
+                // and we added the output drain and it happens to be too small so we just go back to the old fee.
+                psbt.unsigned_tx.output.remove(adjustable_output_index);
+                psbt.outputs.remove(adjustable_output_index);
+            }
         }
 
         // Our PSBT only contains owned inputs
@@ -1520,14 +1549,16 @@ mod tests {
         database::{memory::HeritageMemoryDatabase, HeritageDatabase, TransacHeritageOperation},
         heritage_wallet::{
             backup::{HeritageWalletBackup, SubwalletDescriptorBackup},
-            get_expected_tx_weight, BlockInclusionObjective, HeritageWallet, HeritageWalletBalance,
-            Recipient, SpendingConfig, SubwalletConfigId,
+            get_expected_tx_weight, BlockInclusionObjective, CreatePsbtOptions, HeritageWallet,
+            HeritageWalletBalance, Recipient, SpendingConfig, SubwalletConfigId,
         },
         miniscript::{Descriptor, DescriptorPublicKey},
         tests::*,
         utils::{extract_tx, string_to_address},
         HeritageConfig,
     };
+
+    use super::FeePolicy;
 
     #[derive(Debug, Clone)]
     pub struct FakeBlockchain {
@@ -2239,10 +2270,13 @@ mod tests {
             .is_none());
 
         wallet
-            .create_owner_psbt(SpendingConfig::Recipients(vec![Recipient(
-                string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
-                Amount::from_sat(10_000),
-            )]))
+            .create_owner_psbt(
+                SpendingConfig::Recipients(vec![Recipient(
+                    string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                    Amount::from_sat(10_000),
+                )]),
+                Default::default(),
+            )
             .unwrap();
 
         // At this stage, the current wallet is used
@@ -2312,20 +2346,23 @@ mod tests {
     fn create_owner_psbt_recipient() {
         let wallet = setup_wallet();
         let (psbt, tx_sum) = wallet
-            .create_owner_psbt(SpendingConfig::Recipients(vec![
-                Recipient::from((
-                    string_to_address(PKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
-                    Amount::from_btc(0.1).unwrap(),
-                )),
-                Recipient::from((
-                    string_to_address(WPKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
-                    Amount::from_btc(0.2).unwrap(),
-                )),
-                Recipient::from((
-                    string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
-                    Amount::from_btc(0.3).unwrap(),
-                )),
-            ]))
+            .create_owner_psbt(
+                SpendingConfig::Recipients(vec![
+                    Recipient::from((
+                        string_to_address(PKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                        Amount::from_btc(0.1).unwrap(),
+                    )),
+                    Recipient::from((
+                        string_to_address(WPKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                        Amount::from_btc(0.2).unwrap(),
+                    )),
+                    Recipient::from((
+                        string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                        Amount::from_btc(0.3).unwrap(),
+                    )),
+                ]),
+                Default::default(),
+            )
             .unwrap();
 
         // This PSBT has 4 inputs, corresponding to the 4 obsolete transaction
@@ -2481,9 +2518,10 @@ mod tests {
     fn create_owner_psbt_drains_to() {
         let wallet = setup_wallet();
         let (psbt, tx_sum) = wallet
-            .create_owner_psbt(SpendingConfig::DrainTo(
-                string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
-            ))
+            .create_owner_psbt(
+                SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
+                Default::default(),
+            )
             .unwrap();
 
         // This PSBT has 5 inputs
@@ -2609,14 +2647,20 @@ mod tests {
                     string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
                     Amount::from_btc(1.0).unwrap(),
                 ))]),
-                Some(get_present())
+                CreatePsbtOptions {
+                    assume_blocktime: Some(get_present()),
+                    ..Default::default()
+                }
             )
             .is_err());
         let (psbt, tx_sum) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
-                Some(get_present()),
+                CreatePsbtOptions {
+                    assume_blocktime: Some(get_present()),
+                    ..Default::default()
+                },
             )
             .unwrap();
 
@@ -2771,14 +2815,20 @@ mod tests {
                     string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
                     Amount::from_btc(1.0).unwrap(),
                 ))]),
-                Some(get_present())
+                CreatePsbtOptions {
+                    assume_blocktime: Some(get_present()),
+                    ..Default::default()
+                }
             )
             .is_err());
         let (psbt, tx_sum) = wallet
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
-                Some(get_present()),
+                CreatePsbtOptions {
+                    assume_blocktime: Some(get_present()),
+                    ..Default::default()
+                },
             )
             .unwrap();
 
@@ -2897,7 +2947,10 @@ mod tests {
                     string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
                     Amount::from_btc(1.0).unwrap(),
                 ))]),
-                Some(get_present())
+                CreatePsbtOptions {
+                    assume_blocktime: Some(get_present()),
+                    ..Default::default()
+                }
             )
             .is_err());
         // Brother cannot spend anything yet so that should fail PSBT generation
@@ -2905,7 +2958,10 @@ mod tests {
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
-                Some(get_present()),
+                CreatePsbtOptions {
+                    assume_blocktime: Some(get_present()),
+                    ..Default::default()
+                }
             )
             .is_err());
     }
@@ -2931,7 +2987,10 @@ mod tests {
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
-                Some(far_future),
+                CreatePsbtOptions {
+                    assume_blocktime: Some(far_future),
+                    ..Default::default()
+                },
             )
             .unwrap();
 
@@ -3102,7 +3161,10 @@ mod tests {
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
-                Some(far_future),
+                CreatePsbtOptions {
+                    assume_blocktime: Some(far_future),
+                    ..Default::default()
+                },
             )
             .unwrap();
 
@@ -3272,7 +3334,10 @@ mod tests {
             .create_heir_psbt(
                 heir_config,
                 SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
-                Some(far_future),
+                CreatePsbtOptions {
+                    assume_blocktime: Some(far_future),
+                    ..Default::default()
+                },
             )
             .unwrap();
 
@@ -3514,5 +3579,83 @@ mod tests {
             .input
             .iter()
             .all(|input| input.sequence == expected_sequence));
+    }
+
+    #[test]
+    fn create_owner_psbt_coherent_with_summary() {
+        let wallet = setup_wallet();
+        let (psbt, tx_sum) = wallet
+            .create_owner_psbt(
+                SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
+                Default::default(),
+            )
+            .unwrap();
+
+        // Input sum is the same
+        assert_eq!(
+            psbt.inputs
+                .iter()
+                .map(|i| i.witness_utxo.as_ref().unwrap().value)
+                .sum::<u64>(),
+            tx_sum
+                .owned_inputs
+                .iter()
+                .map(|o| o.1.to_sat())
+                .sum::<u64>()
+        );
+
+        // Output sum is 0
+        assert_eq!(
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.1.to_sat())
+                .sum::<u64>(),
+            0
+        );
+
+        // Fee is correctly reported
+        assert_eq!(psbt.fee().unwrap().to_sat(), tx_sum.fee.to_sat());
+    }
+
+    #[test]
+    fn create_owner_set_fee_rate() {
+        let wallet = setup_wallet();
+        let (_, tx_sum_default) = wallet
+            .create_owner_psbt(
+                SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
+                Default::default(),
+            )
+            .unwrap();
+        let (_, tx_sum) = wallet
+            .create_owner_psbt(
+                SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
+                CreatePsbtOptions {
+                    fee_policy: Some(FeePolicy::FeeRate(
+                        // We use the same feerate as set in these tests
+                        bdk::bitcoin::FeeRate::from_sat_per_vb(10).unwrap(),
+                    )),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(tx_sum_default.fee, tx_sum.fee);
+    }
+    #[test]
+    fn create_owner_set_fee() {
+        let wallet = setup_wallet();
+        let fee_amount = Amount::from_sat(12345);
+        let (_, tx_sum) = wallet
+            .create_owner_psbt(
+                SpendingConfig::DrainTo(string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap()),
+                CreatePsbtOptions {
+                    fee_policy: Some(FeePolicy::Absolute(fee_amount)),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        assert_eq!(tx_sum.fee, fee_amount);
     }
 }
