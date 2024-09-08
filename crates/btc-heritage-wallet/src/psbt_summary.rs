@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
 use btc_heritage::{
-    bitcoin::{bip32::Fingerprint, Address, Amount, Network},
+    bitcoin::{bip32::Fingerprint, Address, Amount, FeeRate, Network},
+    heritage_wallet::get_expected_tx_weight,
     PartiallySignedTransaction,
 };
 use heritage_service_api_client::TransactionSummary;
@@ -13,7 +14,22 @@ pub fn serialize_amount<S>(amount: &Amount, serializer: S) -> core::result::Resu
 where
     S: serde::Serializer,
 {
-    serializer.serialize_str(amount.to_string().as_str())
+    if *amount >= Amount::from_btc(0.1).unwrap() {
+        serializer.serialize_str(&format!(
+            "{} BTC",
+            amount.display_in(btc_heritage::bitcoin::Denomination::Bitcoin)
+        ))
+    } else if *amount >= Amount::from_sat(10000) {
+        serializer.serialize_str(&format!(
+            "{} mBTC",
+            amount.display_in(btc_heritage::bitcoin::Denomination::MilliBitcoin)
+        ))
+    } else {
+        serializer.serialize_str(&format!(
+            "{} sat",
+            amount.display_in(btc_heritage::bitcoin::Denomination::Satoshi)
+        ))
+    }
 }
 pub fn serialize_option<T, S>(
     opt: &Option<T>,
@@ -39,6 +55,16 @@ where
         Some(amount) => serialize_amount(amount, serializer),
         None => serializer.serialize_str("Unknown"),
     }
+}
+pub fn serialize_fee_rate<S>(
+    fee_rate: &FeeRate,
+    serializer: S,
+) -> core::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let fr = fee_rate.to_sat_per_kwu() as f32 / 250.0;
+    serializer.serialize_str(&format!("{} sat/vB", fr))
 }
 
 #[derive(Debug, Serialize)]
@@ -71,6 +97,8 @@ pub struct PsbtSummary {
     change: Option<Amount>,
     #[serde(serialize_with = "serialize_amount")]
     fee: Amount,
+    #[serde(serialize_with = "serialize_fee_rate")]
+    fee_rate: FeeRate,
 }
 
 impl TryFrom<(&PartiallySignedTransaction, Network)> for PsbtSummary {
@@ -254,6 +282,11 @@ impl
             .ok_or(Error::Generic(
                 "Invalid PSBT. Fee cannot be negative".to_owned(),
             ))?;
+        let fee_rate = if let Some(tx_summary) = tx_summary {
+            tx_summary.fee_rate
+        } else {
+            fee / get_expected_tx_weight(psbt)
+        };
 
         Ok(PsbtSummary {
             inputs,
@@ -266,6 +299,7 @@ impl
                 None
             },
             fee,
+            fee_rate,
         })
     }
 }
