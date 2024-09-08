@@ -5,7 +5,10 @@ use btc_heritage_wallet::{
     bitcoin::{address::NetworkUnchecked, bip32::Fingerprint, psbt::Psbt, Address, Amount},
     btc_heritage::HeritageWalletBackup,
     errors::{Error, Result},
-    heritage_api_client::{HeritageServiceClient, NewTx, NewTxDrainTo, NewTxRecipient, Tokens},
+    heritage_service_api_client::{
+        HeritageServiceClient, NewTx, NewTxDrainTo, NewTxFeePolicy, NewTxRecipient,
+        NewTxSpendingConfig, Tokens,
+    },
     online_wallet::ServiceBinding,
     AnyKeyProvider, AnyOnlineWallet, BoundFingerprint, Database, DatabaseItem, KeyProvider,
     Language, LedgerKey, LocalKey, Mnemonic, OnlineWallet, Wallet,
@@ -176,13 +179,25 @@ pub enum WalletSubcmd {
         kind: HeirConfigType,
     },
     /// Create a Partially Signed Bitcoin Transaction (PSBT), a.k.a an Unsigned TX, from the provided receipients information
-    #[command(visible_aliases = ["send-bitcoin", "spend-bitcoins", "spend-bitcoin","sb"])]
+    #[command(visible_aliases = ["send-bitcoin", "spend-bitcoins", "spend-bitcoin", "sb"])]
     SendBitcoins {
         /// A recipient address and an amount to send them.
         /// {n}<AMOUNT> can be a quantity of BTC e.g. 1.0btc, 100mbtc, 100sat
         /// {n}or 'all' to drain the wallet
         #[arg(short, long, value_name="ADDRESS>:<AMOUNT", required = true, value_parser=parse_recipient)]
         recipient: Vec<(Address<NetworkUnchecked>, Option<Amount>)>,
+        /// Force the given fee rate, in sat/vB, for the transaction fee computation
+        #[arg(long, visible_alias = "fr", value_parser = parse_fee_rate, conflicts_with = "fee_absolute")]
+        fee_rate: Option<f32>,
+        /// Force the given absolute fee for the transaction
+        /// {n}<AMOUNT> is a quantity of BTC 0.5mbtc, 123sat
+        #[arg(
+            long,
+            visible_alias = "fa",
+            value_name = "AMOUNT",
+            conflicts_with = "fee_rate"
+        )]
+        fee_absolute: Option<Amount>,
         /// Immediately sign the PSBT
         #[arg(short, long, default_value_t = false)]
         sign: bool,
@@ -554,6 +569,8 @@ impl super::CommandExecutor for WalletSubcmd {
             }
             WalletSubcmd::SendBitcoins {
                 recipient,
+                fee_rate,
+                fee_absolute,
                 sign,
                 broadcast,
                 skip_confirmation,
@@ -569,11 +586,12 @@ impl super::CommandExecutor for WalletSubcmd {
                         ))
                     })
                     .collect::<Result<Vec<_>>>()?;
+
                 // All recipients have an amount
                 // OR
                 // There is only one recipient
                 let spending_config = if recipient.iter().all(|(_, a)| a.is_some()) {
-                    NewTx::Recipients(
+                    NewTxSpendingConfig::Recipients(
                         recipient
                             .into_iter()
                             .map(|(address, amount)| NewTxRecipient {
@@ -583,19 +601,38 @@ impl super::CommandExecutor for WalletSubcmd {
                             .collect(),
                     )
                 } else if recipient.len() == 1 {
-                    NewTx::DrainTo(NewTxDrainTo {
+                    NewTxSpendingConfig::DrainTo(NewTxDrainTo {
                         drain_to: recipient[0].0.to_string(),
                     })
                 } else {
                     log::error!("Exactly one recipient is allowed when using amount 'all'");
-                    return Err(Error::Generic(
-                        "Exactly one recipient is allowed when using amount 'all'".to_owned(),
+                    return Err(Error::generic(
+                        "Exactly one recipient is allowed when using amount 'all'",
                     ));
+                };
+
+                // Clap ensures that fee_absolute and fee_rate cannot be specified together
+                let fee_policy = if fee_absolute.is_some() {
+                    // User gave a specific fee
+                    Some(NewTxFeePolicy::Absolute {
+                        amount: fee_absolute.unwrap().to_sat(),
+                    })
+                } else if fee_rate.is_some() {
+                    // User gave a specific fee rate
+                    Some(NewTxFeePolicy::Rate {
+                        rate: fee_rate.unwrap(),
+                    })
+                } else {
+                    // Default behavior
+                    None
                 };
 
                 let wallet = wallet_ref.borrow();
                 // Get the PSBT
-                let (psbt, summary) = wallet.create_psbt(spending_config)?;
+                let (psbt, summary) = wallet.create_psbt(NewTx {
+                    spending_config,
+                    fee_policy,
+                })?;
                 SpendFlow::new(psbt, gargs.network)
                     .transaction_summary(&summary)
                     .fingerprints(&get_fingerprints(&db)?)
@@ -674,4 +711,13 @@ fn parse_recipient(val: &str) -> Result<(Address<NetworkUnchecked>, Option<Amoun
     }
 
     Ok((addr, amount))
+}
+
+fn parse_fee_rate(val: &str) -> Result<f32> {
+    let val = val.parse::<f32>().map_err(Error::generic)?;
+    if val >= 1.0 {
+        Ok(val)
+    } else {
+        Err(Error::generic("Fee rate must be greater or equal to 1.0"))
+    }
 }

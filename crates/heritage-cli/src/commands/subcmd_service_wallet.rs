@@ -2,7 +2,7 @@ use core::any::Any;
 
 use btc_heritage_wallet::{
     btc_heritage::BlockInclusionObjective, errors::Result,
-    heritage_api_client::HeritageServiceClient,
+    heritage_service_api_client::HeritageServiceClient,
 };
 
 /// Sub-command for service wallets.

@@ -1,5 +1,5 @@
 [package]
-name = "heritage-api-client"
+name = "heritage-service-api-client"
 version = "0.1.1"
 description = "The Heritage service API client"
 repository.workspace = true
@@ -14,11 +14,15 @@ license.workspace = true
 btc-heritage= { path = "../btc-heritage" }
 
 serde = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, optional = true }
 
-reqwest = { workspace = true }
-open = { workspace = true }
+reqwest = { workspace = true, optional = true }
+open = { workspace = true, optional = true }
 regex = { workspace = true }
 
 log = { workspace = true }
 thiserror = { workspace = true }
+
+[features]
+default = ["client"]
+client = ["reqwest", "open", "serde_json"]

@@ -11,7 +11,7 @@ repository.workspace = true
 
 [dependencies]
 btc-heritage = { path = "../btc-heritage" }
-heritage-api-client = { path = "../heritage-api-client" }
+heritage-service-api-client = { path = "../heritage-service-api-client" }
 
 bitcoin = { workspace = true }
 miniscript = { workspace = true }

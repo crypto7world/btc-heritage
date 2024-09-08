@@ -3,7 +3,7 @@ use core::{any::Any, cell::RefCell};
 use btc_heritage_wallet::{
     btc_heritage::{AccountXPub, HeirConfig, SingleHeirPubkey},
     errors::{Error, Result},
-    heritage_api_client::{
+    heritage_service_api_client::{
         EmailAddress, HeirContact, HeirCreate, HeirPermission, HeirPermissions,
         HeritageServiceClient, MainContact, Tokens,
     },

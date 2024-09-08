@@ -16,14 +16,15 @@ pub use btc_heritage::{
 pub struct HeritageWalletMeta {
     #[serde(rename = "wallet_id")]
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<Fingerprint>,
     pub last_sync_ts: u64,
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub balance: Option<HeritageWalletBalance>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_inclusion_objective: Option<BlockInclusionObjective>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fee_rate: Option<FeeRate>,
 }
 
@@ -33,6 +34,14 @@ pub struct HeritageWalletMetaCreate {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup: Option<HeritageWalletBackup>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_inclusion_objective: Option<BlockInclusionObjective>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HeritageWalletMetaUpdate {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
     pub block_inclusion_objective: Option<BlockInclusionObjective>,
 }
 
@@ -54,18 +63,32 @@ pub struct NewTxRecipient {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct NewTxDrainTo {
-    pub drain_to: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
-pub enum NewTx {
+pub enum NewTxSpendingConfig {
     Recipients(Vec<NewTxRecipient>),
     DrainTo(NewTxDrainTo),
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum NewTxFeePolicy {
+    Absolute { amount: u64 },
+    Rate { rate: f32 },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct NewTx {
+    pub spending_config: NewTxSpendingConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fee_policy: Option<NewTxFeePolicy>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct NewTxDrainTo {
+    pub drain_to: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum SynchronizationStatus {
     #[default]
@@ -76,7 +99,7 @@ pub enum SynchronizationStatus {
     Failed,
 }
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct Synchronization {
     #[serde(default)]
     pub status: SynchronizationStatus,
@@ -225,7 +248,7 @@ pub struct Heir {
     pub main_contact: MainContact,
     pub permissions: HeirPermissions,
     pub additional_contacts: BTreeSet<HeirContact>,
-    pub owner_email: String,
+    pub owner_email: EmailAddress,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

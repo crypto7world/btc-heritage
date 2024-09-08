@@ -1,5 +1,5 @@
 use btc_heritage::PartiallySignedTransaction;
-use heritage_api_client::{Fingerprint, Txid};
+use heritage_service_api_client::{Fingerprint, Txid};
 
 use crate::errors::Result;
 

@@ -78,7 +78,7 @@ pub enum Error {
     #[error("Heritage API client error: {source}")]
     SendRequestError {
         #[from]
-        source: heritage_api_client::Error,
+        source: heritage_service_api_client::Error,
     },
     #[error("Database error: {0}")]
     DatabaseError(String),

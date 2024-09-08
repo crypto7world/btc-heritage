@@ -2,8 +2,8 @@ pub use crate::auth::Tokens;
 use crate::{
     errors::{Error, Result},
     types::{AccountXPubWithStatus, HeritageWalletMeta, NewTx},
-    Heir, HeirContact, HeirCreate, HeirUpdate, Heritage, HeritageWalletMetaCreate, Synchronization,
-    UnsignedPsbt,
+    Heir, HeirContact, HeirCreate, HeirUpdate, Heritage, HeritageWalletMetaCreate, NewTxDrainTo,
+    Synchronization, UnsignedPsbt,
 };
 use btc_heritage::{
     bitcoin::{psbt::Psbt, Txid},
@@ -302,11 +302,11 @@ impl HeritageServiceClient {
     pub fn post_heritage_create_unsigned_tx(
         &self,
         heritage_id: &str,
-        new_tx: NewTx,
+        drain_to: NewTxDrainTo,
     ) -> Result<(Psbt, TransactionSummary)> {
         let path = format!("heritages/{heritage_id}/create-unsigned-tx");
         let res: UnsignedPsbt =
-            serde_json::from_value(self.api_call(Method::POST, &path, Some(new_tx))?)?;
+            serde_json::from_value(self.api_call(Method::POST, &path, Some(drain_to))?)?;
         Ok(res.into())
     }
 }

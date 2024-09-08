@@ -4,7 +4,7 @@ use btc_heritage::{
     heritage_wallet::WalletAddress,
     AccountXPub, HeritageConfig, HeritageWalletBackup, PartiallySignedTransaction,
 };
-use heritage_api_client::{AccountXPubWithStatus, NewTx, TransactionSummary};
+use heritage_service_api_client::{AccountXPubWithStatus, NewTx, TransactionSummary};
 
 use serde::{Deserialize, Serialize};
 

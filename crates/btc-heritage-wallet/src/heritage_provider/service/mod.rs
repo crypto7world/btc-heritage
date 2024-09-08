@@ -1,7 +1,7 @@
 use btc_heritage::{utils::timestamp_now, Amount, PartiallySignedTransaction};
 
-use heritage_api_client::{
-    Fingerprint, HeritageServiceClient, NewTx, NewTxDrainTo, TransactionSummary,
+use heritage_service_api_client::{
+    Fingerprint, HeritageServiceClient, NewTxDrainTo, TransactionSummary,
 };
 use serde::{Deserialize, Serialize};
 
@@ -65,15 +65,18 @@ impl super::HeritageProvider for ServiceBinding {
     ) -> Result<(PartiallySignedTransaction, TransactionSummary)> {
         Ok(self.service_client().post_heritage_create_unsigned_tx(
             heritage_id,
-            NewTx::DrainTo(NewTxDrainTo {
+            NewTxDrainTo {
                 drain_to: drain_to.to_string(),
-            }),
+            },
         )?)
     }
 }
 
 impl Broadcaster for ServiceBinding {
-    fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<heritage_api_client::Txid> {
+    fn broadcast(
+        &self,
+        psbt: PartiallySignedTransaction,
+    ) -> Result<heritage_service_api_client::Txid> {
         Ok(self.service_client().post_broadcast_tx(psbt)?)
     }
 }

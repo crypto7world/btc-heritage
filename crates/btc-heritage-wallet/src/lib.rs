@@ -28,6 +28,6 @@ pub use bip39::{Language, Mnemonic};
 pub use btc_heritage::bitcoin;
 pub use btc_heritage::miniscript;
 pub use database::{Database, DatabaseItem};
-pub use heritage_api_client;
+pub use heritage_service_api_client;
 pub use psbt_summary::PsbtSummary;
 pub use traits::*;

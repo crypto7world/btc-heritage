@@ -5,7 +5,7 @@ use std::{
 
 use btc_heritage_wallet::{
     errors::{Error, Result},
-    heritage_api_client::Fingerprint,
+    heritage_service_api_client::Fingerprint,
     BoundFingerprint, Database, DatabaseItem, Heir, HeirWallet, Wallet,
 };
 

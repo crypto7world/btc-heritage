@@ -2,7 +2,7 @@ use core::{any::Any, cell::RefCell};
 use std::rc::Rc;
 
 use btc_heritage_wallet::{
-    btc_heritage::AccountXPub, errors::Result, heritage_api_client::AccountXPubWithStatus,
+    btc_heritage::AccountXPub, errors::Result, heritage_service_api_client::AccountXPubWithStatus,
     KeyProvider, Wallet, OnlineWallet,
 };
 

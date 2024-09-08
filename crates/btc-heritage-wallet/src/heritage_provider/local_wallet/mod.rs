@@ -1,6 +1,6 @@
 use btc_heritage::PartiallySignedTransaction;
 
-use heritage_api_client::{Fingerprint, TransactionSummary};
+use heritage_service_api_client::{Fingerprint, TransactionSummary};
 
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +25,7 @@ impl super::HeritageProvider for LocalWallet {
     }
 }
 impl Broadcaster for LocalWallet {
-    fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<heritage_api_client::Txid> {
+    fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<heritage_service_api_client::Txid> {
         todo!()
     }
 }

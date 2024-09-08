@@ -2,7 +2,7 @@ use core::any::Any;
 
 use btc_heritage_wallet::{
     errors::Result,
-    heritage_api_client::{HeritageServiceClient, Tokens},
+    heritage_service_api_client::{HeritageServiceClient, Tokens},
     Database,
 };
 

@@ -4,7 +4,7 @@ use btc_heritage::{
     bitcoin::{bip32::Fingerprint, Address, Amount, Network},
     PartiallySignedTransaction,
 };
-use heritage_api_client::TransactionSummary;
+use heritage_service_api_client::TransactionSummary;
 use serde::Serialize;
 
 use crate::errors::{Error, Result};
@@ -215,8 +215,8 @@ impl
             .output
             .iter()
             .map(|tx_out| {
-                let address = Address::from_script(&tx_out.script_pubkey, network)
-                    .map_err(Error::generic)?;
+                let address =
+                    Address::from_script(&tx_out.script_pubkey, network).map_err(Error::generic)?;
                 let address = address.to_string();
                 let amount = Amount::from_sat(tx_out.value);
 

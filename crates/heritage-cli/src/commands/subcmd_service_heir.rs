@@ -2,7 +2,7 @@ use core::any::Any;
 
 use btc_heritage_wallet::{
     errors::{Error, Result},
-    heritage_api_client::{
+    heritage_service_api_client::{
         EmailAddress, HeirContact, HeirPermission, HeirPermissions, HeirUpdate,
         HeritageServiceClient, MainContact,
     },

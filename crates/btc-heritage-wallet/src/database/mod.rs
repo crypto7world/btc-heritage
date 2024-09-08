@@ -5,7 +5,7 @@ use btc_heritage::bitcoin::Network;
 
 pub(crate) mod dbitem;
 mod utils;
-use heritage_api_client::TokenCache;
+use heritage_service_api_client::TokenCache;
 use redb::{ReadableTable, TableDefinition};
 use serde::{de::DeserializeOwned, Serialize};
 use utils::prepare_data_dir;
@@ -183,21 +183,24 @@ impl Database {
 impl TokenCache for Database {
     fn save_tokens(
         &mut self,
-        tokens: &heritage_api_client::Tokens,
-    ) -> core::result::Result<(), heritage_api_client::Error> {
+        tokens: &heritage_service_api_client::Tokens,
+    ) -> core::result::Result<(), heritage_service_api_client::Error> {
         self.update_item(TOKEN_KEY, tokens).map_err(|e| {
             log::error!("{e}");
-            heritage_api_client::Error::TokenCacheWriteError(e.to_string())
+            heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
         })?;
         Ok(())
     }
 
     fn load_tokens(
         &self,
-    ) -> core::result::Result<Option<heritage_api_client::Tokens>, heritage_api_client::Error> {
+    ) -> core::result::Result<
+        Option<heritage_service_api_client::Tokens>,
+        heritage_service_api_client::Error,
+    > {
         self.get_item(TOKEN_KEY).map_err(|e| {
             log::error!("{e}");
-            heritage_api_client::Error::TokenCacheReadError(e.to_string())
+            heritage_service_api_client::Error::TokenCacheReadError(e.to_string())
         })
     }
 }

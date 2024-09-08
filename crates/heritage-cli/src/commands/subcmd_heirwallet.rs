@@ -3,7 +3,7 @@ use core::{any::Any, cell::RefCell, str::FromStr};
 use btc_heritage_wallet::{
     bitcoin::{address::NetworkUnchecked, psbt::Psbt, Address},
     errors::{Error, Result},
-    heritage_api_client::{Fingerprint, HeritageServiceClient, Tokens},
+    heritage_service_api_client::{Fingerprint, HeritageServiceClient, Tokens},
     heritage_provider::ServiceBinding,
     AnyHeritageProvider, AnyKeyProvider, BoundFingerprint, Database, DatabaseItem, HeirWallet,
     HeritageProvider, KeyProvider, Language, LocalKey, Mnemonic,

@@ -14,7 +14,7 @@ use btc_heritage::{
     AccountXPub, BlockInclusionObjective, HeritageConfig, HeritageWalletBackup,
     PartiallySignedTransaction,
 };
-use heritage_api_client::{
+use heritage_service_api_client::{
     AccountXPubWithStatus, HeritageServiceClient, HeritageWalletMeta, HeritageWalletMetaCreate,
     NewTx, SynchronizationStatus, TransactionSummary,
 };

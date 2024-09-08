@@ -13,7 +13,7 @@ use btc_heritage::{
 mod local_heritage_wallet;
 mod service;
 
-use heritage_api_client::{AccountXPubWithStatus, HeritageWalletMeta, NewTx, TransactionSummary};
+use heritage_service_api_client::{AccountXPubWithStatus, HeritageWalletMeta, NewTx, TransactionSummary};
 use local_heritage_wallet::LocalHeritageWallet;
 use serde::{Deserialize, Serialize};
 pub use service::ServiceBinding;
@@ -142,14 +142,14 @@ macro_rules! impl_online_wallet {
             crate::online_wallet::impl_online_wallet!(get_address(&self) -> Result<String>);
             crate::online_wallet::impl_online_wallet!(list_addresses(&self) -> Result<Vec<btc_heritage::heritage_wallet::WalletAddress>>);
             crate::online_wallet::impl_online_wallet!(list_transactions(&self) -> Result<Vec<btc_heritage::heritage_wallet::TransactionSummary>>);
-            crate::online_wallet::impl_online_wallet!(list_account_xpubs(&self) -> Result<Vec<heritage_api_client::AccountXPubWithStatus>>);
+            crate::online_wallet::impl_online_wallet!(list_account_xpubs(&self) -> Result<Vec<heritage_service_api_client::AccountXPubWithStatus>>);
             crate::online_wallet::impl_online_wallet!(feed_account_xpubs(&mut self, account_xpubs: Vec<btc_heritage::AccountXPub>) -> Result<()>);
             crate::online_wallet::impl_online_wallet!(list_heritage_configs(&self) -> Result<Vec<btc_heritage::HeritageConfig>>);
             crate::online_wallet::impl_online_wallet!(set_heritage_config(&mut self, new_hc: btc_heritage::HeritageConfig) -> Result<btc_heritage::HeritageConfig>);
             crate::online_wallet::impl_online_wallet!(sync(&mut self) -> Result<()>);
             crate::online_wallet::impl_online_wallet!(get_wallet_status(&self) -> Result<crate::online_wallet::WalletStatus>);
             crate::online_wallet::impl_online_wallet!(set_block_inclusion_objective(&mut self, bio: u16) -> Result<crate::online_wallet::WalletStatus>);
-            crate::online_wallet::impl_online_wallet!(create_psbt(&self, new_tx: heritage_api_client::NewTx) -> Result<(btc_heritage::PartiallySignedTransaction, btc_heritage::heritage_wallet::TransactionSummary)>);
+            crate::online_wallet::impl_online_wallet!(create_psbt(&self, new_tx: heritage_service_api_client::NewTx) -> Result<(btc_heritage::PartiallySignedTransaction, btc_heritage::heritage_wallet::TransactionSummary)>);
         }
         impl crate::Broadcaster for $name {
             crate::online_wallet::impl_online_wallet!(broadcast(&self, psbt: btc_heritage::PartiallySignedTransaction) -> Result<btc_heritage::bitcoin::Txid>);

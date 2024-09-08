@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use btc_heritage_wallet::{
     bitcoin::{psbt::Psbt, Network, Txid},
+    btc_heritage::heritage_wallet::TransactionSummary,
     errors::Result,
-    heritage_api_client::{Fingerprint, TransactionSummary},
+    heritage_service_api_client::Fingerprint,
     Broadcaster, KeyProvider, PsbtSummary,
 };
 
