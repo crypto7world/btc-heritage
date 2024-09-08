@@ -300,6 +300,8 @@ pub struct TransactionSummary {
     /// Fee value (sats)
     #[serde(with = "crate::utils::amount_serde")]
     pub fee: Amount,
+    /// Fee rate (sat/kWU)
+    pub fee_rate: FeeRate,
     /// The previous [Txid] of the same block on which this transaction depends. For ordering purposes
     pub parent_txids: HashSet<Txid>,
 }

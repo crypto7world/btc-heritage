@@ -31,7 +31,9 @@ mod tests {
         use core::str::FromStr;
         use serde_json::Value;
 
-        use crate::{heritage_config::HeritageExplorerTrait, subwallet_config::SubwalletConfig};
+        use crate::{
+            heritage_config::HeritageExplorerTrait, subwallet_config::SubwalletConfig, AccountXPub,
+        };
 
         use super::{
             get_test_heritage, get_test_heritage_config, get_test_subwallet_config, TestHeritage,
@@ -130,6 +132,11 @@ mod tests {
                 .to_owned()
         }
 
+        const BAD_OWNER_ACCOUNT_XPUB: &str = "[12345678/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/*";
+
+        pub fn get_bad_account_xpub() -> AccountXPub {
+            AccountXPub::try_from(BAD_OWNER_ACCOUNT_XPUB).unwrap()
+        }
         #[derive(Debug, Clone, Copy)]
         pub enum TestPsbt {
             OwnerRecipients,
@@ -237,7 +244,6 @@ mod tests {
         "[9c7088e3/86'/1'/18']tpubDD2pKf3K2M2pidehdGHhWgQxbwK26FxGgZi7viZGJSyugbZNJgvhb5H1F6GHx817x6wpJ5bKjfP7XmXHyetu6ZVTi7fLxkAASWjohjzwSiM/*",
         "[9c7088e3/86'/1'/19']tpubDD2pKf3K2M2pm4JswF6uHWJMa4Radk1DEB5uEk5eKH145HefKLMKN71uCYFVLHU14JDaDNFERTN4yXzESP7tPpkeXTZm38girQors7bVmhh/*"
     ];
-    const BAD_OWNER_ACCOUNT_XPUB: &str = "[12345678/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/*";
 
     const HEIRS_HERITAGES: [&str; 3] = [
         r#"{
@@ -300,9 +306,6 @@ mod tests {
     }
     pub fn get_test_account_xpub(index: u32) -> AccountXPub {
         AccountXPub::try_from(get_test_account_xpub_str(index)).unwrap()
-    }
-    pub fn get_bad_account_xpub() -> AccountXPub {
-        AccountXPub::try_from(BAD_OWNER_ACCOUNT_XPUB).unwrap()
     }
 
     pub fn get_test_subwallet_config(ad_index: u32, thc: TestHeritageConfig) -> SubwalletConfig {

@@ -287,6 +287,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 let raw_tx = subwallet_tx
                     .transaction
                     .expect("we asked it to be included");
+                let raw_tx_weight = raw_tx.weight();
+
                 // Compose the set of "parent TXs"
                 let parent_txids = raw_tx
                     .input
@@ -323,13 +325,20 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     .filter_map(|i| tx_owned_io_cache.remove(&i.previous_output))
                     .collect::<Vec<_>>();
 
+                let fee_info = subwallet_tx.fee.map(|fee| {
+                    let fee = Amount::from_sat(fee);
+                    let fee_rate = fee / raw_tx_weight;
+                    (fee, fee_rate)
+                });
+
                 txsum_to_add
                     .entry(subwallet_tx.txid)
                     .and_modify(|tx_sum| {
                         tx_sum.owned_inputs.append(&mut owned_inputs);
                         tx_sum.owned_outputs.append(&mut owned_outputs);
-                        if let Some(fee) = subwallet_tx.fee {
-                            tx_sum.fee = Amount::from_sat(fee);
+                        if let Some((fee, fee_rate)) = fee_info {
+                            tx_sum.fee = fee;
+                            tx_sum.fee_rate = fee_rate;
                         }
                     })
                     .or_insert(TransactionSummary {
@@ -337,7 +346,8 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                         confirmation_time: subwallet_tx.confirmation_time,
                         owned_inputs,
                         owned_outputs,
-                        fee: Amount::from_sat(subwallet_tx.fee.unwrap_or(0)),
+                        fee: fee_info.map(|fi| fi.0).unwrap_or(Amount::ZERO),
+                        fee_rate: fee_info.map(|fi| fi.1).unwrap_or(FeeRate::ZERO),
                         parent_txids,
                     });
             }

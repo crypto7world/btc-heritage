@@ -1026,13 +1026,20 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .map(|i| i.previous_output.txid)
             .collect();
 
+        let fee = psbt.fee().expect("our psbt is fresh and sound");
+        let fee_rate = fee_rate
+            .map(|bdk_fee_rate| {
+                FeeRate::from_sat_per_vb_unchecked(bdk_fee_rate.as_sat_per_vb() as u64)
+            })
+            .unwrap_or_else(|| fee / get_expected_tx_weight(&psbt));
         // Create the TransactionSummary
         let tx_summary = TransactionSummary {
             txid: psbt.unsigned_tx.txid(),
             confirmation_time: None,
             owned_inputs,
             owned_outputs,
-            fee: psbt.fee().expect("our psbt is fresh and sound"),
+            fee,
+            fee_rate,
             parent_txids,
         };
 

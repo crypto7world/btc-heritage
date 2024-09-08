@@ -615,6 +615,7 @@ pub mod tests {
             )],
             owned_outputs: vec![],
             fee: Amount::from_sat(10_000),
+            fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::new(),
         };
         let tx_summary_2 = TransactionSummary {
@@ -634,6 +635,7 @@ pub mod tests {
                 Amount::from_sat(100_000),
             )],
             fee: Amount::from_sat(10_000),
+            fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::new(),
         };
         let tx_summary_3 = TransactionSummary {
@@ -658,6 +660,7 @@ pub mod tests {
                 Amount::from_sat(100_000),
             )],
             fee: Amount::from_sat(10_000),
+            fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::from([Txid::from_str(
                 "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
             )
