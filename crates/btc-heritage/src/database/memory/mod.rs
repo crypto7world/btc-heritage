@@ -66,7 +66,7 @@ impl HeritageMonoItemKeyMapper<'_> {
     fn key(&self) -> String {
         let pk = self.pk();
         let sk = self.sk();
-        [pk, "#", &sk].concat()
+        format!("{pk}#{sk}")
     }
 }
 

@@ -183,11 +183,11 @@ pub mod tests {
 
     use crate::{
         bitcoin::{Amount, FeeRate, Txid},
-        heritage_wallet::TransactionSummaryOwnedIO,
-        tests::{
+        dbtests::{
             get_test_account_xpub, get_test_heritage_config, get_test_subwallet_config,
             TestHeritageConfig,
         },
+        heritage_wallet::TransactionSummaryOwnedIO,
     };
 
     use super::*;
