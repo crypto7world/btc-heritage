@@ -18,6 +18,11 @@ pub use bdk::bitcoin;
 pub use bdk::miniscript;
 pub use utils::amount_serde;
 
+#[cfg(feature = "online")]
+pub use bdk::bitcoincore_rpc;
+#[cfg(feature = "online")]
+pub use bdk::electrum_client;
+
 // Publicly exposed BDK types
 pub mod bdk_types {
     pub use bdk::{
