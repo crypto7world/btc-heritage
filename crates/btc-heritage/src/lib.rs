@@ -18,6 +18,19 @@ pub use bdk::bitcoin;
 pub use bdk::miniscript;
 pub use utils::amount_serde;
 
+// Publicly exposed BDK types
+pub mod bdk_types {
+    pub use bdk::{
+        database::{BatchDatabase, BatchOperations, Database, SyncTime},
+        BlockTime, Error, KeychainKind, LocalUtxo, TransactionDetails,
+    };
+
+    #[cfg(feature = "online")]
+    pub use bdk::blockchain::{
+        electrum::ElectrumBlockchain, rpc::RpcBlockchainFactory, BlockchainFactory,
+    };
+}
+
 #[cfg(test)]
 mod tests {
 
