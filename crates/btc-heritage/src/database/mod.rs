@@ -691,6 +691,7 @@ pub mod tests {
         let res = db.list_transaction_summaries();
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         let lst1 = res.unwrap();
+        assert_eq!(lst1.len(), 3);
 
         // Paginate TransactionSummary should give us the same result
         let mut lst2 = vec![];
