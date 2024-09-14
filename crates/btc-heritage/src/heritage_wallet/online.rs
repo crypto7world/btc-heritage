@@ -19,7 +19,7 @@ use crate::{
 };
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
-    pub fn sync<T: BlockchainFactory>(&self, blockchain_factory: T) -> Result<()> {
+    pub fn sync<T: BlockchainFactory>(&self, blockchain_factory: &T) -> Result<()> {
         log::debug!("HeritageWallet::sync");
         // This cache will serve to build the TransactionSummary list
         // /!\ It is crucial that it is filled from oldest to newest so that we can
@@ -45,7 +45,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             // Extract the HeritageConfig of this wallet
             self.sync_subwallet(
                 subwalletconfig,
-                &blockchain_factory,
+                blockchain_factory,
                 &mut tx_owned_io_cache,
                 &mut obsolete_balance,
                 &mut existing_utxos,
@@ -63,7 +63,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             let mut balance = Balance::default();
             self.sync_subwallet(
                 current_subwallet_config,
-                &blockchain_factory,
+                blockchain_factory,
                 &mut tx_owned_io_cache,
                 &mut balance,
                 &mut existing_utxos,
@@ -360,7 +360,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(())
     }
 
-    fn sync_fee_rate<T: BlockchainFactory>(&self, blockchain_factory: T) -> Result<FeeRate> {
+    fn sync_fee_rate<T: BlockchainFactory>(&self, blockchain_factory: &T) -> Result<FeeRate> {
         log::debug!("HeritageWallet::sync_fee_rate");
         let block_inclusion_objective = self.get_block_inclusion_objective()?;
         log::debug!(

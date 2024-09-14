@@ -1698,7 +1698,7 @@ mod tests {
 
         let wallet = HeritageWallet::new(db);
         wallet
-            .sync(FakeBlockchainFactory {
+            .sync(&FakeBlockchainFactory {
                 current_height: get_present(),
             })
             .unwrap();
@@ -1851,7 +1851,7 @@ mod tests {
 
         // Sync
         new_wallet
-            .sync(FakeBlockchainFactory {
+            .sync(&FakeBlockchainFactory {
                 current_height: get_present(),
             })
             .unwrap();
@@ -2983,7 +2983,7 @@ mod tests {
             get_blocktime_for_timestamp(get_present().timestamp + 10 * 365 * 24 * 60 * 60);
         let wallet = setup_wallet();
         wallet
-            .sync(FakeBlockchainFactory {
+            .sync(&FakeBlockchainFactory {
                 current_height: far_future.clone(),
             })
             .unwrap();
@@ -3157,7 +3157,7 @@ mod tests {
             get_blocktime_for_timestamp(get_present().timestamp + 10 * 365 * 24 * 60 * 60);
         let wallet = setup_wallet();
         wallet
-            .sync(FakeBlockchainFactory {
+            .sync(&FakeBlockchainFactory {
                 current_height: far_future.clone(),
             })
             .unwrap();
@@ -3330,7 +3330,7 @@ mod tests {
             get_blocktime_for_timestamp(get_present().timestamp + 10 * 365 * 24 * 60 * 60);
         let wallet = setup_wallet();
         wallet
-            .sync(FakeBlockchainFactory {
+            .sync(&FakeBlockchainFactory {
                 current_height: far_future.clone(),
             })
             .unwrap();
