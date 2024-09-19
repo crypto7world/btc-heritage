@@ -124,7 +124,8 @@ impl HeritageConfig {
     }
 
     /// Returns an iterator over references to the [HeirConfig]s present in the [HeritageConfig].
-    /// No particular order is guaranteed.
+    ///
+    /// For a V1 HeritageConfig, the order is guaranteed to be from the lowest maturity to the highest one.
     pub fn iter_heir_configs(&self) -> impl Iterator<Item = &HeirConfig> {
         match &self.0 {
             InnerHeritageConfig::V1(hc) => hc.iter_heritages().map(|h| h.get_heir_config()),
