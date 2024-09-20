@@ -19,9 +19,7 @@ pub use bdk::miniscript;
 pub use utils::amount_serde;
 
 #[cfg(feature = "online")]
-pub use bdk::bitcoincore_rpc;
-#[cfg(feature = "online")]
-pub use bdk::electrum_client;
+pub use bdk::{bitcoincore_rpc, electrum_client};
 
 // Publicly exposed BDK types
 pub mod bdk_types {
@@ -32,7 +30,9 @@ pub mod bdk_types {
 
     #[cfg(feature = "online")]
     pub use bdk::blockchain::{
-        electrum::ElectrumBlockchain, rpc::RpcBlockchainFactory, BlockchainFactory,
+        electrum::ElectrumBlockchain,
+        rpc::{Auth, RpcBlockchainFactory},
+        BlockchainFactory,
     };
 }
 
