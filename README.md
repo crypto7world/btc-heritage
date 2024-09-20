@@ -74,9 +74,9 @@ Usually, protecting yourself against those situations require one or more truste
 
 Visit [btcherit.com][heritage-wallet-service], the online service built upon the `btc-heritage` library, to start using the **Heritage wallet** and learn more.
 
-You will need to install the [heritage-cli](crates/heritage-cli/README.md).
+You will need to install the [heritage-cli](https://github.com/crypto7world/heritage-cli).
 
-The project is a Most Valuable Product (MVP) right now: I use it to manage my own BTC confidently and so can you. But for now only one use-case is available: using the public service [btcherit.com][heritage-wallet-service] for the on-chain wallet management and the [heritage-cli](crates/heritage-cli/README.md) for key management, preferably with a [Ledger](https://www.ledger.com/) hardware-wallet device.
+The project is a Most Valuable Product (MVP) right now: I use it to manage my own BTC confidently and so can you. But for now only one use-case is available: using the public service [btcherit.com][heritage-wallet-service] for the on-chain wallet management and the [heritage-cli](https://github.com/crypto7world/heritage-cli) for key management, preferably with a [Ledger](https://www.ledger.com/) hardware-wallet device.
 
 While I hope the [btcherit.com][heritage-wallet-service] service will help me pay my bills, I do not wish to lock users in and it is very important for me to allow people to manage their coins on their own if they wish to. So if you do not wish to use an online service, star/watch the project and be patient: it is coming before the end of 2024!
 
@@ -88,14 +88,9 @@ While I hope the [btcherit.com][heritage-wallet-service] service will help me pa
 
 All the software provided (libs and bins) is working and can be safely used for Bitcoin's holdings.
 
-We are using [Semantic Versioning](https://github.com/semver/semver) (MAJOR.MINOR.PATCH) for the following crates:
+We are using [Semantic Versioning](https://github.com/semver/semver) (MAJOR.MINOR.PATCH).
 
-- btc-heritage
-- heritage-cli
-
-The other crates version are managed more "freely" (if at all) for now.
-
-Everything is still in the initial-development stage (version 0.x.x). While you can expect every new version to be in working order, you _SHOULD NOT_ expect the APIs or the CLI to be stable. That being said, new features and breaking changes will only happen on MINOR version increment, not on PATCH version increment.
+Everything is still in the initial-development stage (version 0.x.x). While you can expect every new version to be in working order, you _SHOULD NOT_ expect the APIs to be stable. That being said, new features and breaking changes will only happen on MINOR version increment, not on PATCH version increment.
 
 <!-- ROADMAP -->
 
