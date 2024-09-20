@@ -142,7 +142,9 @@ mod tests {
     impl_bdk_test!(test_del_script_pubkey);
     impl_bdk_test!(test_utxo);
     impl_bdk_test!(test_raw_tx);
+    impl_bdk_test!(test_batch_raw_tx);
     impl_bdk_test!(test_tx);
+    impl_bdk_test!(test_batch_tx);
     impl_bdk_test!(test_list_transaction);
     impl_bdk_test!(test_last_index);
     impl_bdk_test!(test_sync_time);
