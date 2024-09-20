@@ -10,10 +10,12 @@ use btc_heritage::{
 
 use serde::{Deserialize, Serialize};
 
-mod local_wallet;
+mod local;
 mod service;
-use local_wallet::LocalWallet;
+pub use local::LocalWallet;
 pub use service::ServiceBinding;
+
+type Timestamp = u64;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Heritage {
@@ -21,9 +23,9 @@ pub struct Heritage {
     #[serde(with = "btc_heritage::amount_serde")]
     pub value: Amount,
     /// The timestamp after which the Heir is able to spend
-    pub maturity: u64,
+    pub maturity: Timestamp,
     /// The maturity of the next heir, if any
-    pub next_heir_maturity: Option<u64>,
+    pub next_heir_maturity: Option<Timestamp>,
 }
 
 /// This trait regroup the functions of an Heritage wallet that does not need

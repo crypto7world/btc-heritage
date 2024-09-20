@@ -38,7 +38,18 @@ impl HeirWallet {
     }
 }
 
-crate::database::dbitem::impl_db_item!(HeirWallet, "heirwallet#", "default_heirwallet_name");
+crate::database::dbitem::impl_db_item!(
+    HeirWallet,
+    "heirwallet#",
+    "default_heirwallet_name"
+    fn delete(&self, db: &mut crate::Database) -> crate::database::errors::Result<()> {
+        if let AnyHeritageProvider::LocalWallet(lw) = &self.heritage_provider {
+            lw.local_heritage_wallet().delete(db)?;
+        }
+        db.delete_item::<Self>(&Self::name_to_key(self.name()))?;
+        Ok(())
+    }
+);
 crate::key_provider::impl_key_provider!(HeirWallet);
 crate::heritage_provider::impl_heritage_provider!(HeirWallet);
 

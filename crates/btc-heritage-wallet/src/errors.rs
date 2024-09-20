@@ -18,6 +18,10 @@ pub enum Error {
         "This operation cannot be performed because the key provider is not the expected type ({0})"
     )]
     IncorrectKeyProvider(&'static str),
+    #[error(
+        "This operation cannot be performed because the heirtage provider is not the expected type ({0})"
+    )]
+    IncorrectHeritageProvider(&'static str),
     #[error("This operation cannot be performed because there is no heritage provider component")]
     MissingHeritageProvider,
     #[error("A wallet cannot have neither online and offline components")]
@@ -26,18 +30,6 @@ pub enum Error {
     IncoherentFingerprints,
     #[error("The online wallet does not yet have a bound fingerprint")]
     OnlineWalletFingerprintNotPresent,
-    #[error("No item named \"{0}\" in the database")]
-    InexistantItem(String),
-    #[error("An item named \"{0}\" is already in the database")]
-    ItemAlreadyExist(String),
-    #[error("No wallet named \"{0}\" in the database")]
-    InexistantWallet(String),
-    #[error("A wallet named \"{0}\" is already in the database")]
-    WalletAlreadyExist(String),
-    #[error("No heir named \"{0}\" in the database")]
-    InexistantHeir(String),
-    #[error("An heir named \"{0}\" is already in the database")]
-    HeirAlreadyExist(String),
     #[error("The Descriptor {descriptor} is invalid: {error}")]
     InvalidDescriptor { descriptor: String, error: String },
     #[error("{0}")]
@@ -68,20 +60,31 @@ pub enum Error {
     IncoherentLedgerWalletFingerprint,
     #[error("The retrieved wallet fingerprint is not the one stored in the local database. Wrong password.")]
     IncoherentLocalKeyFingerprint,
-    #[error("The key {0} is already in the database")]
-    KeyAlreadyExists(String),
     #[error("Heritage error: {source}")]
     HeritageError {
         #[from]
         source: btc_heritage::errors::Error,
+    },
+    #[error("Heritage database error: {source}")]
+    HeritageDbError {
+        #[from]
+        source: btc_heritage::errors::DatabaseError,
     },
     #[error("Heritage API client error: {source}")]
     SendRequestError {
         #[from]
         source: heritage_service_api_client::Error,
     },
-    #[error("Database error: {0}")]
-    DatabaseError(String),
+    #[error("Database error: {source}")]
+    DatabaseError {
+        #[from]
+        source: crate::database::errors::DbError,
+    },
+    #[error("SerDe error: {source}")]
+    SerDeError {
+        #[from]
+        source: serde_json::Error,
+    },
     #[error("Ledger client error: {0}")]
     LedgerClientError(String),
     #[error("Generic error: {0}")]
@@ -92,45 +95,9 @@ impl Error {
         Self::Generic(e.to_string())
     }
 }
-impl From<serde_json::Error> for Error {
-    fn from(value: serde_json::Error) -> Self {
-        Self::Generic(format!("{value}"))
-    }
-}
 
 impl<T: Debug> From<ledger_bitcoin_client::error::BitcoinClientError<T>> for Error {
     fn from(value: ledger_bitcoin_client::error::BitcoinClientError<T>) -> Self {
         Self::LedgerClientError(format!("{value:?}"))
-    }
-}
-
-impl From<redb::Error> for Error {
-    fn from(value: redb::Error) -> Self {
-        Self::DatabaseError(format!("{value}"))
-    }
-}
-impl From<redb::DatabaseError> for Error {
-    fn from(value: redb::DatabaseError) -> Self {
-        Self::DatabaseError(format!("{value}"))
-    }
-}
-impl From<redb::TableError> for Error {
-    fn from(value: redb::TableError) -> Self {
-        Self::DatabaseError(format!("{value}"))
-    }
-}
-impl From<redb::TransactionError> for Error {
-    fn from(value: redb::TransactionError) -> Self {
-        Self::DatabaseError(format!("{value}"))
-    }
-}
-impl From<redb::CommitError> for Error {
-    fn from(value: redb::CommitError) -> Self {
-        Self::DatabaseError(format!("{value}"))
-    }
-}
-impl From<redb::StorageError> for Error {
-    fn from(value: redb::StorageError) -> Self {
-        Self::DatabaseError(format!("{value}"))
     }
 }

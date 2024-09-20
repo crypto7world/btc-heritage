@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    database::DatabaseItem,
+    database::{errors::DbError, DatabaseItem},
     errors::{Error, Result},
     key_provider::{AnyKeyProvider, KeyProvider},
     online_wallet::{AnyOnlineWallet, OnlineWallet},
@@ -73,12 +73,20 @@ crate::database::dbitem::impl_db_item!(
     Wallet,
     "wallet#",
     "default_wallet_name"
-    fn load(db: &crate::Database, name: &str) -> Result<Self> {
+    fn load(db: &crate::Database, name: &str) -> crate::database::errors::Result<Self> {
+        let key = Self::name_to_key(name);
         let mut wallet = db
-            .get_item::<Self>(&Self::name_to_key(name))?
-            .ok_or(Error::InexistantItem(name.to_owned()))?;
-        wallet.control_fingerprints()?;
+            .get_item::<Self>(&key)?
+            .ok_or(crate::database::errors::DbError::KeyDoesNotExists(key))?;
+        wallet.control_fingerprints().map_err(|e|DbError::generic(e))?;
         Ok(wallet)
+    }
+    fn delete(&self, db: &mut crate::Database) -> crate::database::errors::Result<()> {
+        if let AnyOnlineWallet::Local(lw) = &self.online_wallet{
+            lw.delete(db)?;
+        }
+        db.delete_item::<Self>(&Self::name_to_key(self.name()))?;
+        Ok(())
     }
 );
 crate::key_provider::impl_key_provider!(Wallet);

@@ -1,7 +1,7 @@
 use serde::{de::DeserializeOwned, Serialize};
 
+use super::errors::{DbError, Result};
 use super::Database;
-use crate::errors::{Error, Result};
 
 pub trait DatabaseItem: Serialize + DeserializeOwned {
     fn item_key_prefix() -> &'static str;
@@ -45,8 +45,9 @@ pub trait DatabaseItem: Serialize + DeserializeOwned {
 
     /// Verify that the given item name is not already in the database
     fn verify_name_is_free(db: &Database, name: &str) -> Result<()> {
-        if db.contains_key(&Self::name_to_key(name))? {
-            Err(Error::ItemAlreadyExist(name.to_owned()))
+        let key = Self::name_to_key(name);
+        if db.contains_key(&key)? {
+            Err(DbError::KeyAlreadyExists(key))
         } else {
             Ok(())
         }
@@ -68,8 +69,8 @@ pub trait DatabaseItem: Serialize + DeserializeOwned {
     }
 
     fn load(db: &Database, name: &str) -> Result<Self> {
-        db.get_item(&Self::name_to_key(name))?
-            .ok_or(Error::InexistantItem(name.to_owned()))
+        let key = Self::name_to_key(name);
+        db.get_item(&key)?.ok_or(DbError::KeyDoesNotExists(key))
     }
 
     fn db_rename(&mut self, db: &mut Database, new_name: String) -> Result<()> {

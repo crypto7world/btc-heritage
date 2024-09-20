@@ -108,8 +108,8 @@ macro_rules! impl_key_provider {
             $self.key_provider.$fn_name($($a),*)
         }
     };
-    ($name:ident) => {
-        impl $name {
+    ($name:ident$(<$lf:lifetime>)?) => {
+        impl $name$(<$lf>)? {
             pub fn key_provider(&self) -> &AnyKeyProvider {
                 &self.key_provider
             }
@@ -117,7 +117,7 @@ macro_rules! impl_key_provider {
                 &mut self.key_provider
             }
         }
-        impl KeyProvider for $name {
+        impl KeyProvider for $name$(<$lf>)? {
             crate::key_provider::impl_key_provider!(sign_psbt(&self, psbt: &mut btc_heritage::PartiallySignedTransaction) -> crate::errors::Result<usize>);
             crate::key_provider::impl_key_provider!(derive_accounts_xpubs(&self, range: core::ops::Range<u32>) -> crate::errors::Result<Vec<btc_heritage::AccountXPub>>);
             crate::key_provider::impl_key_provider!(derive_heir_config(&self, heir_config_type: crate::key_provider::HeirConfigType) -> crate::errors::Result<btc_heritage::HeirConfig>);

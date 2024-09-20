@@ -10,7 +10,7 @@ repository.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-btc-heritage = { path = "../btc-heritage" }
+btc-heritage = { path = "../btc-heritage",  features = ["online"] }
 heritage-service-api-client = { path = "../heritage-service-api-client" }
 
 bitcoin = { workspace = true }
@@ -29,3 +29,7 @@ serde_json = { workspace = true }
 
 log = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+btc-heritage = { path = "../btc-heritage", features = ["database-tests"] }
+tempfile = "3"

@@ -10,11 +10,13 @@ use btc_heritage::{
     PartiallySignedTransaction,
 };
 
-mod local_heritage_wallet;
+mod local;
 mod service;
 
-use heritage_service_api_client::{AccountXPubWithStatus, HeritageWalletMeta, NewTx, TransactionSummary};
-use local_heritage_wallet::LocalHeritageWallet;
+use heritage_service_api_client::{
+    AccountXPubWithStatus, HeritageWalletMeta, NewTx, TransactionSummary,
+};
+pub use local::{AnyBlockchainFactory, LocalHeritageWallet};
 use serde::{Deserialize, Serialize};
 pub use service::ServiceBinding;
 

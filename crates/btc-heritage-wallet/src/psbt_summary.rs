@@ -115,7 +115,7 @@ impl TryFrom<(&PartiallySignedTransaction, Network)> for PsbtSummary {
 impl
     TryFrom<(
         &PartiallySignedTransaction,
-        &HashMap<Fingerprint, String>,
+        &HashMap<Fingerprint, Vec<String>>,
         Network,
     )> for PsbtSummary
 {
@@ -124,7 +124,7 @@ impl
     fn try_from(
         value: (
             &PartiallySignedTransaction,
-            &HashMap<Fingerprint, String>,
+            &HashMap<Fingerprint, Vec<String>>,
             Network,
         ),
     ) -> std::result::Result<Self, Self::Error> {
@@ -146,7 +146,7 @@ impl
     TryFrom<(
         &PartiallySignedTransaction,
         &TransactionSummary,
-        &HashMap<Fingerprint, String>,
+        &HashMap<Fingerprint, Vec<String>>,
         Network,
     )> for PsbtSummary
 {
@@ -156,7 +156,7 @@ impl
         value: (
             &PartiallySignedTransaction,
             &TransactionSummary,
-            &HashMap<Fingerprint, String>,
+            &HashMap<Fingerprint, Vec<String>>,
             Network,
         ),
     ) -> std::result::Result<Self, Self::Error> {
@@ -169,7 +169,7 @@ impl
     TryFrom<(
         &PartiallySignedTransaction,
         Option<&TransactionSummary>,
-        Option<&HashMap<Fingerprint, String>>,
+        Option<&HashMap<Fingerprint, Vec<String>>>,
         Network,
     )> for PsbtSummary
 {
@@ -179,7 +179,7 @@ impl
         value: (
             &PartiallySignedTransaction,
             Option<&TransactionSummary>,
-            Option<&HashMap<Fingerprint, String>>,
+            Option<&HashMap<Fingerprint, Vec<String>>>,
             Network,
         ),
     ) -> Result<Self> {
@@ -221,6 +221,7 @@ impl
                         known_owning_fingerprints
                             .iter()
                             .filter_map(|f| wallet_fingerprints.get(f))
+                            .flatten()
                             .cloned()
                             .collect(),
                     )
