@@ -26,7 +26,7 @@
   <h3 align="center">BTC Heritage</h3>
 
   <p align="center">
-    A Rust library implementing primitives for a Bitcoin Taproot wallet managing on-chain inheritance of coins
+    Rust crates implementing primitives for a Bitcoin Taproot wallet managing on-chain inheritance of coins
     <br />
     <a href="https://btcherit.com"><strong>Explore the Heritage wallet service »</strong></a>
     <br />
@@ -57,7 +57,7 @@
 
 ## About The Project
 
-The `btc-heritage` library provides the fundations of the **Heritage wallet**: a Taproot Bitcoin wallet developped in _Rust_ with built-in, on-chain protections against loosing your coins and inheritance.
+The repository hosts 3 crates supporting the Bitcoin Heritage wallet: a Taproot Bitcoin wallet developped in _Rust_ with built-in, on-chain protections against loosing your coins and inheritance.
 
 The basic principle is a dead-man switch: should you become unable to spend your coins for whatever reasons, alternative spending paths (i.e. TapScripts) will eventualy open, allowing other private keys to spend your coins, following a schedule you configure **enforced by the Bitcoin blockchain**. On the other hand, if you are able to spend your coin you can regularly "reset" this schedule simply by moving your coins to a new address of your wallet.
 
@@ -70,15 +70,21 @@ In both cases, using the **Heritage wallet**, your coins will be recoverable aft
 
 Usually, protecting yourself against those situations require one or more trusted third-party with whom you share control of your coins to various degrees. The **Heritage wallet** offers a solution without such compromise: you retain exclusive control of your coins.
 
+The 3 crates roles are:
+
+- The `btc-heritage` library provides the fundations of the on-chain management, i.e. generating and tracking addresses, synchronizing with the blockchain, creating PSBT, basicaly everything not related to the private keys of the wallet;
+- The `btc-heritage-wallet` library builds upon `btc-heritage` to add the features required to build a complete wallet software, most notably private keys management and signing capabilities;
+- The `heritage-service-api-client` library exposes serializable types to communicate with the Heritage service API (see [btcherit.com][heritage-wallet-service]).
+
 ## Usage
 
 Visit [btcherit.com][heritage-wallet-service], the online service built upon the `btc-heritage` library, to start using the **Heritage wallet** and learn more.
 
-You will need to install the [heritage-cli](https://github.com/crypto7world/heritage-cli).
+You will need to install the [heritage-cli] to manage your wallet's private keys.
 
-The project is a Most Valuable Product (MVP) right now: I use it to manage my own BTC confidently and so can you. But for now only one use-case is available: using the public service [btcherit.com][heritage-wallet-service] for the on-chain wallet management and the [heritage-cli](https://github.com/crypto7world/heritage-cli) for key management, preferably with a [Ledger](https://www.ledger.com/) hardware-wallet device.
+The project is in a beta-phase: I use it to manage my own BTC confidently and so can you.
 
-While I hope the [btcherit.com][heritage-wallet-service] service will help me pay my bills, I do not wish to lock users in and it is very important for me to allow people to manage their coins on their own if they wish to. So if you do not wish to use an online service, star/watch the project and be patient: it is coming before the end of 2024!
+While I hope the [btcherit.com][heritage-wallet-service] service will help me pay my bills, I do not wish to lock users in and it is very important for me to allow people to manage their coins on their own if they wish to. So if you do not wish to use an online service, you can use only the [heritage-cli] with your own Bitcoin or Electrum node for synchronization!
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -86,7 +92,7 @@ While I hope the [btcherit.com][heritage-wallet-service] service will help me pa
 
 ## Stability and versioning
 
-All the software provided (libs and bins) is working and can be safely used for Bitcoin's holdings.
+All the software provided is in working order and can be safely used to manage Bitcoin's holdings (I do since February 2024).
 
 We are using [Semantic Versioning](https://github.com/semver/semver) (MAJOR.MINOR.PATCH).
 
@@ -104,8 +110,8 @@ The roadmap is accurate regarding my immediate goals for the project.
 - [x] Add support for hardware wallets:
   - [x] Ledger ([ledger.com](https://www.ledger.com/))
   - [ ] ~~Trezor~~ (unfortunately Taproot script paths not supported currently) ([trezor.io](https://trezor.io/))
-- [ ] Capability for the CLI to use a user-provided Bitcoin Core or Electrum node instead of the service
-- [ ] Create a GUI Heritage wallet tool (see [btcherit.com][heritage-wallet-service], the online service born from this lib in the time being)
+- [x] Capability for the wallet library to use a custom Bitcoin Core or Electrum node instead of the service
+- [ ] Create a GUI Heritage wallet tool (see [btcherit.com][heritage-wallet-service], the online service in the time being)
 - [ ] Add support for MultiSig N-of-M Heir to allow kind-of inheritance sharing
 - [ ] Add lightning support
 - [ ] Eliminate dependency to BDK
@@ -193,6 +199,7 @@ Project Link: [https://github.com/crypto7world/btc-heritage][repo-url]
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
 
 [heritage-wallet-service]: https://btcherit.com
+[heritage-cli]: https://github.com/crypto7world/heritage-cli
 [repo-url]: https://github.com/crypto7world/btc-heritage
 [contributors-shield]: https://img.shields.io/github/contributors/crypto7world/btc-heritage.svg?style=for-the-badge
 [contributors-url]: https://github.com/crypto7world/btc-heritage/graphs/contributors
