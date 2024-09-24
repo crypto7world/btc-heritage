@@ -5,12 +5,12 @@ use serde::{Deserialize, Serialize};
 use crate::errors::{Error, Result};
 
 #[derive(Debug, Deserialize)]
-struct DeviceAuthorizationResponse {
-    device_code: String,
-    user_code: String,
-    verification_uri: String,
-    interval: u32,
-    expires_in: u32,
+pub struct DeviceAuthorizationResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub interval: u32,
+    pub expires_in: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,7 +48,10 @@ pub struct Tokens {
 }
 
 impl Tokens {
-    pub fn new(auth_url: &str, client_id: &str) -> Result<Self> {
+    pub fn new<F>(auth_url: &str, client_id: &str, callback: F) -> Result<Self>
+    where
+        F: FnOnce(DeviceAuthorizationResponse) -> Result<()>,
+    {
         log::debug!("Tokens::new - auth_url={auth_url} client_id={client_id}");
         let client = Client::new();
 
@@ -60,31 +63,21 @@ impl Tokens {
 
         let device_auth_response: DeviceAuthorizationResponse = serde_json::from_str(&body)?;
         let auth_expiration_ts = timestamp_now() + device_auth_response.expires_in as u64;
+        let device_code = device_auth_response.device_code.clone();
+        let sleep_interval = device_auth_response.interval as u64;
 
-        println!(
-            "Go to {} and enter the code: {}",
-            device_auth_response.verification_uri, device_auth_response.user_code
-        );
-
-        let verification_uri_complete = format!(
-            "{}?user_code={}",
-            device_auth_response.verification_uri, device_auth_response.user_code
-        );
-
-        _ = open::that(verification_uri_complete);
+        callback(device_auth_response)?;
 
         loop {
             if timestamp_now() >= auth_expiration_ts {
                 return Err(Error::AuthenticationProcessExpired);
             }
-            std::thread::sleep(core::time::Duration::from_secs(
-                device_auth_response.interval as u64,
-            ));
+            std::thread::sleep(core::time::Duration::from_secs(sleep_interval));
 
             log::debug!("Trying to retrieve tokens");
             let req = client.post(auth_url).form(&[
                 ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
-                ("device_code", &device_auth_response.device_code),
+                ("device_code", &device_code),
                 ("client_id", client_id),
             ]);
 

@@ -17,7 +17,6 @@ serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 
 reqwest = { workspace = true, optional = true }
-open = { workspace = true, optional = true }
 regex = { workspace = true }
 
 log = { workspace = true }
@@ -25,4 +24,4 @@ thiserror = { workspace = true }
 
 [features]
 default = ["client"]
-client = ["reqwest", "open", "serde_json"]
+client = ["reqwest", "serde_json"]
