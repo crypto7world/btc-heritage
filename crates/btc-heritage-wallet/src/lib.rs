@@ -11,6 +11,9 @@ pub mod key_provider;
 pub mod online_wallet;
 
 pub use btc_heritage;
+pub mod ledger {
+    pub use ledger_bitcoin_client::{wallet::Version, WalletPolicy, WalletPubKey};
+}
 
 pub use heritage_provider::{AnyHeritageProvider, Heritage};
 pub use key_provider::{

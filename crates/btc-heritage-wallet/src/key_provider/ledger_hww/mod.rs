@@ -129,13 +129,22 @@ impl LedgerKey {
             .as_ref()
             .expect("ledger client should have been initialized")
     }
-    pub fn register_policies(&mut self, policies: &Vec<LedgerPolicy>) -> Result<usize> {
+    pub fn register_policies<P>(
+        &mut self,
+        policies: &Vec<LedgerPolicy>,
+        progress: P,
+    ) -> Result<usize>
+    where
+        P: Fn(&WalletPolicy),
+    {
         let client = self.ledger_client();
         let register_results = policies
             .iter()
             .map(|policy| {
                 let account_id = policy.get_account_id();
                 let wallet_policy: WalletPolicy = policy.into();
+                // Call the callback progress function so that the caller may display something
+                progress(&wallet_policy);
                 let (id, hmac) = client.register_wallet(&wallet_policy)?;
                 Ok::<_, Error>((
                     account_id,

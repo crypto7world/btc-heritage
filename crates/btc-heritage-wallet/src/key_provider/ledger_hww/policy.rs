@@ -105,7 +105,7 @@ impl core::fmt::Display for LedgerPolicy {
 }
 impl From<LedgerPolicy> for String {
     fn from(value: LedgerPolicy) -> Self {
-        value.to_string()
+        value.0
     }
 }
 impl TryFrom<&str> for LedgerPolicy {
