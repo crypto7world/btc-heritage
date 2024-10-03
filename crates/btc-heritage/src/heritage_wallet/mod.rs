@@ -136,8 +136,15 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         log::info!("HeritageWallet::restore_backup - All SubwalletConfig(s) written to DB");
 
         for (swc, swc_backup) in swc_and_backups.into_iter() {
-            if swc_backup.last_external_index.is_some() || swc_backup.last_change_index.is_some() {
+            if let Some(max_index) =
+                Ord::max(swc_backup.last_external_index, swc_backup.last_change_index)
+            {
                 let sw = self.get_subwallet(&swc)?;
+                // We must ensure addresses are cached up to the max index we are setting
+                // or it may become a fucking mess as BDK we never be able to cache
+                // the previous address if the user get a new address before syncing.
+                sw.ensure_addresses_cached(max_index + 1)
+                    .map_err(|e| Error::FailedToResetAddressIndex(e.to_string()))?;
                 if let Some(last_external_index) = swc_backup.last_external_index {
                     log::info!(
                         "HeritageWallet::restore_backup - \
