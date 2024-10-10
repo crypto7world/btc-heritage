@@ -192,7 +192,7 @@ pub enum HeirContact {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HeirPermission {
-    /// The Heir can see informations before maturity
+    /// The Heir can see the inheritance
     IsHeir,
     /// The Heir can see the email of the owner
     OwnerEmail,
@@ -200,9 +200,12 @@ pub enum HeirPermission {
     Amount,
     /// The Heir can see the maturity dates of their inheritance
     Maturity,
-    /// The heir can see their position in the HeritageConfigs and the total number of heirs
+    /// The heir can see their position in the Heritage Configurations and the total number of heirs
     Position,
-    //TODO: Add UtxoDetails
+    /// [Only valid AFTER maturity] The heir can see the full Bitcoin Descriptors of the Heritage Configurations.
+    /// Mandatory if the Heir's wallet is a Ledger, as it will request the full descriptor before spending.
+    /// Note that it means the heir will be able to infer the public keys of other heirs and their own position.
+    FullDescriptor,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
