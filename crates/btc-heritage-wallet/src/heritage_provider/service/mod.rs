@@ -1,4 +1,4 @@
-use btc_heritage::{utils::timestamp_now, Amount, PartiallySignedTransaction};
+use btc_heritage::{Amount, PartiallySignedTransaction};
 
 use heritage_service_api_client::{
     Fingerprint, HeritageServiceClient, NewTxDrainTo, TransactionSummary,
@@ -43,7 +43,7 @@ impl super::HeritageProvider for ServiceBinding {
                     .heir_config
                     .is_some_and(|hc| hc.fingerprint() == self.fingerprint)
                     && api_h.value.is_some()
-                    && api_h.maturity.is_some_and(|ts| ts < timestamp_now())
+                    && api_h.maturity.is_some()
                     && api_h.next_heir_maturity.is_some()
                 {
                     Some(Heritage {
