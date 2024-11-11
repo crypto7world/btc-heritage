@@ -730,13 +730,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         log::debug!("HeritageWallet::create_psbt - wallet.build_tx()");
         let mut tx_builder = current_subwallet.build_tx();
 
-        // // We will always use offline signing so we include the redeem witness scripts
-        // // TODO: Verify if this is actually necessary => Seems completely useless
-        // log::debug!(
-        //     "HeritageWallet::create_psbt - tx_builder.include_output_redeem_witness_script()"
-        // );
-        // tx_builder.include_output_redeem_witness_script();
-
         // Assume block height
         log::debug!(
             "HeritageWallet::create_psbt - tx_builder.current_height({})",
