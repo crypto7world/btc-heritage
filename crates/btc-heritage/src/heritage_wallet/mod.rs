@@ -1000,27 +1000,28 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         let owned_inputs = psbt
             .inputs
             .iter()
-            .map(|i| {
-                let utxo = i.witness_utxo.as_ref().expect("we only deal with Taproot");
-                TransactionSummaryOwnedIO(
-                    (&utxo.script_pubkey)
+            .zip(psbt.unsigned_tx.input.iter())
+            .map(|(pi, ti)| {
+                let utxo = pi.witness_utxo.as_ref().expect("we only deal with Taproot");
+                TransactionSummaryOwnedIO {
+                    outpoint: ti.previous_output,
+                    address: (&utxo.script_pubkey)
                         .try_into()
                         .expect("comes from the PSBT"),
-                    Amount::from_sat(utxo.value),
-                )
+                    amount: Amount::from_sat(utxo.value),
+                }
             })
             .collect::<Vec<_>>();
+        // Compute the future TxId
+        let txid = psbt.unsigned_tx.txid();
         // Creating the owned_outputs Vec
-        let owned_outputs = psbt
-            .unsigned_tx
-            .output
-            .iter()
-            .filter(|&o| self.is_mine(o.script_pubkey.as_script()).unwrap_or(false))
-            .map(|o| {
-                TransactionSummaryOwnedIO(
-                    (&o.script_pubkey).try_into().expect("comes from the PSBT"),
-                    Amount::from_sat(o.value),
-                )
+        let owned_outputs = (0u32..)
+            .zip(psbt.unsigned_tx.output.iter())
+            .filter(|&(_, o)| self.is_mine(o.script_pubkey.as_script()).unwrap_or(false))
+            .map(|(i, o)| TransactionSummaryOwnedIO {
+                outpoint: OutPoint { txid, vout: i },
+                address: (&o.script_pubkey).try_into().expect("comes from the PSBT"),
+                amount: Amount::from_sat(o.value),
             })
             .collect::<Vec<_>>();
 
@@ -1040,7 +1041,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .unwrap_or_else(|| fee / get_expected_tx_weight(&psbt));
         // Create the TransactionSummary
         let tx_summary = TransactionSummary {
-            txid: psbt.unsigned_tx.txid(),
+            txid,
             confirmation_time: None,
             owned_inputs,
             owned_outputs,
@@ -2351,7 +2352,7 @@ mod tests {
         let tx_sums = res.unwrap();
         assert_eq!(tx_sums.len(), 5);
         assert!(tx_sums.iter().all(|txs| txs.owned_outputs.len() == 1
-            && txs.owned_outputs[0].1 == Amount::from_btc(1.0).unwrap()
+            && txs.owned_outputs[0].amount == Amount::from_btc(1.0).unwrap()
             && txs.owned_inputs.len() == 0));
     }
 
@@ -2516,12 +2517,16 @@ mod tests {
         assert_eq!(tx_sum.confirmation_time, None);
 
         assert_eq!(
-            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.amount)
+                .sum::<Amount>(),
             Amount::from_btc(3.39996080).unwrap()
         );
         // Uses all "old" UTXO
         assert_eq!(
-            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum.owned_inputs.iter().map(|o| o.amount).sum::<Amount>(),
             Amount::from_btc(4.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00003920).unwrap());
@@ -2635,12 +2640,16 @@ mod tests {
 
         // Receive nothing, draining
         assert_eq!(
-            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.amount)
+                .sum::<Amount>(),
             Amount::from_btc(0.0).unwrap()
         );
         // Uses all "old" UTXO
         assert_eq!(
-            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum.owned_inputs.iter().map(|o| o.amount).sum::<Amount>(),
             Amount::from_btc(5.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00003410).unwrap());
@@ -2803,12 +2812,16 @@ mod tests {
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
         assert_eq!(
-            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.amount)
+                .sum::<Amount>(),
             Amount::from_btc(0.0).unwrap()
         );
         // Uses all "old" UTXO
         assert_eq!(
-            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum.owned_inputs.iter().map(|o| o.amount).sum::<Amount>(),
             Amount::from_btc(4.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00003960).unwrap());
@@ -2935,12 +2948,16 @@ mod tests {
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
         assert_eq!(
-            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.amount)
+                .sum::<Amount>(),
             Amount::from_btc(0.0).unwrap()
         );
         // Uses only the eligible UTXO
         assert_eq!(
-            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum.owned_inputs.iter().map(|o| o.amount).sum::<Amount>(),
             Amount::from_btc(1.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00001390).unwrap());
@@ -3146,12 +3163,16 @@ mod tests {
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
         assert_eq!(
-            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.amount)
+                .sum::<Amount>(),
             Amount::from_btc(0.0).unwrap()
         );
         // Uses only the eligible UTXO
         assert_eq!(
-            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum.owned_inputs.iter().map(|o| o.amount).sum::<Amount>(),
             Amount::from_btc(5.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00004810).unwrap());
@@ -3319,12 +3340,16 @@ mod tests {
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
         assert_eq!(
-            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.amount)
+                .sum::<Amount>(),
             Amount::from_btc(0.0).unwrap()
         );
         // Uses only the eligible UTXO
         assert_eq!(
-            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum.owned_inputs.iter().map(|o| o.amount).sum::<Amount>(),
             Amount::from_btc(5.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00004890).unwrap());
@@ -3444,12 +3469,16 @@ mod tests {
         assert_eq!(tx_sum.confirmation_time, None);
         // Receive nothing, heir is draining
         assert_eq!(
-            tx_sum.owned_outputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum
+                .owned_outputs
+                .iter()
+                .map(|o| o.amount)
+                .sum::<Amount>(),
             Amount::from_btc(0.0).unwrap()
         );
         // Uses only the eligible UTXO
         assert_eq!(
-            tx_sum.owned_inputs.iter().map(|o| o.1).sum::<Amount>(),
+            tx_sum.owned_inputs.iter().map(|o| o.amount).sum::<Amount>(),
             Amount::from_btc(1.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00001480).unwrap());
@@ -3613,7 +3642,7 @@ mod tests {
             tx_sum
                 .owned_inputs
                 .iter()
-                .map(|o| o.1.to_sat())
+                .map(|o| o.amount.to_sat())
                 .sum::<u64>()
         );
 
@@ -3622,7 +3651,7 @@ mod tests {
             tx_sum
                 .owned_outputs
                 .iter()
-                .map(|o| o.1.to_sat())
+                .map(|o| o.amount.to_sat())
                 .sum::<u64>(),
             0
         );

@@ -302,13 +302,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     .zip(raw_tx.output.into_iter())
                     .filter(|(_, o)| subwallet_spks.contains(&o.script_pubkey))
                     .map(|(i, o)| {
-                        let tsoio = TransactionSummaryOwnedIO(
-                            (&o.script_pubkey).try_into().expect("comes from DB"),
-                            Amount::from_sat(o.value),
-                        );
                         let outpoint = OutPoint {
                             txid: subwallet_tx.txid,
                             vout: i,
+                        };
+                        let tsoio = TransactionSummaryOwnedIO {
+                            outpoint,
+                            address: (&o.script_pubkey).try_into().expect("comes from DB"),
+                            amount: Amount::from_sat(o.value),
                         };
                         tx_owned_io_cache.insert(outpoint, tsoio.clone());
                         tsoio

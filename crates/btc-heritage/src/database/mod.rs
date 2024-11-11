@@ -598,67 +598,83 @@ pub mod tests {
         assert!(res.is_ok(), "{:#}", res.unwrap_err());
         assert!(res.unwrap().is_empty());
 
+        let txid =
+            Txid::from_str("5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456")
+                .unwrap();
         let tx_summary_1 = TransactionSummary {
-            txid: Txid::from_str(
-                "5df6e0e2761359d30a8275058e299fcc0381534545f55cf43e41983f5d4c9456",
-            )
-            .unwrap(),
+            txid,
             confirmation_time: Some(BlockTime {
                 height: 123_455,
                 timestamp: 1_700_000_000,
             }),
-            owned_inputs: vec![TransactionSummaryOwnedIO(
-                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+            owned_inputs: vec![TransactionSummaryOwnedIO {
+                outpoint: OutPoint {
+                    txid: Txid::from_str(
+                        "5df6e0e2761359d30a8275058d765fcc0381534545f55cf43e41983f5d4c9456",
+                    )
+                    .unwrap(),
+                    vout: 1,
+                },
+                address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
                     .try_into()
                     .unwrap(),
-                Amount::from_sat(100_000),
-            )],
+                amount: Amount::from_sat(100_000),
+            }],
             owned_outputs: vec![],
             fee: Amount::from_sat(10_000),
             fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::new(),
         };
+        let txid =
+            Txid::from_str("5df6e0e2761359d30a8275058e300fcc0381534545f55cf43e41983f5d4c9456")
+                .unwrap();
         let tx_summary_2 = TransactionSummary {
-            txid: Txid::from_str(
-                "5df6e0e2761359d30a8275058e300fcc0381534545f55cf43e41983f5d4c9456",
-            )
-            .unwrap(),
+            txid,
             confirmation_time: Some(BlockTime {
                 height: 123_452,
                 timestamp: 1_700_000_000,
             }),
             owned_inputs: vec![],
-            owned_outputs: vec![TransactionSummaryOwnedIO(
-                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+            owned_outputs: vec![TransactionSummaryOwnedIO {
+                outpoint: OutPoint { txid, vout: 0 },
+                address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
                     .try_into()
                     .unwrap(),
-                Amount::from_sat(100_000),
-            )],
+                amount: Amount::from_sat(100_000),
+            }],
             fee: Amount::from_sat(10_000),
             fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::new(),
         };
+        let txid =
+            Txid::from_str("5df6e0e2761359d30a8275058e201fcc0381534545f55cf43e41983f5d4c9456")
+                .unwrap();
         let tx_summary_3 = TransactionSummary {
-            txid: Txid::from_str(
-                "5df6e0e2761359d30a8275058e201fcc0381534545f55cf43e41983f5d4c9456",
-            )
-            .unwrap(),
+            txid,
             confirmation_time: Some(BlockTime {
                 height: 123_455,
                 timestamp: 1_700_000_000,
             }),
-            owned_inputs: vec![TransactionSummaryOwnedIO(
-                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+            owned_inputs: vec![TransactionSummaryOwnedIO {
+                outpoint: OutPoint {
+                    txid: Txid::from_str(
+                        "5df6e0e2761359d30a8275058d765fcc0381534545f55cf43e41983f5d4c9456",
+                    )
+                    .unwrap(),
+                    vout: 1,
+                },
+                address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
                     .try_into()
                     .unwrap(),
-                Amount::from_sat(100_000),
-            )],
-            owned_outputs: vec![TransactionSummaryOwnedIO(
-                "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
+                amount: Amount::from_sat(100_000),
+            }],
+            owned_outputs: vec![TransactionSummaryOwnedIO {
+                outpoint: OutPoint { txid, vout: 0 },
+                address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
                     .try_into()
                     .unwrap(),
-                Amount::from_sat(100_000),
-            )],
+                amount: Amount::from_sat(100_000),
+            }],
             fee: Amount::from_sat(10_000),
             fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::from([Txid::from_str(

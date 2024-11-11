@@ -254,7 +254,7 @@ impl
                         tx_summary
                             .owned_outputs
                             .iter()
-                            .any(|oo| oo.0.to_string() == address),
+                            .any(|oo| oo.address.to_string() == address),
                     )
                 } else {
                     None

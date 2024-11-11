@@ -279,10 +279,12 @@ impl HeritageUtxo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TransactionSummaryOwnedIO(
-    pub CheckedAddress,
-    #[serde(with = "crate::utils::amount_serde")] pub Amount,
-);
+pub struct TransactionSummaryOwnedIO {
+    pub outpoint: OutPoint,
+    pub address: CheckedAddress,
+    #[serde(with = "crate::utils::amount_serde")]
+    pub amount: Amount,
+}
 
 /// A wallet transaction
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
