@@ -125,7 +125,7 @@ pub enum FeePolicy {
 }
 
 /// The UTXO selection mode
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub enum UtxoSelection {
     /// Default behavior,
     /// includes all the 'previous' UTXOs (bound to non-current Heritage Configs),

@@ -1,7 +1,11 @@
 use core::{ops::Deref, str::FromStr};
 use std::collections::BTreeSet;
 
-use btc_heritage::{heritage_wallet::UtxoSelection, HeirConfig};
+use btc_heritage::{
+    bitcoin::OutPoint,
+    heritage_wallet::{FeePolicy, UtxoSelection},
+    Amount, HeirConfig,
+};
 use serde::{Deserialize, Serialize};
 
 // Expose API types
@@ -75,6 +79,61 @@ pub enum NewTxFeePolicy {
     Absolute { amount: u64 },
     Rate { rate: f32 },
 }
+impl From<NewTxFeePolicy> for FeePolicy {
+    fn from(value: NewTxFeePolicy) -> Self {
+        match value {
+            NewTxFeePolicy::Absolute { amount } => FeePolicy::Absolute(Amount::from_sat(amount)),
+            NewTxFeePolicy::Rate { rate } => {
+                // rate is in sat/vB and we have to convert it to sat/kWU
+                // 1 vB = 4 WU
+                // 1 vB = 0.004 kWU
+                // 1 sat/vB = 1/0.004 sat/kWU
+                // 1 sat/vB = 250 sat/kWU
+                FeePolicy::FeeRate(FeeRate::from_sat_per_kwu(
+                    (rate * 250.0).min(u64::MAX as f32) as u64,
+                ))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum NewTxUtxoSelection {
+    Include {
+        include: Vec<OutPoint>,
+    },
+    Exclude {
+        exclude: Vec<OutPoint>,
+    },
+    IncludeExclude {
+        include: Vec<OutPoint>,
+        exclude: Vec<OutPoint>,
+    },
+    UseOnly {
+        use_only: Vec<OutPoint>,
+    },
+}
+
+impl From<NewTxUtxoSelection> for UtxoSelection {
+    fn from(value: NewTxUtxoSelection) -> Self {
+        match value {
+            NewTxUtxoSelection::Include { include } => UtxoSelection::Include(include),
+            NewTxUtxoSelection::Exclude { exclude } => {
+                UtxoSelection::Exclude(exclude.into_iter().collect())
+            }
+            NewTxUtxoSelection::IncludeExclude { include, exclude } => {
+                UtxoSelection::IncludeExclude {
+                    include,
+                    exclude: exclude.into_iter().collect(),
+                }
+            }
+            NewTxUtxoSelection::UseOnly { use_only } => {
+                UtxoSelection::UseOnly(use_only.into_iter().collect())
+            }
+        }
+    }
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NewTx {
@@ -82,7 +141,7 @@ pub struct NewTx {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fee_policy: Option<NewTxFeePolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub utxo_selection: Option<UtxoSelection>,
+    pub utxo_selection: Option<NewTxUtxoSelection>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

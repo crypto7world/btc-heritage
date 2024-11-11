@@ -7,11 +7,11 @@ use crate::{
 };
 use btc_heritage::{
     bdk_types::{ElectrumBlockchain, RpcBlockchainFactory},
-    bitcoin::{bip32::Fingerprint, secp256k1::rand, FeeRate, Txid},
+    bitcoin::{bip32::Fingerprint, secp256k1::rand, Txid},
     bitcoincore_rpc::{Client, RpcApi},
     database::HeritageDatabase,
     electrum_client::ElectrumApi,
-    heritage_wallet::{CreatePsbtOptions, FeePolicy, TransactionSummary, WalletAddress},
+    heritage_wallet::{CreatePsbtOptions, TransactionSummary, WalletAddress},
     AccountXPub, Amount, BlockInclusionObjective, HeritageConfig, HeritageWallet,
     HeritageWalletBackup, PartiallySignedTransaction, SpendingConfig,
 };
@@ -233,23 +233,9 @@ impl super::OnlineWallet for LocalHeritageWallet {
             }) => SpendingConfig::DrainTo(btc_heritage::utils::string_to_address(&drain_to)?),
         };
         let create_psbt_options = CreatePsbtOptions {
-            fee_policy: fee_policy.map(|fp| match fp {
-                heritage_service_api_client::NewTxFeePolicy::Absolute { amount } => {
-                    FeePolicy::Absolute(Amount::from_sat(amount))
-                }
-                heritage_service_api_client::NewTxFeePolicy::Rate { rate } => {
-                    // rate is in sat/vB and we have to convert it to sat/kWU
-                    // 1 vB = 4 WU
-                    // 1 vB = 0.004 kWU
-                    // 1 sat/vB = 1/0.004 sat/kWU
-                    // 1 sat/vB = 250 sat/kWU
-                    FeePolicy::FeeRate(FeeRate::from_sat_per_kwu(
-                        (rate * 250.0).min(u64::MAX as f32) as u64,
-                    ))
-                }
-            }),
+            fee_policy: fee_policy.map(|fp| fp.into()),
             assume_blocktime: None,
-            utxo_selection: utxo_selection.unwrap_or_default(),
+            utxo_selection: utxo_selection.map(|us| us.into()).unwrap_or_default(),
         };
         Ok(wallet.create_owner_psbt(spending_config, create_psbt_options)?)
     }
