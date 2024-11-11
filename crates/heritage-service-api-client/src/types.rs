@@ -100,14 +100,14 @@ impl From<NewTxFeePolicy> for FeePolicy {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum NewTxUtxoSelection {
+    IncludeExclude {
+        include: Vec<OutPoint>,
+        exclude: Vec<OutPoint>,
+    },
     Include {
         include: Vec<OutPoint>,
     },
     Exclude {
-        exclude: Vec<OutPoint>,
-    },
-    IncludeExclude {
-        include: Vec<OutPoint>,
         exclude: Vec<OutPoint>,
     },
     UseOnly {
