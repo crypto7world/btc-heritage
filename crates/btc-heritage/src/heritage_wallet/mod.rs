@@ -657,6 +657,47 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         );
         let current_subwallet = self.get_subwallet(&current_subwallet_config)?;
 
+        // Logging the UTXO selection strategy
+        match &options.utxo_selection {
+            UtxoSelection::IncludePrevious => {
+                log::info!("HeritageWallet::create_psbt - Using the default UTXO selection");
+            }
+            UtxoSelection::Include(vec) => {
+                log::info!(
+                    "HeritageWallet::create_psbt - Using the default UTXO selection \
+                and ensuring the inclusion of the given UTXOs"
+                );
+                log::debug!("HeritageWallet::create_psbt - Include={vec:?}");
+            }
+            UtxoSelection::Exclude(vec) => {
+                log::info!(
+                    "HeritageWallet::create_psbt - Using the default UTXO selection \
+                but ensuring the exclusion of the given UTXOs"
+                );
+                log::debug!("HeritageWallet::create_psbt - Exclude={vec:?}");
+            }
+            UtxoSelection::IncludeExclude { include, exclude } => {
+                log::info!(
+                    "HeritageWallet::create_psbt - Using the default UTXO selection \
+                but ensuring the inclusion and exclusion of the given UTXOs"
+                );
+                log::debug!("HeritageWallet::create_psbt - Include={include:?}");
+                log::debug!("HeritageWallet::create_psbt - Exclude={exclude:?}");
+                let anomalies = include
+                    .iter()
+                    .filter(|&e| exclude.contains(e))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if anomalies.len() > 0 {
+                    return Err(Error::InvalidUtxoSelectionIncludeExclude(anomalies));
+                }
+            }
+            UtxoSelection::UseOnly(vec) => {
+                log::info!("HeritageWallet::create_psbt - Using only the given UTXOs");
+                log::debug!("HeritageWallet::create_psbt - UseOnly={vec:?}");
+            }
+        }
+
         // Gather all the UTXO of the obsolete wallet configs
         log::debug!("HeritageWallet::create_psbt - Listing obsolete subwallet_configs");
         let obsolete_subwallet_configs =
@@ -696,7 +737,24 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     );
                     None
                 })
+                // Remove all the UTXO that must be excluded per the UTXO Selection strategy
+                .map(|(o_locktime, o_sequence, mut utxos)| {
+                    match &options.utxo_selection {
+                        UtxoSelection::IncludePrevious | UtxoSelection::Include(_) => (),
+                        UtxoSelection::Exclude(exclude)
+                        | UtxoSelection::IncludeExclude { exclude, .. } => {
+                            utxos.retain(|(o, _)| !exclude.contains(&o.outpoint))
+                        }
+                        UtxoSelection::UseOnly(include_exclusive) => {
+                            utxos.retain(|(o, _)| include_exclusive.contains(&o.outpoint))
+                        }
+                    };
+                    (o_locktime, o_sequence, utxos)
+                })
             })
+            // It is possible that the previous step is yelding an empty Vec of UTXO, in that case remove it.
+            .filter(|(_, _, utxos)| utxos.len() > 0)
+            // Now we can fold and compute our final result
             .fold(
                 (
                     LockTime::from_consensus(bdk::bitcoin::absolute::LOCK_TIME_THRESHOLD),
@@ -767,13 +825,42 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .map(|(op, _, _)| *op)
             .collect::<HashSet<_>>();
 
-        // Include all the obsolete_wallet_outputs
+        // Include all the foreign_utxos
         log::debug!("HeritageWallet::create_psbt - tx_builder.add_foreign_utxo - foreing_utxos={foreign_utxos:?}");
         for (outpoint, psbt_input, satisfaction_weight) in foreign_utxos {
             tx_builder
                 .add_foreign_utxo(outpoint, psbt_input, satisfaction_weight)
                 .expect("Parameters are under our control and correct");
         }
+
+        // Process the utxo_selection option
+        match options.utxo_selection {
+            UtxoSelection::IncludePrevious => (),
+            UtxoSelection::Include(include) => {
+                tx_builder.add_utxos(&include).map_err(|e| match e {
+                    bdk::Error::UnknownUtxo => Error::UnknownUtxoSelectionInclude(include),
+                    _ => Error::DatabaseError(DatabaseError::Generic(e.to_string())),
+                })?;
+            }
+            UtxoSelection::Exclude(exclude) => {
+                tx_builder.unspendable(exclude.into_iter().collect());
+            }
+            UtxoSelection::IncludeExclude { include, exclude } => {
+                tx_builder.add_utxos(&include).map_err(|e| match e {
+                    bdk::Error::UnknownUtxo => Error::UnknownUtxoSelectionInclude(include),
+                    _ => Error::DatabaseError(DatabaseError::Generic(e.to_string())),
+                })?;
+                tx_builder.unspendable(exclude.into_iter().collect());
+            }
+            UtxoSelection::UseOnly(include) => {
+                let include = include.into_iter().collect::<Vec<_>>();
+                tx_builder.add_utxos(&include).map_err(|e| match e {
+                    bdk::Error::UnknownUtxo => Error::UnknownUtxoSelectionInclude(include),
+                    _ => Error::DatabaseError(DatabaseError::Generic(e.to_string())),
+                })?;
+                tx_builder.manually_selected_only();
+            }
+        };
 
         // Set FeeRate
         let fee_rate = match options.fee_policy {
@@ -1557,7 +1644,7 @@ mod tests {
         heritage_wallet::{
             backup::{HeritageWalletBackup, SubwalletDescriptorBackup},
             get_expected_tx_weight, BlockInclusionObjective, CreatePsbtOptions, HeritageWallet,
-            HeritageWalletBalance, Recipient, SpendingConfig, SubwalletConfigId,
+            HeritageWalletBalance, Recipient, SpendingConfig, SubwalletConfigId, UtxoSelection,
         },
         miniscript::{Descriptor, DescriptorPublicKey},
         tests::*,
@@ -2523,6 +2610,212 @@ mod tests {
             Amount::from_btc(4.0).unwrap()
         );
         assert_eq!(tx_sum.fee, Amount::from_btc(0.00003920).unwrap());
+    }
+
+    #[test]
+    fn create_owner_psbt_select_utxos() {
+        let wallet = setup_wallet();
+        let spending_config = SpendingConfig::Recipients(vec![
+            Recipient::from((
+                string_to_address(PKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                Amount::from_btc(0.1).unwrap(),
+            )),
+            Recipient::from((
+                string_to_address(WPKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                Amount::from_btc(0.2).unwrap(),
+            )),
+            Recipient::from((
+                string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                Amount::from_btc(0.3).unwrap(),
+            )),
+        ]);
+
+        let outpoint_10 = OutPoint::from_str(
+            "344dbc396e3c6945f46a67faab275141bb0fdd63f8a46362ba27e4753400d9c2:0",
+        )
+        .unwrap();
+        let outpoint_11 = OutPoint::from_str(
+            "d2f3bd44fb6ad0c32833ea943d718e806245e632302f25720811fea167c13507:0",
+        )
+        .unwrap();
+        let outpoint_20 = OutPoint::from_str(
+            "2f0a77d510db56dda3b43692d4658a92f523193a3b854d2387681f2fd0f5d920:0",
+        )
+        .unwrap();
+        let outpoint_21 = OutPoint::from_str(
+            "3854db1cb2253a270e49a093a6ddb92fa79efd8b295568e08448e4de678fc08b:0",
+        )
+        .unwrap();
+        let outpoint_30 = OutPoint::from_str(
+            "6ed1563a936196211f2f76447c478533df8f3efc43933f4c3405b9a760b31204:0",
+        )
+        .unwrap();
+
+        let outpoint_nonexistant = OutPoint::from_str(
+            "6ed1563a936196211f2f711111178533df8f3efc43933f4c3405b9a760b31204:0",
+        )
+        .unwrap();
+
+        // The "normal" behavior
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::IncludePrevious,
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // This PSBT has 4 inputs, corresponding to the 4 obsolete transaction
+        // The 5th tx (in the current_subwallet) is not used because the drain
+        // of the obsolete subwallets completely covers the outputs
+        let mut expected_values: HashSet<OutPoint> =
+            HashSet::from_iter(vec![outpoint_10, outpoint_11, outpoint_20, outpoint_21]);
+        // The inputs are expected
+        for input in psbt.unsigned_tx.input {
+            println!(
+                "{:?}: {}",
+                input.previous_output,
+                expected_values.remove(&input.previous_output)
+            );
+        }
+        assert!(expected_values.is_empty());
+
+        // The "Include" behavior
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::Include(vec![outpoint_30]),
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // This PSBT has 5 inputs, corresponding to the 4 obsolete transaction and the "Include" one
+        let mut expected_values: HashSet<OutPoint> = HashSet::from_iter(vec![
+            outpoint_10,
+            outpoint_11,
+            outpoint_20,
+            outpoint_21,
+            outpoint_30,
+        ]);
+        // The inputs are expected
+        for input in psbt.unsigned_tx.input {
+            expected_values.remove(&input.previous_output);
+        }
+        assert!(expected_values.is_empty());
+
+        // The bad "Include" behavior
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::Include(vec![outpoint_nonexistant]),
+        };
+        assert!(wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .is_err_and(|err| match err {
+                crate::errors::Error::UnknownUtxoSelectionInclude(vec) => {
+                    vec == vec![outpoint_nonexistant]
+                }
+                _ => false,
+            }));
+
+        // The "Exclude" behavior
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::Exclude(HashSet::from_iter(vec![
+                outpoint_10,
+                outpoint_20,
+            ])),
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // This PSBT has 2 inputs, corresponding to the 2 obsolete transaction that were not excluded
+        let mut expected_values: HashSet<OutPoint> =
+            HashSet::from_iter(vec![outpoint_11, outpoint_21]);
+        // The inputs are expected
+        for input in psbt.unsigned_tx.input {
+            expected_values.remove(&input.previous_output);
+        }
+        assert!(expected_values.is_empty());
+
+        // The "Exclude" behavior with all obsolete exluded
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::Exclude(HashSet::from_iter(vec![
+                outpoint_10,
+                outpoint_11,
+                outpoint_20,
+                outpoint_21,
+            ])),
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // This PSBT has 1 input, corresponding to the only possible one
+        let mut expected_values: HashSet<OutPoint> = HashSet::from_iter(vec![outpoint_30]);
+        // The inputs are expected
+        for input in psbt.unsigned_tx.input {
+            expected_values.remove(&input.previous_output);
+        }
+        assert!(expected_values.is_empty());
+
+        // The "IncludeExclude" behavior
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::IncludeExclude {
+                include: vec![outpoint_30],
+                exclude: HashSet::from_iter(vec![outpoint_10, outpoint_20]),
+            },
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // This PSBT has 3 inputs, corresponding to the 2 obsolete transaction that were not excluded and the Include one
+        let mut expected_values: HashSet<OutPoint> =
+            HashSet::from_iter(vec![outpoint_11, outpoint_21, outpoint_30]);
+        // The inputs are expected
+        for input in psbt.unsigned_tx.input {
+            expected_values.remove(&input.previous_output);
+        }
+        assert!(expected_values.is_empty());
+
+        // The bad "IncludeExclude" behavior
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::IncludeExclude {
+                include: vec![outpoint_20, outpoint_30],
+                exclude: HashSet::from_iter(vec![outpoint_10, outpoint_20]),
+            },
+        };
+        assert!(wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .is_err_and(|err| match err {
+                crate::errors::Error::InvalidUtxoSelectionIncludeExclude(vec) => {
+                    vec == vec![outpoint_20]
+                }
+                _ => false,
+            }));
+
+        // The "UseOnly" behavior
+        let options = CreatePsbtOptions {
+            fee_policy: None,
+            assume_blocktime: None,
+            utxo_selection: UtxoSelection::UseOnly(HashSet::from_iter(vec![outpoint_30])),
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // This PSBT has 1 input, corresponding to the Included one
+        let mut expected_values: HashSet<OutPoint> = HashSet::from_iter(vec![outpoint_30]);
+        // The inputs are expected
+        for input in psbt.unsigned_tx.input {
+            expected_values.remove(&input.previous_output);
+        }
+        assert!(expected_values.is_empty());
     }
 
     #[test]

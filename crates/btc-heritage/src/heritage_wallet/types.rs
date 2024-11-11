@@ -124,11 +124,33 @@ pub enum FeePolicy {
     FeeRate(FeeRate),
 }
 
+/// The UTXO selection mode
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub enum UtxoSelection {
+    /// Default behavior,
+    /// includes all the 'previous' UTXOs (bound to non-current Heritage Configs),
+    /// plus the 'current' UTXOs needed to match the requested amount, if any are necessary
+    #[default]
+    IncludePrevious,
+    /// Like the default behavior, plus always include the given UTXOs
+    Include(Vec<OutPoint>),
+    /// Like the default behavior, but always exclude the given UTXOs
+    Exclude(HashSet<OutPoint>),
+    /// Combinaison of Include and Exclude: like the default behavior, but include and exclude the given UTXOs
+    IncludeExclude {
+        include: Vec<OutPoint>,
+        exclude: HashSet<OutPoint>,
+    },
+    /// Use all the given UTXOs, and only the given UTXOs
+    UseOnly(HashSet<OutPoint>),
+}
+
 /// Options used to customize the behavior of [super::HeritageWallet::create_psbt]
 #[derive(Debug, Clone, Default)]
 pub struct CreatePsbtOptions {
     pub fee_policy: Option<FeePolicy>,
     pub assume_blocktime: Option<BlockTime>,
+    pub utxo_selection: UtxoSelection,
 }
 
 /// An [HeritageWallet] configuration used to query the appropriate [crate::bitcoin::FeeRate]

@@ -48,6 +48,10 @@ pub enum Error {
     FailedToResetAddressIndex(String),
     #[error("PSBT creation error: {0}")]
     PsbtCreationError(String),
+    #[error("UTXOs were requested to be both included and excluded: {0:?}")]
+    InvalidUtxoSelectionIncludeExclude(Vec<crate::bitcoin::OutPoint>),
+    #[error("Some UTXOs were requested to include that do not exist: {0:?}")]
+    UnknownUtxoSelectionInclude(Vec<crate::bitcoin::OutPoint>),
     #[error("Error while interacting with the Blockchain provider: {0}")]
     BlockchainProviderError(String),
     #[error("Error during subwallet synchronization: {0}")]
