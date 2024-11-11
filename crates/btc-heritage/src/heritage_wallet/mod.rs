@@ -249,7 +249,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 .collect::<Result<Vec<_>>>()?;
                 Ok(wallet_addresses)
             })
-            // Flatten to get a single WalletAddress iterator
             .collect::<Result<Vec<_>>>()?;
 
         // At this point we got a Vec<Vec<Vec<WalletAddress>>>
