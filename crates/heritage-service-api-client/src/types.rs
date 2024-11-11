@@ -1,7 +1,7 @@
 use core::{ops::Deref, str::FromStr};
 use std::collections::BTreeSet;
 
-use btc_heritage::HeirConfig;
+use btc_heritage::{heritage_wallet::UtxoSelection, HeirConfig};
 use serde::{Deserialize, Serialize};
 
 // Expose API types
@@ -81,6 +81,8 @@ pub struct NewTx {
     pub spending_config: NewTxSpendingConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fee_policy: Option<NewTxFeePolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub utxo_selection: Option<UtxoSelection>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

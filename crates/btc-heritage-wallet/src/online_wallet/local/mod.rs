@@ -217,6 +217,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
         let NewTx {
             spending_config,
             fee_policy,
+            utxo_selection,
         } = new_tx;
         let spending_config = match spending_config {
             heritage_service_api_client::NewTxSpendingConfig::Recipients(recipients) => {
@@ -248,6 +249,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
                 }
             }),
             assume_blocktime: None,
+            utxo_selection: utxo_selection.unwrap_or_default(),
         };
         Ok(wallet.create_owner_psbt(spending_config, create_psbt_options)?)
     }
