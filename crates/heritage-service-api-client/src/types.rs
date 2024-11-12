@@ -142,6 +142,8 @@ pub struct NewTx {
     pub fee_policy: Option<NewTxFeePolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub utxo_selection: Option<NewTxUtxoSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disable_rbf: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

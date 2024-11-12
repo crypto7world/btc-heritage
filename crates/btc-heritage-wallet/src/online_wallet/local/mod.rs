@@ -222,6 +222,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
             spending_config,
             fee_policy,
             utxo_selection,
+            disable_rbf,
         } = new_tx;
         let spending_config = match spending_config {
             heritage_service_api_client::NewTxSpendingConfig::Recipients(recipients) => {
@@ -238,8 +239,9 @@ impl super::OnlineWallet for LocalHeritageWallet {
         };
         let create_psbt_options = CreatePsbtOptions {
             fee_policy: fee_policy.map(|fp| fp.into()),
-            assume_blocktime: None,
             utxo_selection: utxo_selection.map(|us| us.into()).unwrap_or_default(),
+            disable_rbf: disable_rbf.unwrap_or_default(),
+            ..Default::default()
         };
         Ok(wallet.create_owner_psbt(spending_config, create_psbt_options)?)
     }

@@ -31,5 +31,5 @@ log = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-btc-heritage = { path = "../btc-heritage", features = ["database-tests"] }
+btc-heritage = { path = "../btc-heritage", features = ["psbt-tests", "database-tests"] }
 tempfile = "3"

@@ -24,3 +24,4 @@ thiserror = { workspace = true }
 default = []
 online = ["bdk/electrum", "bdk/rpc"]
 database-tests = []
+psbt-tests = []

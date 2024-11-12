@@ -638,6 +638,12 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             false
         };
 
+        let default_sequence = if options.disable_rbf {
+            Sequence::ENABLE_LOCKTIME_NO_RBF
+        } else {
+            Sequence::ENABLE_RBF_NO_LOCKTIME
+        };
+
         // For now, we only accept SpendingConfig::DrainTo if it is an Heir spender
         if heir_spending {
             let SpendingConfig::DrainTo(_) = spending_config else {
@@ -772,10 +778,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     // Process the utxos
                     for (utxo, o_foreign_utxo) in utxos {
                         let outpoint = utxo.outpoint;
-                        seq_index.insert(
-                            outpoint,
-                            o_sequence.unwrap_or(Sequence::ENABLE_LOCKTIME_NO_RBF),
-                        );
+                        seq_index.insert(outpoint, o_sequence.unwrap_or(default_sequence));
                         let foreign_utxo =
                             o_foreign_utxo.expect("We ask to include the foreign_utxos");
                         foreign_utxos.push(foreign_utxo);
@@ -953,10 +956,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 // Process the utxos
                 for (utxo, _) in utxos {
                     let outpoint = utxo.outpoint;
-                    seq_index.insert(
-                        outpoint,
-                        o_sequence.unwrap_or(Sequence::ENABLE_LOCKTIME_NO_RBF),
-                    );
+                    seq_index.insert(outpoint, o_sequence.unwrap_or(default_sequence));
                     tx_builder.add_utxo(outpoint).map_err(|e| match e {
                         bdk::Error::UnknownUtxo => {
                             log::error!("Unexpected UnknownUtxo error: {e:#}");
@@ -966,6 +966,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                     })?;
                 }
             }
+        }
+
+        if !options.disable_rbf {
+            // Enable RBF
+            tx_builder.enable_rbf();
         }
 
         // Create the PSBT
@@ -2571,6 +2576,9 @@ mod tests {
             .filter(|e| e.value >= 300_000_000)
             .all(|e| wallet.is_mine_and_current(&e.script_pubkey).unwrap()));
 
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
+
         // PSBT is exactly the expected one if we sort the outputs
         let mut psbt = psbt;
         let mut tmp = psbt
@@ -2592,6 +2600,7 @@ mod tests {
         tmp.sort_by(|a, b| a.0.script_pubkey.cmp(&b.0.script_pubkey));
         (expected_psbt.unsigned_tx.output, expected_psbt.outputs) = tmp.into_iter().unzip();
 
+        println!("create_owner_psbt_recipient:\n{psbt}");
         assert_eq!(psbt, expected_psbt);
 
         assert_eq!(tx_sum.confirmation_time, None);
@@ -2658,9 +2667,8 @@ mod tests {
 
         // The "normal" behavior
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::IncludePrevious,
+            ..Default::default()
         };
         let (psbt, _) = wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2682,9 +2690,8 @@ mod tests {
 
         // The "Include" behavior
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::Include(vec![outpoint_30]),
+            ..Default::default()
         };
         let (psbt, _) = wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2705,9 +2712,8 @@ mod tests {
 
         // The bad "Include" behavior
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::Include(vec![outpoint_nonexistant]),
+            ..Default::default()
         };
         assert!(wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2720,12 +2726,11 @@ mod tests {
 
         // The "Exclude" behavior
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::Exclude(HashSet::from_iter(vec![
                 outpoint_10,
                 outpoint_20,
             ])),
+            ..Default::default()
         };
         let (psbt, _) = wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2741,14 +2746,13 @@ mod tests {
 
         // The "Exclude" behavior with all obsolete exluded
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::Exclude(HashSet::from_iter(vec![
                 outpoint_10,
                 outpoint_11,
                 outpoint_20,
                 outpoint_21,
             ])),
+            ..Default::default()
         };
         let (psbt, _) = wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2763,12 +2767,11 @@ mod tests {
 
         // The "IncludeExclude" behavior
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::IncludeExclude {
                 include: vec![outpoint_30],
                 exclude: HashSet::from_iter(vec![outpoint_10, outpoint_20]),
             },
+            ..Default::default()
         };
         let (psbt, _) = wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2784,12 +2787,11 @@ mod tests {
 
         // The bad "IncludeExclude" behavior
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::IncludeExclude {
                 include: vec![outpoint_20, outpoint_30],
                 exclude: HashSet::from_iter(vec![outpoint_10, outpoint_20]),
             },
+            ..Default::default()
         };
         assert!(wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2802,9 +2804,8 @@ mod tests {
 
         // The "UseOnly" behavior
         let options = CreatePsbtOptions {
-            fee_policy: None,
-            assume_blocktime: None,
             utxo_selection: UtxoSelection::UseOnly(HashSet::from_iter(vec![outpoint_30])),
+            ..Default::default()
         };
         let (psbt, _) = wallet
             .create_owner_psbt(spending_config.clone(), options)
@@ -2816,6 +2817,47 @@ mod tests {
             expected_values.remove(&input.previous_output);
         }
         assert!(expected_values.is_empty());
+    }
+
+    #[test]
+    fn create_owner_psbt_disable_rbf() {
+        let wallet = setup_wallet();
+        let spending_config = SpendingConfig::Recipients(vec![
+            Recipient::from((
+                string_to_address(PKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                Amount::from_btc(0.1).unwrap(),
+            )),
+            Recipient::from((
+                string_to_address(WPKH_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                Amount::from_btc(0.2).unwrap(),
+            )),
+            Recipient::from((
+                string_to_address(TR_EXTERNAL_RECIPIENT_ADDR).unwrap(),
+                Amount::from_btc(0.3).unwrap(),
+            )),
+        ]);
+
+        // The "normal" behavior
+        let options = CreatePsbtOptions {
+            disable_rbf: false,
+            ..Default::default()
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
+
+        // The "disable RBF" behavior
+        let options = CreatePsbtOptions {
+            disable_rbf: true,
+            ..Default::default()
+        };
+        let (psbt, _) = wallet
+            .create_owner_psbt(spending_config.clone(), options)
+            .unwrap();
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().all(|i| !i.sequence.is_rbf()));
     }
 
     #[test]
@@ -2919,7 +2961,11 @@ mod tests {
         // 1 output
         assert_eq!(psbt.outputs.len(), 1);
 
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
+
         // PSBT is exactly the expected one
+        println!("create_owner_psbt_drains_to:\n{psbt}");
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::OwnerDrain));
 
         assert_eq!(tx_sum.confirmation_time, None);
@@ -3091,6 +3137,8 @@ mod tests {
             .input
             .iter()
             .all(|input| input.sequence.enables_absolute_lock_time() && input.sequence.0 == 12960));
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::BackupPresent));
@@ -3227,6 +3275,8 @@ mod tests {
             .input
             .iter()
             .all(|input| input.sequence.enables_absolute_lock_time() && input.sequence.0 == 25920));
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::WifePresent));
@@ -3442,6 +3492,8 @@ mod tests {
             .input
             .iter()
             .all(|input| input.sequence.enables_absolute_lock_time() && input.sequence.0 == 12960));
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::BackupFuture));
@@ -3619,6 +3671,8 @@ mod tests {
             .input
             .iter()
             .all(|input| input.sequence.enables_absolute_lock_time() && input.sequence.0 == 25920));
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::WifeFuture));
@@ -3748,6 +3802,8 @@ mod tests {
             .input
             .iter()
             .all(|input| input.sequence.enables_absolute_lock_time() && input.sequence.0 == 38880));
+        // The transaction is RBF
+        assert!(psbt.unsigned_tx.input.iter().any(|i| i.sequence.is_rbf()));
 
         // PSBT is exactly the expected one
         assert_eq!(psbt, get_test_unsigned_psbt(TestPsbt::BrotherFuture));
@@ -3800,7 +3856,7 @@ mod tests {
         assert!(tx
             .input
             .iter()
-            .all(|input| input.sequence == Sequence::ENABLE_LOCKTIME_NO_RBF));
+            .all(|input| input.sequence == Sequence::ENABLE_RBF_NO_LOCKTIME));
     }
 
     #[test]
@@ -3826,7 +3882,9 @@ mod tests {
         assert!(tx
             .input
             .iter()
-            .all(|input| input.sequence == expected_sequence));
+            .all(|input| input.sequence == expected_sequence
+                && input.sequence.enables_absolute_lock_time()
+                && input.sequence.is_rbf()));
     }
 
     #[test]
@@ -3846,7 +3904,9 @@ mod tests {
         assert!(tx
             .input
             .iter()
-            .all(|input| input.sequence == expected_sequence));
+            .all(|input| input.sequence == expected_sequence
+                && input.sequence.enables_absolute_lock_time()
+                && input.sequence.is_rbf()));
     }
 
     #[test]
@@ -3866,7 +3926,9 @@ mod tests {
         assert!(tx
             .input
             .iter()
-            .all(|input| input.sequence == expected_sequence));
+            .all(|input| input.sequence == expected_sequence
+                && input.sequence.enables_absolute_lock_time()
+                && input.sequence.is_rbf()));
     }
 
     #[test]
@@ -3886,7 +3948,9 @@ mod tests {
         assert!(tx
             .input
             .iter()
-            .all(|input| input.sequence == expected_sequence));
+            .all(|input| input.sequence == expected_sequence
+                && input.sequence.enables_absolute_lock_time()
+                && input.sequence.is_rbf()));
     }
 
     #[test]
@@ -3906,7 +3970,9 @@ mod tests {
         assert!(tx
             .input
             .iter()
-            .all(|input| input.sequence == expected_sequence));
+            .all(|input| input.sequence == expected_sequence
+                && input.sequence.enables_absolute_lock_time()
+                && input.sequence.is_rbf()));
     }
 
     #[test]

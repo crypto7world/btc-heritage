@@ -148,9 +148,18 @@ pub enum UtxoSelection {
 /// Options used to customize the behavior of [super::HeritageWallet::create_psbt]
 #[derive(Debug, Clone, Default)]
 pub struct CreatePsbtOptions {
+    /// Override the fee computation process, either with a given fee-rate in sat/vB or an absolute fee amount in sat.
     pub fee_policy: Option<FeePolicy>,
+    /// Mainly used for tests, it allow tricking the PSBT creation process into believing the blockchain is past a certain time
+    /// instead of taking the last sync time as the "present"
     pub assume_blocktime: Option<BlockTime>,
+    /// The UTXO Selection algorithm, see [UtxoSelection], defaults to [UtxoSelection::IncludePrevious]
     pub utxo_selection: UtxoSelection,
+    /// Signal the the Transaction should not have the Replace By Fee opt-in flag
+    /// Defaults to false, meaning the transaction will allow RBF.
+    /// Note that since BitcoinCore v28, full-RBF is the node default configuration, so this
+    /// parameter will likely have no impact whatsoever
+    pub disable_rbf: bool,
 }
 
 /// An [HeritageWallet] configuration used to query the appropriate [crate::bitcoin::FeeRate]
