@@ -141,6 +141,10 @@ impl super::OnlineWallet for LocalHeritageWallet {
             .list_transaction_summaries()?)
     }
 
+    fn list_heritage_utxos(&self) -> Result<Vec<heritage_service_api_client::HeritageUtxo>> {
+        Ok(self.heritage_wallet().database().list_utxos()?)
+    }
+
     fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>> {
         let wallet = self.heritage_wallet();
         let used_account_xpubs = wallet.list_used_account_xpubs()?;

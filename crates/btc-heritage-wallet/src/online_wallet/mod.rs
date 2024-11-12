@@ -14,7 +14,7 @@ mod local;
 mod service;
 
 use heritage_service_api_client::{
-    AccountXPubWithStatus, HeritageWalletMeta, NewTx, TransactionSummary,
+    AccountXPubWithStatus, HeritageUtxo, HeritageWalletMeta, NewTx, TransactionSummary,
 };
 pub use local::{AnyBlockchainFactory, LocalHeritageWallet};
 use serde::{Deserialize, Serialize};
@@ -49,6 +49,7 @@ pub trait OnlineWallet: Broadcaster + BoundFingerprint {
     fn get_address(&self) -> Result<String>;
     fn list_addresses(&self) -> Result<Vec<WalletAddress>>;
     fn list_transactions(&self) -> Result<Vec<TransactionSummary>>;
+    fn list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>>;
     fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>;
     fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>;
     fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>;
@@ -103,6 +104,7 @@ impl OnlineWallet for AnyOnlineWallet {
     impl_online_wallet_fn!(get_address(&self) -> Result<String>);
     impl_online_wallet_fn!(list_addresses(&self) -> Result<Vec<WalletAddress>>);
     impl_online_wallet_fn!(list_transactions(&self) -> Result<Vec<TransactionSummary>>);
+    impl_online_wallet_fn!(list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>>);
     impl_online_wallet_fn!(list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>);
     impl_online_wallet_fn!(feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>);
     impl_online_wallet_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
@@ -144,6 +146,7 @@ macro_rules! impl_online_wallet {
             crate::online_wallet::impl_online_wallet!(get_address(&self) -> Result<String>);
             crate::online_wallet::impl_online_wallet!(list_addresses(&self) -> Result<Vec<btc_heritage::heritage_wallet::WalletAddress>>);
             crate::online_wallet::impl_online_wallet!(list_transactions(&self) -> Result<Vec<btc_heritage::heritage_wallet::TransactionSummary>>);
+            crate::online_wallet::impl_online_wallet!(list_heritage_utxos(&self) -> Result<Vec<btc_heritage::heritage_wallet::HeritageUtxo>>);
             crate::online_wallet::impl_online_wallet!(list_account_xpubs(&self) -> Result<Vec<heritage_service_api_client::AccountXPubWithStatus>>);
             crate::online_wallet::impl_online_wallet!(feed_account_xpubs(&mut self, account_xpubs: Vec<btc_heritage::AccountXPub>) -> Result<()>);
             crate::online_wallet::impl_online_wallet!(list_heritage_configs(&self) -> Result<Vec<btc_heritage::HeritageConfig>>);

@@ -15,8 +15,8 @@ use btc_heritage::{
     PartiallySignedTransaction,
 };
 use heritage_service_api_client::{
-    AccountXPubWithStatus, HeritageServiceClient, HeritageWalletMeta, HeritageWalletMetaCreate,
-    NewTx, SynchronizationStatus, TransactionSummary,
+    AccountXPubWithStatus, HeritageServiceClient, HeritageUtxo, HeritageWalletMeta,
+    HeritageWalletMetaCreate, NewTx, SynchronizationStatus, TransactionSummary,
 };
 
 use serde::{Deserialize, Serialize};
@@ -165,6 +165,10 @@ impl super::OnlineWallet for ServiceBinding {
         Ok(self
             .service_client()
             .list_wallet_transactions(&self.wallet_id)?)
+    }
+
+    fn list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
+        Ok(self.service_client().list_wallet_utxos(&self.wallet_id)?)
     }
 
     fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>> {
