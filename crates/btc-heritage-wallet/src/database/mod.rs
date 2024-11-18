@@ -1,4 +1,4 @@
-use std::{fmt::Debug, path::Path, rc::Rc, usize};
+use std::{fmt::Debug, path::Path, sync::Arc, usize};
 
 use btc_heritage::bitcoin::Network;
 
@@ -93,7 +93,7 @@ impl DatabaseTransaction {
 
 #[derive(Debug)]
 pub struct Database {
-    internal_db: Rc<redb::Database>,
+    internal_db: Arc<redb::Database>,
     table_name: Option<String>,
 }
 
@@ -117,7 +117,7 @@ impl Database {
         log::debug!("Main database opened successfully");
 
         Ok(Database {
-            internal_db: Rc::new(db),
+            internal_db: Arc::new(db),
             table_name: None,
         })
     }

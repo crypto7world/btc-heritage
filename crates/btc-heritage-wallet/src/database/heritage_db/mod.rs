@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use btc_heritage::{
     bdk_types,
@@ -155,7 +155,7 @@ impl HeritageWalletDatabase {
         );
         HeritageWalletDatabase {
             db: Database {
-                internal_db: Rc::clone(&db.internal_db),
+                internal_db: Arc::clone(&db.internal_db),
                 table_name: Some(wallet_id),
             },
             prefix: String::new(),
@@ -178,7 +178,7 @@ impl PartitionableDatabase for HeritageWalletDatabase {
     ) -> Result<Self::SubDatabase, DatabaseError> {
         Ok(HeritageWalletDatabase {
             db: Database {
-                internal_db: Rc::clone(&self.db.internal_db),
+                internal_db: Arc::clone(&self.db.internal_db),
                 table_name: self.db.table_name.clone(),
             },
             prefix: subdatabase_id.to_string(),
