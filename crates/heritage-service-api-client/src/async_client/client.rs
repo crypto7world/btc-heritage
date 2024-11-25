@@ -22,7 +22,7 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct HeritageServiceClient {
     client: Client,
-    service_api_url: String,
+    service_api_url: Arc<str>,
     tokens: Arc<Mutex<Option<Tokens>>>,
 }
 
@@ -65,7 +65,7 @@ impl HeritageServiceClient {
     pub fn new(service_api_url: String, tokens: Option<Tokens>) -> Self {
         Self {
             client: Client::new(),
-            service_api_url,
+            service_api_url: service_api_url.into(),
             tokens: Arc::new(Mutex::new(tokens)),
         }
     }
