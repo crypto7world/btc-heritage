@@ -29,6 +29,14 @@ impl HeritageServiceClient {
         }
     }
 
+    pub fn has_tokens(&self) -> bool {
+        self.inner.has_tokens()
+    }
+
+    pub fn set_tokens(&self, tokens: Option<super::Tokens>) {
+        self.inner.set_tokens(tokens.map(|t| t.inner))
+    }
+
     ////////////////////////
     //      Wallets       //
     ////////////////////////

@@ -70,6 +70,19 @@ impl HeritageServiceClient {
         }
     }
 
+    pub fn has_tokens(&self) -> bool {
+        self.tokens.lock().expect("invalid mutex state").is_some()
+    }
+
+    /// The tokens are interiorly-mutable due to the need of (maybe) renewing
+    /// them when calling an API so we can also allow changing the tokens with
+    /// an immutable ref on self. It allows to continue using the HeritageServiceClient
+    /// as a single allocated, cheaply clonable struct.
+    pub fn set_tokens(&self, tokens: Option<Tokens>) {
+        let mut mutex_guard = self.tokens.lock().expect("invalid mutex state");
+        *mutex_guard = tokens;
+    }
+
     async fn api_call<T: Serialize>(
         &self,
         method: Method,
