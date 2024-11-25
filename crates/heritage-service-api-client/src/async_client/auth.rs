@@ -50,6 +50,10 @@ pub struct Tokens {
 }
 
 impl Tokens {
+    /// Creates new [Tokens] using the provided `auth_url` and `client_id`
+    ///
+    /// The `callback` closure will receive the initial [DeviceAuthorizationResponse] so it
+    /// can be e.g. displayed to the user.
     pub async fn new<F, Fut>(auth_url: &str, client_id: &str, callback: F) -> Result<Self>
     where
         F: FnOnce(DeviceAuthorizationResponse) -> Fut,
@@ -126,10 +130,18 @@ impl Tokens {
             }
         }
     }
-    pub(super) async fn refresh_if_needed(&mut self) -> Result<()> {
+
+    /// Refresh the Tokens if needed.
+    ///
+    /// Returns `true` if the token where refreshed, else return `false`.
+    ///
+    /// # Errors
+    /// Return an error if the tokens needed to be refreshed but the process
+    /// failed
+    pub async fn refresh_if_needed(&mut self) -> Result<bool> {
         log::debug!("Tokens::refresh_if_needed");
         if self.expiration_ts > timestamp_now() + 30 {
-            return Ok(());
+            return Ok(false);
         };
 
         log::debug!("Initiating Token refresh flow");
@@ -146,7 +158,7 @@ impl Tokens {
         if let Some(refresh_token) = token_response.refresh_token {
             self.refresh_token = refresh_token.into();
         }
-        Ok(())
+        Ok(true)
     }
 
     pub fn save<T: TokenCache>(&self, db: &mut T) -> Result<()> {

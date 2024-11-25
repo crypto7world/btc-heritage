@@ -22,6 +22,10 @@ pub trait TokenCache {
 }
 
 impl Tokens {
+    /// Creates new [Tokens] using the provided `auth_url` and `client_id`
+    ///
+    /// The `callback` closure will receive the initial [DeviceAuthorizationResponse] so it
+    /// can be e.g. displayed to the user.
     pub fn new<F>(auth_url: &str, client_id: &str, callback: F) -> Result<Self>
     where
         F: FnOnce(DeviceAuthorizationResponse) -> Result<()>,
@@ -33,6 +37,17 @@ impl Tokens {
             |dar| async { callback(dar) },
         ))?;
         Ok(Self { inner })
+    }
+
+    /// Refresh the Tokens if needed.
+    ///
+    /// Returns `true` if the token where refreshed, else return `false`.
+    ///
+    /// # Errors
+    /// Return an error if the tokens needed to be refreshed but the process
+    /// failed
+    pub fn refresh_if_needed(&mut self) -> Result<bool> {
+        super::blocker().block_on(self.inner.refresh_if_needed())
     }
 
     pub fn save<T: TokenCache>(&self, db: &mut T) -> Result<()> {
