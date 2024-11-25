@@ -6,6 +6,11 @@ pub mod errors;
 
 #[cfg(feature = "async_client")]
 pub mod async_client;
+#[cfg(feature = "async_client")]
+pub mod auth {
+    pub use crate::async_client::auth::DeviceAuthorizationResponse;
+}
+
 #[cfg(all(feature = "async_client", not(feature = "blocking_client")))]
 pub use async_client::*;
 
