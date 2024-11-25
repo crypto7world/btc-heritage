@@ -2,7 +2,7 @@ use crate::{async_client::auth::DeviceAuthorizationResponse, errors::Result};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Tokens {
     #[serde(flatten)]
     pub(super) inner: crate::async_client::Tokens,

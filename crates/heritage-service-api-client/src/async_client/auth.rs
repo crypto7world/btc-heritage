@@ -39,14 +39,14 @@ pub trait TokenCache {
     fn load_tokens(&self) -> Result<Option<Tokens>>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Tokens {
-    pub(crate) id_token: String,
-    pub(crate) access_token: String,
-    refresh_token: String,
+    pub(crate) id_token: Box<str>,
+    pub(crate) access_token: Box<str>,
+    refresh_token: Box<str>,
     expiration_ts: u64,
-    token_endpoint: String,
-    client_id: String,
+    token_endpoint: Box<str>,
+    client_id: Box<str>,
 }
 
 impl Tokens {
@@ -90,14 +90,15 @@ impl Tokens {
                     if let Ok(tokens) = serde_json::from_str::<TokenResponse>(&body) {
                         log::debug!("Got tokens!");
                         return Ok(Self {
-                            id_token: tokens.id_token,
-                            access_token: tokens.access_token,
-                            refresh_token: tokens.refresh_token.ok_or_else(|| {
-                                Error::Generic("Missing refresh token".to_owned())
-                            })?,
+                            id_token: tokens.id_token.into(),
+                            access_token: tokens.access_token.into(),
+                            refresh_token: tokens
+                                .refresh_token
+                                .ok_or_else(|| Error::Generic("Missing refresh token".to_owned()))?
+                                .into(),
                             expiration_ts: timestamp_now() + tokens.expires_in as u64,
-                            token_endpoint: auth_url.to_owned(),
-                            client_id: client_id.to_owned(),
+                            token_endpoint: auth_url.into(),
+                            client_id: client_id.into(),
                         });
                     } else {
                         log::error!("Invalid response from the device token API: {body}");
@@ -132,18 +133,18 @@ impl Tokens {
         };
 
         log::debug!("Initiating Token refresh flow");
-        let req = Client::new().post(&self.token_endpoint).form(&[
-            ("client_id", self.client_id.as_str()),
+        let req = Client::new().post(self.token_endpoint.as_ref()).form(&[
+            ("client_id", self.client_id.as_ref()),
             ("grant_type", "refresh_token"),
-            ("refresh_token", self.refresh_token.as_str()),
+            ("refresh_token", self.refresh_token.as_ref()),
         ]);
         let body = super::client::req_builder_to_body(req).await?;
         let token_response = serde_json::from_str::<TokenResponse>(&body)?;
 
-        self.id_token = token_response.id_token;
-        self.access_token = token_response.access_token;
+        self.id_token = token_response.id_token.into();
+        self.access_token = token_response.access_token.into();
         if let Some(refresh_token) = token_response.refresh_token {
-            self.refresh_token = refresh_token;
+            self.refresh_token = refresh_token.into();
         }
         Ok(())
     }
