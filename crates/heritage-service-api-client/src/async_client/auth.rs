@@ -159,6 +159,8 @@ impl Tokens {
         if let Some(refresh_token) = token_response.refresh_token {
             self.refresh_token = refresh_token.into();
         }
+        self.expiration_ts = timestamp_now() + token_response.expires_in as u64;
+
         Ok(true)
     }
 
