@@ -49,7 +49,7 @@ pub struct HeritageWalletMetaUpdate {
     pub block_inclusion_objective: Option<BlockInclusionObjective>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(
     tag = "status",
     content = "accountxpub",
@@ -60,20 +60,20 @@ pub enum AccountXPubWithStatus {
     Unused(AccountXPub),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NewTxRecipient {
     pub address: String,
     pub amount: u64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum NewTxSpendingConfig {
     Recipients(Vec<NewTxRecipient>),
     DrainTo(NewTxDrainTo),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum NewTxFeePolicy {
     Absolute { amount: u64 },
@@ -97,7 +97,7 @@ impl From<NewTxFeePolicy> for FeePolicy {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum NewTxUtxoSelection {
     IncludeExclude {
@@ -135,7 +135,7 @@ impl From<NewTxUtxoSelection> for UtxoSelection {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NewTx {
     pub spending_config: NewTxSpendingConfig,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -146,7 +146,7 @@ pub struct NewTx {
     pub disable_rbf: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct NewTxDrainTo {
     pub drain_to: String,
 }
@@ -162,7 +162,7 @@ pub enum SynchronizationStatus {
     Failed,
 }
 
-#[derive(Debug, Deserialize, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, Default, PartialEq, Eq)]
 pub struct Synchronization {
     #[serde(default)]
     pub status: SynchronizationStatus,
@@ -175,7 +175,7 @@ pub struct Synchronization {
 }
 
 /// Created from an HeritageUtxo for each heir_config in the HeritageConfig
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Heritage {
     /// The identifier of this concrete heritage, a hash of user_id || wallet_id || heir_id.
     /// It is not unique and will be used as a DynamoDB index marker for iHeritages
@@ -252,7 +252,7 @@ pub enum HeirContact {
 /// Note that in case an heritage goes to maturity for some reason, the heir will be
 /// notified using its contact informations and they will also have all view permissions
 /// on the specific HeritageConfig expect the ability to see who are the other heirs
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HeirPermission {
     /// The Heir can see the inheritance

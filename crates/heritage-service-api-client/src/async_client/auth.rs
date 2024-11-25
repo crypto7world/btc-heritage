@@ -1,5 +1,7 @@
+use std::future::Future;
+
 use btc_heritage::utils::timestamp_now;
-use reqwest::blocking::Client;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{Error, Result};
@@ -48,25 +50,26 @@ pub struct Tokens {
 }
 
 impl Tokens {
-    pub fn new<F>(auth_url: &str, client_id: &str, callback: F) -> Result<Self>
+    pub async fn new<F, Fut>(auth_url: &str, client_id: &str, callback: F) -> Result<Self>
     where
-        F: FnOnce(DeviceAuthorizationResponse) -> Result<()>,
+        F: FnOnce(DeviceAuthorizationResponse) -> Fut,
+        Fut: Future<Output = Result<()>>,
     {
         log::debug!("Tokens::new - auth_url={auth_url} client_id={client_id}");
         let client = Client::new();
 
         log::debug!("Initiating Device Authentication flow");
-        let req: reqwest::blocking::RequestBuilder = client
+        let req: reqwest::RequestBuilder = client
             .post(auth_url)
             .form(&[("client_id", client_id), ("scope", "openid profile email")]);
-        let body = crate::client::req_builder_to_body(req)?;
+        let body = super::client::req_builder_to_body(req).await?;
 
         let device_auth_response: DeviceAuthorizationResponse = serde_json::from_str(&body)?;
         let auth_expiration_ts = timestamp_now() + device_auth_response.expires_in as u64;
         let device_code = device_auth_response.device_code.clone();
         let sleep_interval = device_auth_response.interval as u64;
 
-        callback(device_auth_response)?;
+        callback(device_auth_response).await?;
 
         loop {
             if timestamp_now() >= auth_expiration_ts {
@@ -81,7 +84,7 @@ impl Tokens {
                 ("client_id", client_id),
             ]);
 
-            match crate::client::req_builder_to_body(req) {
+            match super::client::req_builder_to_body(req).await {
                 Ok(body) => {
                     log::debug!("Got a 2XX response from the device token API");
                     if let Ok(tokens) = serde_json::from_str::<TokenResponse>(&body) {
@@ -122,7 +125,7 @@ impl Tokens {
             }
         }
     }
-    pub(crate) fn refresh_if_needed(&mut self) -> Result<()> {
+    pub(super) async fn refresh_if_needed(&mut self) -> Result<()> {
         log::debug!("Tokens::refresh_if_needed");
         if self.expiration_ts > timestamp_now() + 30 {
             return Ok(());
@@ -134,7 +137,7 @@ impl Tokens {
             ("grant_type", "refresh_token"),
             ("refresh_token", self.refresh_token.as_str()),
         ]);
-        let body = crate::client::req_builder_to_body(req)?;
+        let body = super::client::req_builder_to_body(req).await?;
         let token_response = serde_json::from_str::<TokenResponse>(&body)?;
 
         self.id_token = token_response.id_token;
