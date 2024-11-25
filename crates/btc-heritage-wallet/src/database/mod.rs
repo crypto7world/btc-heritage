@@ -516,4 +516,14 @@ impl TokenCache for Database {
             heritage_service_api_client::Error::TokenCacheReadError(e.to_string())
         })
     }
+
+    fn clear(&mut self) -> core::result::Result<bool, heritage_service_api_client::Error> {
+        Ok(self
+            .delete_item::<heritage_service_api_client::Tokens>(TOKEN_KEY)
+            .map_err(|e| {
+                log::error!("{e}");
+                heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
+            })?
+            .is_some())
+    }
 }

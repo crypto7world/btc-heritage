@@ -19,6 +19,7 @@ impl Default for Tokens {
 pub trait TokenCache {
     fn save_tokens(&mut self, tokens: &Tokens) -> Result<()>;
     fn load_tokens(&self) -> Result<Option<Tokens>>;
+    fn clear(&mut self) -> Result<bool>;
 }
 
 impl Tokens {
