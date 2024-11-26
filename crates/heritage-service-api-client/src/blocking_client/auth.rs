@@ -1,4 +1,4 @@
-use crate::{async_client::auth::DeviceAuthorizationResponse, errors::Result};
+use crate::{async_client::auth::DeviceAuthorizationResponse, auth::Token, errors::Result};
 
 use serde::{Deserialize, Serialize};
 
@@ -6,13 +6,6 @@ use serde::{Deserialize, Serialize};
 pub struct Tokens {
     #[serde(flatten)]
     pub(super) inner: crate::async_client::Tokens,
-}
-impl Default for Tokens {
-    fn default() -> Self {
-        Self {
-            inner: Default::default(),
-        }
-    }
 }
 
 /// A trait providing methods for the OAuth tokens to be cached and retrieved
@@ -49,6 +42,13 @@ impl Tokens {
     /// failed
     pub fn refresh_if_needed(&mut self) -> Result<bool> {
         super::blocker().block_on(self.inner.refresh_if_needed())
+    }
+
+    pub fn id_token(&self) -> &Token {
+        self.inner.id_token()
+    }
+    pub fn access_token(&self) -> &Token {
+        self.inner.access_token()
     }
 
     pub fn save<T: TokenCache>(&self, db: &mut T) -> Result<()> {

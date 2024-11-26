@@ -1,10 +1,36 @@
 use std::future::Future;
 
-use btc_heritage::utils::timestamp_now;
+use btc_heritage::{bitcoin::base64, utils::timestamp_now};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::errors::{Error, Result};
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Token(pub(crate) Box<str>);
+impl Token {
+    pub fn as_json(&self) -> Value {
+        let start = self
+            .0
+            .find(".")
+            .expect("correctly formed OAuth tokens always have 2 dots")
+            + 1;
+        let end = self.0[start..]
+            .find(".")
+            .expect("correctly formed OAuth tokens always have 2 dots")
+            + start;
+        let token_data =
+            base64::decode(&self.0[start..end]).expect("between the 2 dots always valid B64");
+        serde_json::from_slice(&token_data).expect("between the 2 dots always valid JSON")
+    }
+}
+impl From<String> for Token {
+    fn from(value: String) -> Self {
+        Self(value.into())
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct DeviceAuthorizationResponse {
@@ -40,10 +66,10 @@ pub trait TokenCache {
     fn clear(&mut self) -> Result<bool>;
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Tokens {
-    pub(crate) id_token: Box<str>,
-    pub(crate) access_token: Box<str>,
+    pub(crate) id_token: Token,
+    pub(crate) access_token: Token,
     refresh_token: Box<str>,
     expiration_ts: u64,
     token_endpoint: Box<str>,
@@ -162,6 +188,13 @@ impl Tokens {
         self.expiration_ts = timestamp_now() + token_response.expires_in as u64;
 
         Ok(true)
+    }
+
+    pub fn id_token(&self) -> &Token {
+        &self.id_token
+    }
+    pub fn access_token(&self) -> &Token {
+        &self.access_token
     }
 
     pub fn save<T: TokenCache>(&self, db: &mut T) -> Result<()> {

@@ -97,7 +97,7 @@ impl HeritageServiceClient {
             let mut mutex_guard = self.tokens.lock().expect("invalid mutex state");
             let tokens = mutex_guard.as_mut().ok_or(Error::Unauthenticated)?;
             tokens.refresh_if_needed().await?;
-            req.bearer_auth(&tokens.id_token)
+            req.bearer_auth(&tokens.id_token.0)
         };
 
         let req = match body {
