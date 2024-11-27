@@ -1,5 +1,6 @@
 use std::{
     io::{stdout, Write},
+    sync::Arc,
     thread,
     time::Duration,
 };
@@ -21,9 +22,9 @@ use heritage_service_api_client::{
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceBinding {
-    wallet_id: String,
+    wallet_id: Arc<str>,
     fingerprint: Option<Fingerprint>,
     network: Network,
     #[serde(skip, default)]
@@ -48,7 +49,7 @@ impl ServiceBinding {
         let wallet_id = wallet_meta.id;
         let fingerprint = wallet_meta.fingerprint;
         Ok(Self {
-            wallet_id,
+            wallet_id: wallet_id.into(),
             fingerprint,
             network,
             service_client: Some(service_client),
@@ -60,7 +61,7 @@ impl ServiceBinding {
         network: Network,
     ) -> Result<Self> {
         Ok(Self {
-            wallet_id: wallet.id,
+            wallet_id: wallet.id.into(),
             fingerprint: wallet.fingerprint,
             network,
             service_client: Some(service_client),

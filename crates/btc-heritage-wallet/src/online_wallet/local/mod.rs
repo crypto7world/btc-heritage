@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{fmt::Debug, sync::Arc};
 
 use crate::{
     database::HeritageWalletDatabase,
@@ -26,6 +26,19 @@ pub enum AnyBlockchainFactory {
     Electrum(Arc<ElectrumBlockchain>),
 }
 
+impl Debug for AnyBlockchainFactory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Bitcoin(_) => "Bitcoin(...)",
+                Self::Electrum(_) => "Electrum(...)",
+            }
+        )
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct LocalHeritageWallet {
     heritage_wallet_id: String,
@@ -43,19 +56,12 @@ impl std::fmt::Debug for LocalHeritageWallet {
             .field(
                 "heritage_wallet",
                 if self.heritage_wallet.is_some() {
-                    &"Some"
+                    &"Some(HeritageWallet<...>)"
                 } else {
                     &"None"
                 },
             )
-            .field(
-                "blockchain",
-                if self.blockchain_factory.is_some() {
-                    &"Some"
-                } else {
-                    &"None"
-                },
-            )
+            .field("blockchain", &self.blockchain_factory)
             .finish()
     }
 }
