@@ -158,18 +158,12 @@ impl Tokens {
         }
     }
 
-    /// Refresh the Tokens if needed.
-    ///
-    /// Returns `true` if the token where refreshed, else return `false`.
+    /// Refresh the Tokens.
     ///
     /// # Errors
-    /// Return an error if the tokens needed to be refreshed but the process
-    /// failed
-    pub async fn refresh_if_needed(&mut self) -> Result<bool> {
-        log::debug!("Tokens::refresh_if_needed");
-        if self.expiration_ts > timestamp_now() + 30 {
-            return Ok(false);
-        };
+    /// Return an error if the tokens refresh failed
+    pub async fn refresh(&mut self) -> Result<()> {
+        log::debug!("Tokens::refresh");
 
         log::debug!("Initiating Token refresh flow");
         let req = Client::new().post(self.token_endpoint.as_ref()).form(&[
@@ -187,7 +181,12 @@ impl Tokens {
         }
         self.expiration_ts = timestamp_now() + token_response.expires_in as u64;
 
-        Ok(true)
+        Ok(())
+    }
+
+    pub fn need_refresh(&self) -> bool {
+        log::debug!("Tokens::need_refresh");
+        self.expiration_ts < timestamp_now() + 30
     }
 
     pub fn id_token(&self) -> &Token {

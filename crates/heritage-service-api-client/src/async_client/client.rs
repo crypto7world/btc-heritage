@@ -16,14 +16,14 @@ use serde::Serialize;
 use serde_json::json;
 use std::{
     collections::{BTreeSet, HashMap},
-    sync::{Arc, Mutex},
+    sync::{Arc, RwLock},
 };
 
 #[derive(Debug, Clone)]
 pub struct HeritageServiceClient {
     client: Client,
     service_api_url: Arc<str>,
-    tokens: Arc<Mutex<Option<Tokens>>>,
+    tokens: Arc<RwLock<Option<Tokens>>>,
 }
 
 pub(super) async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<String> {
@@ -66,12 +66,12 @@ impl HeritageServiceClient {
         Self {
             client: Client::new(),
             service_api_url: service_api_url.into(),
-            tokens: Arc::new(Mutex::new(tokens)),
+            tokens: Arc::new(RwLock::new(tokens)),
         }
     }
 
     pub fn has_tokens(&self) -> bool {
-        self.tokens.lock().expect("invalid mutex state").is_some()
+        self.tokens.read().expect("invalid rw_lock state").is_some()
     }
 
     /// The tokens are interiorly-mutable due to the need of (maybe) renewing
@@ -79,7 +79,7 @@ impl HeritageServiceClient {
     /// an immutable ref on self. It allows to continue using the HeritageServiceClient
     /// as a single allocated, cheaply clonable struct.
     pub fn set_tokens(&self, tokens: Option<Tokens>) {
-        let mut mutex_guard = self.tokens.lock().expect("invalid mutex state");
+        let mut mutex_guard = self.tokens.write().expect("invalid mutex state");
         *mutex_guard = tokens;
     }
 
@@ -94,10 +94,21 @@ impl HeritageServiceClient {
         let req = self.client.request(method, &api_endpoint);
 
         let req = {
-            let mut mutex_guard = self.tokens.lock().expect("invalid mutex state");
-            let tokens = mutex_guard.as_mut().ok_or(Error::Unauthenticated)?;
-            tokens.refresh_if_needed().await?;
-            req.bearer_auth(&tokens.id_token.0)
+            let read_guard = self.tokens.read().expect("invalid rw_lock state");
+            let tokens = read_guard.as_ref().ok_or(Error::Unauthenticated)?;
+            if !tokens.need_refresh() {
+                req.bearer_auth(&tokens.id_token.0)
+            } else {
+                // Force drop the readguard so we can write-lock and get a &mut Tokens
+                drop(read_guard);
+                let mut write_guard = self.tokens.write().expect("invalid rw_lock state");
+                let tokens = write_guard.as_mut().ok_or(Error::Unauthenticated)?;
+                // To prevent double-refresh race-conditions, we re-check the tokens expiration status before calling refresh
+                if tokens.need_refresh() {
+                    tokens.refresh().await?;
+                }
+                req.bearer_auth(&tokens.id_token.0)
+            }
         };
 
         let req = match body {

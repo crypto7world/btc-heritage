@@ -33,15 +33,16 @@ impl Tokens {
         Ok(Self { inner })
     }
 
-    /// Refresh the Tokens if needed.
-    ///
-    /// Returns `true` if the token where refreshed, else return `false`.
+    /// Refresh the Tokens.
     ///
     /// # Errors
-    /// Return an error if the tokens needed to be refreshed but the process
-    /// failed
-    pub fn refresh_if_needed(&mut self) -> Result<bool> {
-        super::blocker().block_on(self.inner.refresh_if_needed())
+    /// Return an error if the tokens refresh failed
+    pub fn refresh(&mut self) -> Result<()> {
+        super::blocker().block_on(self.inner.refresh())
+    }
+
+    pub fn need_refresh(&self) -> bool {
+        self.inner.need_refresh()
     }
 
     pub fn id_token(&self) -> &Token {
