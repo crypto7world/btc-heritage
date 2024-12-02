@@ -5,7 +5,10 @@ use heritage_service_api_client::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{errors::Result, BoundFingerprint, Broadcaster};
+use crate::{
+    errors::{Error, Result},
+    BoundFingerprint, Broadcaster,
+};
 
 use super::Heritage;
 
@@ -25,17 +28,20 @@ impl ServiceBinding {
     pub fn init_service_client(&mut self, service_client: HeritageServiceClient) {
         self.service_client = Some(service_client);
     }
-    fn service_client(&self) -> &HeritageServiceClient {
+    pub fn has_service_client(&self) -> bool {
+        self.service_client.is_some()
+    }
+    fn service_client(&self) -> Result<&HeritageServiceClient> {
         self.service_client
             .as_ref()
-            .expect("service client should have been initialized")
+            .ok_or(Error::UninitializedServiceClient)
     }
 }
 
 impl super::HeritageProvider for ServiceBinding {
     fn list_heritages(&self) -> Result<Vec<Heritage>> {
         Ok(self
-            .service_client()
+            .service_client()?
             .list_heritages()?
             .into_iter()
             .filter_map(|api_h| {
@@ -63,7 +69,7 @@ impl super::HeritageProvider for ServiceBinding {
         heritage_id: &str,
         drain_to: btc_heritage::bitcoin::Address,
     ) -> Result<(PartiallySignedTransaction, TransactionSummary)> {
-        Ok(self.service_client().post_heritage_create_unsigned_tx(
+        Ok(self.service_client()?.post_heritage_create_unsigned_tx(
             heritage_id,
             NewTxDrainTo {
                 drain_to: drain_to.to_string(),
@@ -77,7 +83,7 @@ impl Broadcaster for ServiceBinding {
         &self,
         psbt: PartiallySignedTransaction,
     ) -> Result<heritage_service_api_client::Txid> {
-        Ok(self.service_client().post_broadcast_tx(psbt)?)
+        Ok(self.service_client()?.post_broadcast_tx(psbt)?)
     }
 }
 

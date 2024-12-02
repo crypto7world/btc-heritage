@@ -124,10 +124,10 @@ impl LedgerKey {
         }
         Ok(())
     }
-    fn ledger_client(&self) -> &LedgerClient {
+    fn ledger_client(&self) -> Result<&LedgerClient> {
         self.ledger_client
             .as_ref()
-            .expect("ledger client should have been initialized")
+            .ok_or(Error::UninitializedLedgerClient)
     }
     pub fn register_policies<P>(
         &mut self,
@@ -137,7 +137,7 @@ impl LedgerKey {
     where
         P: Fn(&WalletPolicy),
     {
-        let client = self.ledger_client();
+        let client = self.ledger_client()?;
         let register_results = policies
             .iter()
             .map(|policy| {
@@ -222,7 +222,7 @@ impl super::KeyProvider for LedgerKey {
                 .get(&account_id)
                 .expect("we ensured every ids are in the Hashtable");
             let ret =
-                self.ledger_client()
+                self.ledger_client()?
                     .sign_psbt(&psbt_v_ledger, &pol.into(), Some(hmac.into()))?;
             for (index, sig) in ret {
                 signed_inputs += 1;
@@ -283,7 +283,7 @@ impl super::KeyProvider for LedgerKey {
                 let derivation_path = base_derivation_path
                     .extend([ChildNumber::from_hardened_idx(i)
                         .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
-                let xpub: bitcoin::bip32::Xpub = self.ledger_client().get_extended_pubkey(
+                let xpub: bitcoin::bip32::Xpub = self.ledger_client()?.get_extended_pubkey(
                     // Because for now we are bound to the rust-bitcoin version of BDK
                     // which is different than the one used by ledger_bitcoin_client
                     &bitcoin::bip32::DerivationPath::from_str(&derivation_path.to_string())

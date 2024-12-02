@@ -58,6 +58,10 @@ pub enum Error {
     IncoherentServiceWalletFingerprint,
     #[error("The wallet fingerprint on the connected Ledger is not the one stored in the local database")]
     IncoherentLedgerWalletFingerprint,
+    #[error("No Service Client has been provided to perform this operation")]
+    UninitializedServiceClient,
+    #[error("No Ledger Client has been provided to perform this operation")]
+    UninitializedLedgerClient,
     #[error("The retrieved wallet fingerprint is not the one stored in the local database. Wrong password.")]
     IncoherentLocalKeyFingerprint,
     #[error("Heritage error: {source}")]

@@ -120,23 +120,25 @@ impl ServiceBinding {
         ServiceBinding::bind(wallets.pop().unwrap(), service_client, network)
     }
     pub fn init_service_client(&mut self, service_client: HeritageServiceClient) -> Result<()> {
-        self.service_client = Some(service_client);
-        if self
-            .service_client
-            .as_ref()
-            .unwrap()
-            .get_wallet(&self.wallet_id)?
-            .fingerprint
-            != self.fingerprint
-        {
+        if service_client.get_wallet(&self.wallet_id)?.fingerprint != self.fingerprint {
             return Err(Error::IncoherentServiceWalletFingerprint);
         }
+        self.init_service_client_unchecked(service_client);
         Ok(())
     }
-    pub fn service_client(&self) -> &HeritageServiceClient {
+    pub fn init_service_client_unchecked(&mut self, service_client: HeritageServiceClient) {
+        self.service_client = Some(service_client);
+    }
+    pub fn has_service_client(&self) -> bool {
+        self.service_client.is_some()
+    }
+    pub fn service_client(&self) -> Option<&HeritageServiceClient> {
+        self.service_client.as_ref()
+    }
+    fn unwrap_service_client(&self) -> Result<&HeritageServiceClient> {
         self.service_client
             .as_ref()
-            .expect("service client should have been initialized")
+            .ok_or(Error::UninitializedServiceClient)
     }
     pub fn wallet_id(&self) -> &str {
         &self.wallet_id
@@ -146,35 +148,37 @@ impl ServiceBinding {
 impl super::OnlineWallet for ServiceBinding {
     fn backup_descriptors(&self) -> Result<HeritageWalletBackup> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .get_wallet_descriptors_backup(&self.wallet_id)?)
     }
 
     fn get_address(&self) -> Result<String> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .post_wallet_create_address(&self.wallet_id)?)
     }
 
     fn list_addresses(&self) -> Result<Vec<WalletAddress>> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .list_wallet_addresses(&self.wallet_id)?)
     }
 
     fn list_transactions(&self) -> Result<Vec<TransactionSummary>> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .list_wallet_transactions(&self.wallet_id)?)
     }
 
     fn list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
-        Ok(self.service_client().list_wallet_utxos(&self.wallet_id)?)
+        Ok(self
+            .unwrap_service_client()?
+            .list_wallet_utxos(&self.wallet_id)?)
     }
 
     fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .list_wallet_account_xpubs(&self.wallet_id)?)
     }
     fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()> {
@@ -182,7 +186,7 @@ impl super::OnlineWallet for ServiceBinding {
             .get(0)
             .map(|axpub| axpub.descriptor_public_key().master_fingerprint());
 
-        self.service_client()
+        self.unwrap_service_client()?
             .post_wallet_account_xpubs(&self.wallet_id, account_xpubs)?;
         if self.fingerprint.is_none() {
             self.fingerprint = fingerprint;
@@ -192,19 +196,19 @@ impl super::OnlineWallet for ServiceBinding {
 
     fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .list_wallet_heritage_configs(&self.wallet_id)?)
     }
 
     fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .post_wallet_heritage_configs(&self.wallet_id, new_hc)?)
     }
 
     fn set_block_inclusion_objective(&mut self, bio: u16) -> Result<super::WalletStatus> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .patch_wallet(
                 &self.wallet_id,
                 None,
@@ -216,7 +220,7 @@ impl super::OnlineWallet for ServiceBinding {
     fn sync(&mut self) -> Result<()> {
         // Ask for a sync
         let mut sync = self
-            .service_client()
+            .unwrap_service_client()?
             .post_wallet_synchronize(&self.wallet_id)?;
         print!("Syncing");
         let _ = stdout().flush();
@@ -239,13 +243,13 @@ impl super::OnlineWallet for ServiceBinding {
                 }
             }
             sync = self
-                .service_client()
+                .unwrap_service_client()?
                 .get_wallet_synchronize(&self.wallet_id)?;
         }
     }
 
     fn get_wallet_status(&self) -> Result<super::WalletStatus> {
-        let hwm = self.service_client().get_wallet(&self.wallet_id)?;
+        let hwm = self.unwrap_service_client()?.get_wallet(&self.wallet_id)?;
         Ok(hwm.into())
     }
 
@@ -254,14 +258,14 @@ impl super::OnlineWallet for ServiceBinding {
         new_tx: NewTx,
     ) -> Result<(PartiallySignedTransaction, TransactionSummary)> {
         Ok(self
-            .service_client()
+            .unwrap_service_client()?
             .post_wallet_create_unsigned_tx(&self.wallet_id, new_tx)?)
     }
 }
 
 impl Broadcaster for ServiceBinding {
     fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid> {
-        Ok(self.service_client().post_broadcast_tx(psbt)?)
+        Ok(self.unwrap_service_client()?.post_broadcast_tx(psbt)?)
     }
 }
 
