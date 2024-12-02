@@ -26,11 +26,6 @@ impl Token {
         serde_json::from_slice(&token_data).expect("between the 2 dots always valid JSON")
     }
 }
-impl From<String> for Token {
-    fn from(value: String) -> Self {
-        Self(value.into())
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub struct DeviceAuthorizationResponse {
@@ -121,8 +116,8 @@ impl Tokens {
                     if let Ok(tokens) = serde_json::from_str::<TokenResponse>(&body) {
                         log::debug!("Got tokens!");
                         return Ok(Self {
-                            id_token: tokens.id_token.into(),
-                            access_token: tokens.access_token.into(),
+                            id_token: Token(tokens.id_token.into()),
+                            access_token: Token(tokens.access_token.into()),
                             refresh_token: tokens
                                 .refresh_token
                                 .ok_or_else(|| Error::Generic("Missing refresh token".to_owned()))?
@@ -174,8 +169,8 @@ impl Tokens {
         let body = super::client::req_builder_to_body(req).await?;
         let token_response = serde_json::from_str::<TokenResponse>(&body)?;
 
-        self.id_token = token_response.id_token.into();
-        self.access_token = token_response.access_token.into();
+        self.id_token = Token(token_response.id_token.into());
+        self.access_token = Token(token_response.access_token.into());
         if let Some(refresh_token) = token_response.refresh_token {
             self.refresh_token = refresh_token.into();
         }
