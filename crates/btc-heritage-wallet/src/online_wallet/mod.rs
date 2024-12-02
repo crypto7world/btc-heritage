@@ -20,7 +20,7 @@ pub use local::{AnyBlockchainFactory, LocalHeritageWallet};
 use serde::{Deserialize, Serialize};
 pub use service::ServiceBinding;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletStatus {
     pub fingerprint: Option<Fingerprint>,
     pub balance: HeritageWalletBalance,
