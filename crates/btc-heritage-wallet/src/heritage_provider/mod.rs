@@ -3,7 +3,7 @@ use crate::{
     BoundFingerprint, Broadcaster,
 };
 use btc_heritage::{
-    bitcoin::{bip32::Fingerprint, Address, Txid},
+    bitcoin::{amount, bip32::Fingerprint, Address, Txid},
     heritage_wallet::TransactionSummary,
     Amount, PartiallySignedTransaction,
 };
@@ -20,7 +20,7 @@ type Timestamp = u64;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Heritage {
     pub heritage_id: String,
-    #[serde(with = "btc_heritage::amount_serde")]
+    #[serde(with = "amount::serde::as_sat")]
     pub value: Amount,
     /// The timestamp after which the Heir is able to spend
     pub maturity: Timestamp,

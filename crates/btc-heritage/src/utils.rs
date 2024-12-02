@@ -46,7 +46,6 @@ pub fn bitcoin_network_from_env() -> &'static Network {
                     Network::Testnet
                 }
             },
-            #[cfg(not(any(test, feature = "database-tests", feature = "psbt-tests")))]
             Err(_) => {
                 log::warn!(
                     "environment variable `BITCOIN_NETWORK` is not set. Using Network::Bitcoin."
@@ -116,53 +115,6 @@ pub fn extract_tx(psbt: PartiallySignedTransaction) -> Result<Transaction, Error
     let raw_tx = psbt.extract_tx();
     log::debug!("extract_tx - raw_tx: {}", json!(raw_tx));
     Ok(raw_tx)
-}
-
-/// Module allowing Ser/De for the [Amount] struct
-pub mod amount_serde {
-    use crate::bitcoin::Amount;
-
-    pub fn serialize<S>(amount: &Amount, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_u64(amount.to_sat())
-    }
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Amount, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct AmountVisitor;
-        impl<'de> serde::de::Visitor<'de> for AmountVisitor {
-            type Value = Amount;
-
-            fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
-                formatter.write_str("a positive integer representing a satoshi amount")
-            }
-
-            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                Ok(Amount::from_sat(value))
-            }
-            // Because serde_dynamo just ignores the hint that we expect a u64. Thx dude.
-            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error,
-            {
-                if value >= 0 {
-                    Ok(Amount::from_sat(value as u64))
-                } else {
-                    Err(serde::de::Error::invalid_type(
-                        serde::de::Unexpected::Signed(value),
-                        &self,
-                    ))
-                }
-            }
-        }
-        deserializer.deserialize_u64(AmountVisitor)
-    }
 }
 
 type BlockHeight = Option<u32>;

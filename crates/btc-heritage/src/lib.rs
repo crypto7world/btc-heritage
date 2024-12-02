@@ -16,7 +16,6 @@ pub use heritage_wallet::{
 
 pub use bdk::bitcoin;
 pub use bdk::miniscript;
-pub use utils::amount_serde;
 
 #[cfg(feature = "online")]
 pub use bdk::{bitcoincore_rpc, electrum_client};

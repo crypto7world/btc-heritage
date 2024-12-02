@@ -267,7 +267,7 @@ pub struct HeritageUtxo {
     /// [OutPoint] of this UTXO
     pub outpoint: OutPoint,
     /// [Amount] of this UTXO
-    #[serde(with = "crate::utils::amount_serde")]
+    #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
     pub amount: Amount,
     /// The [BlockTime] of the block that contains the Tx referenced by the [OutPoint]
     /// Can be None if the UTXO is for a unconfirmed TX
@@ -313,7 +313,7 @@ impl HeritageUtxo {
 pub struct TransactionSummaryOwnedIO {
     pub outpoint: OutPoint,
     pub address: CheckedAddress,
-    #[serde(with = "crate::utils::amount_serde")]
+    #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
     pub amount: Amount,
 }
 
@@ -331,7 +331,7 @@ pub struct TransactionSummary {
     /// The owned outputs addresses and amounts of this transaction
     pub owned_outputs: Vec<TransactionSummaryOwnedIO>,
     /// Fee value (sats)
-    #[serde(with = "crate::utils::amount_serde")]
+    #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
     pub fee: Amount,
     /// Fee rate (sat/kWU)
     pub fee_rate: FeeRate,
