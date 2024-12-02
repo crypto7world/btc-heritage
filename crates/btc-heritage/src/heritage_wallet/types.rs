@@ -20,8 +20,7 @@ use crate::{
     HeirConfig, HeritageConfig,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq)]
 pub struct HeritageWalletBalance {
     uptodate_balance: Balance,
     obsolete_balance: Balance,
