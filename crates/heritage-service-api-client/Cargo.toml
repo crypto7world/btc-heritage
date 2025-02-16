@@ -17,7 +17,7 @@ serde = { workspace = true }
 serde_json = { workspace = true, optional = true }
 
 reqwest = { workspace = true, optional = true }
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true }
 regex = { workspace = true }
 
 log = { workspace = true }
@@ -25,6 +25,4 @@ thiserror = { workspace = true }
 
 [features]
 default = ["client"]
-client = ["blocking_client"]
-async_client = ["reqwest", "serde_json"]
-blocking_client = ["async_client", "tokio"]
+client = ["reqwest", "serde_json"]

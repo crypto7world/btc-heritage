@@ -16,8 +16,9 @@ use serde::Serialize;
 use serde_json::json;
 use std::{
     collections::{BTreeSet, HashMap},
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
 pub struct HeritageServiceClient {
@@ -70,16 +71,16 @@ impl HeritageServiceClient {
         }
     }
 
-    pub fn has_tokens(&self) -> bool {
-        self.tokens.read().expect("invalid rw_lock state").is_some()
+    pub async fn has_tokens(&self) -> bool {
+        self.tokens.read().await.is_some()
     }
 
     /// The tokens are interiorly-mutable due to the need of (maybe) renewing
     /// them when calling an API so we can also allow changing the tokens with
     /// an immutable ref on self. It allows to continue using the HeritageServiceClient
     /// as a single allocated, cheaply clonable struct.
-    pub fn set_tokens(&self, tokens: Option<Tokens>) {
-        let mut mutex_guard = self.tokens.write().expect("invalid mutex state");
+    pub async fn set_tokens(&self, tokens: Option<Tokens>) {
+        let mut mutex_guard = self.tokens.write().await;
         *mutex_guard = tokens;
     }
 
@@ -94,19 +95,18 @@ impl HeritageServiceClient {
         let req = self.client.request(method, &api_endpoint);
 
         let req = {
-            let read_guard = self.tokens.read().expect("invalid rw_lock state");
+            let read_guard = self.tokens.read().await;
             let tokens = read_guard.as_ref().ok_or(Error::Unauthenticated)?;
-            if !tokens.need_refresh() {
-                req.bearer_auth(&tokens.id_token.0)
-            } else {
-                // Force drop the readguard so we can write-lock and get a &mut Tokens
+            if tokens.need_refresh() {
+                // Force drop the read guard
                 drop(read_guard);
-                let mut write_guard = self.tokens.write().expect("invalid rw_lock state");
+                let mut write_guard = self.tokens.write().await;
                 let tokens = write_guard.as_mut().ok_or(Error::Unauthenticated)?;
-                // To prevent double-refresh race-conditions, we re-check the tokens expiration status before calling refresh
                 if tokens.need_refresh() {
                     tokens.refresh().await?;
                 }
+                req.bearer_auth(&tokens.id_token.0)
+            } else {
                 req.bearer_auth(&tokens.id_token.0)
             }
         };
@@ -184,10 +184,8 @@ impl HeritageServiceClient {
         account_xpubs: Vec<btc_heritage::AccountXPub>,
     ) -> Result<()> {
         let path = format!("wallets/{wallet_id}/account-xpubs");
-        serde_json::from_value(
-            self.api_call(Method::POST, &path, Some(account_xpubs))
-                .await?,
-        )?;
+        self.api_call(Method::POST, &path, Some(account_xpubs))
+            .await?;
         Ok(())
     }
 
