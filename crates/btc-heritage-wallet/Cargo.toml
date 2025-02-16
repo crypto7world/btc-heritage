@@ -21,11 +21,12 @@ bip39 = "2.0.0"
 ledger-transport-hid = "0.11"
 ledger-apdu = "0.11"
 
-redb = { workspace = true }
+redb = "2.1"
 regex = { workspace = true }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true, features = ["rt", "rt-multi-thread"] }
 
 log = { workspace = true }
 thiserror = { workspace = true }

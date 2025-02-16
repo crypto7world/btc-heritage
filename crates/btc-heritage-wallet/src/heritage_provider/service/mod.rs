@@ -39,10 +39,10 @@ impl ServiceBinding {
 }
 
 impl super::HeritageProvider for ServiceBinding {
-    fn list_heritages(&self) -> Result<Vec<Heritage>> {
-        Ok(self
-            .service_client()?
-            .list_heritages()?
+    async fn list_heritages(&self) -> Result<Vec<Heritage>> {
+        let client = self.service_client()?;
+        let heritages = client.list_heritages().await?;
+        Ok(heritages
             .into_iter()
             .filter_map(|api_h| {
                 if api_h
@@ -64,26 +64,29 @@ impl super::HeritageProvider for ServiceBinding {
             })
             .collect())
     }
-    fn create_psbt(
+    async fn create_psbt(
         &self,
         heritage_id: &str,
         drain_to: btc_heritage::bitcoin::Address,
     ) -> Result<(PartiallySignedTransaction, TransactionSummary)> {
-        Ok(self.service_client()?.post_heritage_create_unsigned_tx(
-            heritage_id,
-            NewTxDrainTo {
-                drain_to: drain_to.to_string(),
-            },
-        )?)
+        Ok(self
+            .service_client()?
+            .post_heritage_create_unsigned_tx(
+                heritage_id,
+                NewTxDrainTo {
+                    drain_to: drain_to.to_string(),
+                },
+            )
+            .await?)
     }
 }
 
 impl Broadcaster for ServiceBinding {
-    fn broadcast(
+    async fn broadcast(
         &self,
         psbt: PartiallySignedTransaction,
     ) -> Result<heritage_service_api_client::Txid> {
-        Ok(self.service_client()?.post_broadcast_tx(psbt)?)
+        Ok(self.service_client()?.post_broadcast_tx(psbt).await?)
     }
 }
 

@@ -17,5 +17,8 @@ pub trait BoundFingerprint {
 pub trait Broadcaster {
     /// Try to finalize and then broadcast the given [PartiallySignedTransaction],
     /// if successful returns the [Txid] of the new transaction.
-    fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>;
+    fn broadcast(
+        &self,
+        psbt: PartiallySignedTransaction,
+    ) -> impl std::future::Future<Output = Result<Txid>>;
 }

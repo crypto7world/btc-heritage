@@ -45,22 +45,43 @@ impl From<HeritageWalletMeta> for WalletStatus {
 /// This trait regroup the functions of an Heritage wallet that does not need
 /// access to the private keys and can be safely operated in an online environment.
 pub trait OnlineWallet: Broadcaster + BoundFingerprint {
-    fn backup_descriptors(&self) -> Result<HeritageWalletBackup>;
-    fn get_address(&self) -> Result<String>;
-    fn list_addresses(&self) -> Result<Vec<WalletAddress>>;
-    fn list_transactions(&self) -> Result<Vec<TransactionSummary>>;
-    fn list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>>;
-    fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>;
-    fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>;
-    fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>;
-    fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig>;
-    fn sync(&mut self) -> Result<()>;
-    fn get_wallet_status(&self) -> Result<WalletStatus>;
-    fn set_block_inclusion_objective(&mut self, bio: u16) -> Result<WalletStatus>;
+    fn backup_descriptors(
+        &self,
+    ) -> impl std::future::Future<Output = Result<HeritageWalletBackup>> + Send;
+    fn get_address(&self) -> impl std::future::Future<Output = Result<String>> + Send;
+    fn list_addresses(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<WalletAddress>>> + Send;
+    fn list_transactions(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<TransactionSummary>>> + Send;
+    fn list_heritage_utxos(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<HeritageUtxo>>> + Send;
+    fn list_account_xpubs(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<AccountXPubWithStatus>>> + Send;
+    fn feed_account_xpubs(
+        &mut self,
+        account_xpubs: Vec<AccountXPub>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn list_heritage_configs(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<HeritageConfig>>> + Send;
+    fn set_heritage_config(
+        &mut self,
+        new_hc: HeritageConfig,
+    ) -> impl std::future::Future<Output = Result<HeritageConfig>> + Send;
+    fn sync(&mut self) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn get_wallet_status(&self) -> impl std::future::Future<Output = Result<WalletStatus>> + Send;
+    fn set_block_inclusion_objective(
+        &mut self,
+        bio: u16,
+    ) -> impl std::future::Future<Output = Result<WalletStatus>> + Send;
     fn create_psbt(
         &self,
         new_tx: NewTx,
-    ) -> Result<(PartiallySignedTransaction, TransactionSummary)>;
+    ) -> impl std::future::Future<Output = Result<(PartiallySignedTransaction, TransactionSummary)>> + Send;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -81,20 +102,20 @@ impl AnyOnlineWallet {
 
 macro_rules! impl_online_wallet_fn {
     ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
+        async fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
             impl_online_wallet_fn!($self $fn_name($($a : $t),*))
         }
     };
     ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+        async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
             impl_online_wallet_fn!($self $fn_name($($a : $t),*))
         }
     };
     ($self:ident $fn_name:ident($($a:ident : $t:ty),*)) => {
             match $self {
                 AnyOnlineWallet::None => Err(Error::MissingOnlineWallet),
-                AnyOnlineWallet::Service(sb) => sb.$fn_name($($a),*),
-                AnyOnlineWallet::Local(lhe) => lhe.$fn_name($($a),*),
+                AnyOnlineWallet::Service(sb) => sb.$fn_name($($a),*).await,
+                AnyOnlineWallet::Local(lhe) => lhe.$fn_name($($a),*).await,
             }
     };
 }
@@ -118,18 +139,24 @@ impl Broadcaster for AnyOnlineWallet {
     impl_online_wallet_fn!(broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>);
 }
 impl BoundFingerprint for AnyOnlineWallet {
-    impl_online_wallet_fn!(fingerprint(&self) -> Result<Fingerprint>);
+    fn fingerprint(&self) -> Result<Fingerprint> {
+        match self {
+            AnyOnlineWallet::None => Err(Error::MissingOnlineWallet),
+            AnyOnlineWallet::Service(sb) => sb.fingerprint(),
+            AnyOnlineWallet::Local(lhe) => lhe.fingerprint(),
+        }
+    }
 }
 
 macro_rules! impl_online_wallet {
     ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
-            $self.online_wallet.$fn_name($($a),*)
+        async fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
+            $self.online_wallet.$fn_name($($a),*).await
         }
     };
     ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
-            $self.online_wallet.$fn_name($($a),*)
+        async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+            $self.online_wallet.$fn_name($($a),*).await
         }
     };
     ($name:ident) => {

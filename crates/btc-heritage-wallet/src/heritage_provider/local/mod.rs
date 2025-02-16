@@ -21,14 +21,14 @@ pub struct LocalWallet {
 }
 
 impl LocalWallet {
-    pub fn create(
+    pub async fn create(
         fingerprint: Fingerprint,
         db: &Database,
         backup: HeritageWalletBackup,
     ) -> Result<Self> {
         Ok(Self {
             fingerprint,
-            local_heritage_wallet: LocalHeritageWallet::create(db, Some(backup), 6)?,
+            local_heritage_wallet: LocalHeritageWallet::create(db, Some(backup), 6).await?,
         })
     }
 
@@ -39,18 +39,21 @@ impl LocalWallet {
         &mut self.local_heritage_wallet
     }
 
-    fn heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
-        Ok(self
-            .local_heritage_wallet
-            .heritage_wallet()
-            .database()
-            .list_utxos()?)
+    async fn heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
+        let wallet = self.local_heritage_wallet.heritage_wallet().await?;
+        Ok(tokio::task::block_in_place(|| {
+            wallet.database().list_utxos()
+        })?)
     }
 }
 
 impl super::HeritageProvider for LocalWallet {
-    fn list_heritages(&self) -> Result<Vec<super::Heritage>> {
-        let utxos = self.heritage_utxos()?;
+    async fn list_heritages(&self) -> Result<Vec<super::Heritage>> {
+        //let utxos = self.heritage_utxos().await?;
+        let utxos = {
+            let wallet = self.local_heritage_wallet.heritage_wallet().await?;
+            tokio::task::block_in_place(|| wallet.database().list_utxos())?
+        };
         let mut result = vec![];
         for utxo in utxos.into_iter() {
             let mut heir_config_iter = utxo.heritage_config.iter_heir_configs();
@@ -108,13 +111,13 @@ impl super::HeritageProvider for LocalWallet {
     ///   component should be able to sign all inputs no matter the type of HeirConfig as long as the fingerprints matches
     /// - make use of `heritage_id` to allow the user to choose which HeirConfig he wants to spend from, but that would not be
     ///   much better than the current situation.
-    fn create_psbt(
+    async fn create_psbt(
         &self,
         _heritage_id: &str,
         drain_to: btc_heritage::bitcoin::Address,
     ) -> Result<(PartiallySignedTransaction, TransactionSummary)> {
         // First retrieve the first HeirConfig that match our fingerprint and can spend now
-        let utxos = self.heritage_utxos()?;
+        let utxos = self.heritage_utxos().await?;
         let heir_config = utxos
             .iter()
             .map(|utxo| {
@@ -132,22 +135,24 @@ impl super::HeritageProvider for LocalWallet {
             .next()
             .ok_or(Error::Generic("Nothing to spend".to_owned()))?;
 
-        let wallet = self.local_heritage_wallet.heritage_wallet();
+        let wallet = self.local_heritage_wallet.heritage_wallet().await?;
         // Then create a PSBT for each one
-        Ok(wallet.create_heir_psbt(
-            heir_config,
-            SpendingConfig::DrainTo(drain_to),
-            CreatePsbtOptions::default(),
-        )?)
+        Ok(tokio::task::block_in_place(|| {
+            wallet.create_heir_psbt(
+                heir_config,
+                SpendingConfig::DrainTo(drain_to),
+                CreatePsbtOptions::default(),
+            )
+        })?)
     }
 }
 
 impl Broadcaster for LocalWallet {
-    fn broadcast(
+    async fn broadcast(
         &self,
         psbt: PartiallySignedTransaction,
     ) -> Result<heritage_service_api_client::Txid> {
-        self.local_heritage_wallet.broadcast(psbt)
+        self.local_heritage_wallet.broadcast(psbt).await
     }
 }
 impl BoundFingerprint for LocalWallet {

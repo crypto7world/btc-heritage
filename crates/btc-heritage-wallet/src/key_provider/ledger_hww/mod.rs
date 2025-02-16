@@ -97,9 +97,11 @@ pub struct LedgerKey {
 }
 
 impl LedgerKey {
-    pub fn new(network: Network) -> Result<Self> {
+    pub async fn new(network: Network) -> Result<Self> {
         let ledger_client = Some(LedgerClient::new()?);
-        let fingerprint = ledger_client.as_ref().unwrap().get_master_fingerprint()?;
+        let fingerprint = tokio::task::block_in_place(|| {
+            ledger_client.as_ref().unwrap().get_master_fingerprint()
+        })?;
         Ok(Self {
             // Because for now we are bound to the rust-bitcoin version of BDK
             // which is different than the one used by ledger_bitcoin_client
@@ -109,17 +111,16 @@ impl LedgerKey {
             ledger_client,
         })
     }
-    pub fn init_ledger_client(&mut self) -> Result<()> {
+    pub async fn init_ledger_client(&mut self) -> Result<()> {
         self.ledger_client = Some(LedgerClient::new()?);
 
-        if self
-            .ledger_client
-            .as_ref()
-            .unwrap()
-            .get_master_fingerprint()?
-            .as_bytes()
-            != self.fingerprint.as_bytes()
-        {
+        let ledger_fg = tokio::task::block_in_place(|| {
+            self.ledger_client
+                .as_ref()
+                .unwrap()
+                .get_master_fingerprint()
+        })?;
+        if ledger_fg.as_bytes() != self.fingerprint.as_bytes() {
             return Err(Error::IncoherentLedgerWalletFingerprint);
         }
         Ok(())
@@ -129,7 +130,7 @@ impl LedgerKey {
             .as_ref()
             .ok_or(Error::UninitializedLedgerClient)
     }
-    pub fn register_policies<P>(
+    pub async fn register_policies<P>(
         &mut self,
         policies: &Vec<LedgerPolicy>,
         progress: P,
@@ -145,7 +146,8 @@ impl LedgerKey {
                 let wallet_policy: WalletPolicy = policy.into();
                 // Call the callback progress function so that the caller may display something
                 progress(&wallet_policy);
-                let (id, hmac) = client.register_wallet(&wallet_policy)?;
+                let (id, hmac) =
+                    tokio::task::block_in_place(|| client.register_wallet(&wallet_policy))?;
                 Ok::<_, Error>((
                     account_id,
                     (
@@ -161,6 +163,7 @@ impl LedgerKey {
             .extend(register_results.into_iter());
         Ok(self.registered_policies.len() - before)
     }
+
     pub fn list_registered_policies(
         &self,
     ) -> Vec<(
@@ -177,7 +180,10 @@ impl LedgerKey {
 }
 
 impl super::KeyProvider for LedgerKey {
-    fn sign_psbt(&self, psbt: &mut btc_heritage::PartiallySignedTransaction) -> Result<usize> {
+    async fn sign_psbt(
+        &self,
+        psbt: &mut btc_heritage::PartiallySignedTransaction,
+    ) -> Result<usize> {
         // We need to know what AccountXPubId are present in the PSBT inputs
         let account_ids_present: HashSet<AccountXPubId> = psbt
             .inputs
@@ -216,14 +222,16 @@ impl super::KeyProvider for LedgerKey {
         .map_err(Error::generic)?;
 
         let mut signed_inputs = 0;
+        let client = self.ledger_client()?;
         for account_id in account_ids_present {
             let (pol, _, hmac) = self
                 .registered_policies
                 .get(&account_id)
                 .expect("we ensured every ids are in the Hashtable");
-            let ret =
-                self.ledger_client()?
-                    .sign_psbt(&psbt_v_ledger, &pol.into(), Some(hmac.into()))?;
+
+            let ret = tokio::task::block_in_place(|| {
+                client.sign_psbt(&psbt_v_ledger, &pol.into(), Some(hmac.into()))
+            })?;
             for (index, sig) in ret {
                 signed_inputs += 1;
                 match sig {
@@ -266,7 +274,10 @@ impl super::KeyProvider for LedgerKey {
         Ok(signed_inputs)
     }
 
-    fn derive_accounts_xpubs(&self, range: core::ops::Range<u32>) -> Result<Vec<AccountXPub>> {
+    async fn derive_accounts_xpubs(
+        &self,
+        range: core::ops::Range<u32>,
+    ) -> Result<Vec<AccountXPub>> {
         let cointype_path_segment = match self.network {
             Network::Bitcoin => 0,
             _ => 1,
@@ -277,19 +288,22 @@ impl super::KeyProvider for LedgerKey {
         ];
         let base_derivation_path = DerivationPath::from(base_derivation_path);
 
+        let client = self.ledger_client()?;
         let xpubs = range
             .into_iter()
             .map(|i| {
                 let derivation_path = base_derivation_path
                     .extend([ChildNumber::from_hardened_idx(i)
                         .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
-                let xpub: bitcoin::bip32::Xpub = self.ledger_client()?.get_extended_pubkey(
-                    // Because for now we are bound to the rust-bitcoin version of BDK
-                    // which is different than the one used by ledger_bitcoin_client
+
+                // Because for now we are bound to the rust-bitcoin version of BDK
+                // which is different than the one used by ledger_bitcoin_client
+                let ledger_derivation_path =
                     &bitcoin::bip32::DerivationPath::from_str(&derivation_path.to_string())
-                        .map_err(Error::generic)?,
-                    false,
-                )?;
+                        .map_err(Error::generic)?;
+                let xpub: bitcoin::bip32::Xpub = tokio::task::block_in_place(|| {
+                    client.get_extended_pubkey(ledger_derivation_path, false)
+                })?;
                 let derivation_path_str = derivation_path.to_string();
 
                 let desc_pub_key = format!(
@@ -305,14 +319,14 @@ impl super::KeyProvider for LedgerKey {
         xpubs
     }
 
-    fn derive_heir_config(
+    async fn derive_heir_config(
         &self,
         _heir_config_type: super::HeirConfigType,
     ) -> Result<btc_heritage::HeirConfig> {
         Err(Error::LedgerHeirUnsupported)
     }
 
-    fn backup_mnemonic(&self) -> Result<MnemonicBackup> {
+    async fn backup_mnemonic(&self) -> Result<MnemonicBackup> {
         Err(Error::LedgerBackupMnemonicUnsupported)
     }
 }

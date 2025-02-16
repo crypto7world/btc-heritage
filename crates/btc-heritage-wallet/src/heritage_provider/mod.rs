@@ -32,13 +32,13 @@ pub struct Heritage {
 /// access to the private keys and can be safely operated in an online environment.
 pub trait HeritageProvider: Broadcaster + BoundFingerprint {
     /// List the [Heritage]s that can be spend with create_psbt
-    fn list_heritages(&self) -> Result<Vec<Heritage>>;
+    fn list_heritages(&self) -> impl std::future::Future<Output = Result<Vec<Heritage>>> + Send;
     /// Create a PSBT draining all the [Heritage] that can be spend to a given [Address]
     fn create_psbt(
         &self,
         heritage_id: &str,
         drain_to: Address,
-    ) -> Result<(PartiallySignedTransaction, TransactionSummary)>;
+    ) -> impl std::future::Future<Output = Result<(PartiallySignedTransaction, TransactionSummary)>> + Send;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,15 +59,15 @@ impl AnyHeritageProvider {
 
 macro_rules! impl_heritage_provider_fn {
     ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+        async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
             impl_heritage_provider_fn!($self $fn_name($($a : $t),*))
         }
     };
     ($self:ident $fn_name:ident($($a:ident : $t:ty),*)) => {
             match $self {
                 AnyHeritageProvider::None => Err(Error::MissingHeritageProvider),
-                AnyHeritageProvider::Service(sb) => sb.$fn_name($($a),*),
-                AnyHeritageProvider::LocalWallet(lw) => lw.$fn_name($($a),*),
+                AnyHeritageProvider::Service(sb) => sb.$fn_name($($a),*).await,
+                AnyHeritageProvider::LocalWallet(lw) => lw.$fn_name($($a),*).await,
             }
     };
 }
@@ -81,13 +81,19 @@ impl Broadcaster for AnyHeritageProvider {
     impl_heritage_provider_fn!(broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid>);
 }
 impl BoundFingerprint for AnyHeritageProvider {
-    impl_heritage_provider_fn!(fingerprint(&self) -> Result<Fingerprint>);
+    fn fingerprint(&self) -> Result<Fingerprint> {
+        match self {
+            AnyHeritageProvider::None => Err(Error::MissingHeritageProvider),
+            AnyHeritageProvider::Service(sb) => sb.fingerprint(),
+            AnyHeritageProvider::LocalWallet(lw) => lw.fingerprint(),
+        }
+    }
 }
 
 macro_rules! impl_heritage_provider {
     ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
-            $self.heritage_provider.$fn_name($($a),*)
+        async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+            $self.heritage_provider.$fn_name($($a),*).await
         }
     };
     ($name:ident) => {

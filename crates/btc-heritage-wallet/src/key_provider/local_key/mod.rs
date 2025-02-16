@@ -143,7 +143,7 @@ impl LocalKey {
 }
 
 impl super::KeyProvider for LocalKey {
-    fn sign_psbt(
+    async fn sign_psbt(
         &self,
         psbt: &mut btc_heritage::PartiallySignedTransaction,
     ) -> crate::errors::Result<usize> {
@@ -222,6 +222,9 @@ impl super::KeyProvider for LocalKey {
                 signed_inputs_count += 1;
                 continue;
             }
+
+            // Yield before each signature
+            tokio::task::yield_now().await;
 
             let internalkey = input.tap_internal_key.ok_or_else(|| {
                 // Should not happen
@@ -378,28 +381,37 @@ impl super::KeyProvider for LocalKey {
         Ok(signatures_count)
     }
 
-    fn derive_accounts_xpubs(
+    async fn derive_accounts_xpubs(
         &self,
         range: core::ops::Range<u32>,
     ) -> crate::errors::Result<Vec<AccountXPub>> {
         let xprv = self.xprv();
         let base_derivation_path = self.base_derivation_path();
 
-        let xpubs = range
-            .into_iter()
-            .map(|i| {
-                let derivation_path = base_derivation_path
-                    .extend([ChildNumber::from_hardened_idx(i)
-                        .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
-                let dxpub = self.derive_xpub(Some(xprv), derivation_path);
-                let xpub = DescriptorPublicKey::XPub(dxpub);
-                Ok(AccountXPub::try_from(xpub).expect("we ensured validity"))
-            })
-            .collect();
+        let might_block_too_long = range.len() > 1000;
+
+        let derive = || {
+            range
+                .map(|i| {
+                    let derivation_path = base_derivation_path
+                        .extend([ChildNumber::from_hardened_idx(i)
+                            .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
+                    let dxpub = self.derive_xpub(Some(xprv), derivation_path);
+                    let xpub = DescriptorPublicKey::XPub(dxpub);
+                    Ok(AccountXPub::try_from(xpub).expect("we ensured validity"))
+                })
+                .collect()
+        };
+
+        let xpubs = if might_block_too_long {
+            tokio::task::block_in_place(derive)
+        } else {
+            derive()
+        };
         xpubs
     }
 
-    fn derive_heir_config(
+    async fn derive_heir_config(
         &self,
         heir_config_type: HeirConfigType,
     ) -> Result<btc_heritage::HeirConfig> {
@@ -439,7 +451,7 @@ impl super::KeyProvider for LocalKey {
         }
     }
 
-    fn backup_mnemonic(&self) -> Result<MnemonicBackup> {
+    async fn backup_mnemonic(&self) -> Result<MnemonicBackup> {
         Ok(MnemonicBackup {
             mnemonic: self.mnemonic.clone(),
             fingerprint: self.fingerprint,
@@ -510,179 +522,77 @@ mod tests {
     }
 
     // Verify the wallet ability to sign their PSBT
-    fn wallet_can_sign(tkp: TestKeyProvider, tp: TestPsbt) -> bool {
+    async fn wallet_can_sign(tkp: TestKeyProvider, tp: TestPsbt) -> bool {
         let local_key = get_test_key_provider(tkp);
         let mut psbt = get_test_unsigned_psbt(tp);
         // If the wallet can sign, more than 0 inputs will be signed
-        local_key.sign_psbt(&mut psbt).unwrap() > 0
+        local_key.sign_psbt(&mut psbt).await.unwrap() > 0
     }
-    fn wallet_cannot_sign(tkp: TestKeyProvider, tp: TestPsbt) -> bool {
-        !wallet_can_sign(tkp, tp)
-    }
-
-    #[test]
-    fn owner_wallet_signature() {
-        assert!(wallet_can_sign(
-            TestKeyProvider::Owner,
-            TestPsbt::OwnerDrain
-        ));
-        assert!(wallet_can_sign(
-            TestKeyProvider::Owner,
-            TestPsbt::OwnerRecipients
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Owner,
-            TestPsbt::BackupPresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Owner,
-            TestPsbt::WifePresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Owner,
-            TestPsbt::BackupFuture
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Owner,
-            TestPsbt::WifeFuture
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Owner,
-            TestPsbt::BrotherFuture
-        ));
+    async fn wallet_cannot_sign(tkp: TestKeyProvider, tp: TestPsbt) -> bool {
+        !wallet_can_sign(tkp, tp).await
     }
 
-    #[test]
-    fn backup_wallet_signature() {
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Backup,
-            TestPsbt::OwnerDrain
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Backup,
-            TestPsbt::OwnerRecipients
-        ));
-        assert!(wallet_can_sign(
-            TestKeyProvider::Backup,
-            TestPsbt::BackupPresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Backup,
-            TestPsbt::WifePresent
-        ));
-        assert!(wallet_can_sign(
-            TestKeyProvider::Backup,
-            TestPsbt::BackupFuture
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Backup,
-            TestPsbt::WifeFuture
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Backup,
-            TestPsbt::BrotherFuture
-        ));
+    #[tokio::test]
+    async fn owner_wallet_signature() {
+        assert!(wallet_can_sign(TestKeyProvider::Owner, TestPsbt::OwnerDrain).await);
+        assert!(wallet_can_sign(TestKeyProvider::Owner, TestPsbt::OwnerRecipients).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Owner, TestPsbt::BackupPresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Owner, TestPsbt::WifePresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Owner, TestPsbt::BackupFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Owner, TestPsbt::WifeFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Owner, TestPsbt::BrotherFuture).await);
     }
 
-    #[test]
-    fn wife_wallet_signature() {
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Wife,
-            TestPsbt::OwnerDrain
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Wife,
-            TestPsbt::OwnerRecipients
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Wife,
-            TestPsbt::BackupPresent
-        ));
-        assert!(wallet_can_sign(
-            TestKeyProvider::Wife,
-            TestPsbt::WifePresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Wife,
-            TestPsbt::BackupFuture
-        ));
-        assert!(wallet_can_sign(TestKeyProvider::Wife, TestPsbt::WifeFuture));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Wife,
-            TestPsbt::BrotherFuture
-        ));
+    #[tokio::test]
+    async fn backup_wallet_signature() {
+        assert!(wallet_cannot_sign(TestKeyProvider::Backup, TestPsbt::OwnerDrain).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Backup, TestPsbt::OwnerRecipients).await);
+        assert!(wallet_can_sign(TestKeyProvider::Backup, TestPsbt::BackupPresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Backup, TestPsbt::WifePresent).await);
+        assert!(wallet_can_sign(TestKeyProvider::Backup, TestPsbt::BackupFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Backup, TestPsbt::WifeFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Backup, TestPsbt::BrotherFuture).await);
     }
 
-    #[test]
-    fn brother_wallet_signature() {
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Brother,
-            TestPsbt::OwnerDrain
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Brother,
-            TestPsbt::OwnerRecipients
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Brother,
-            TestPsbt::BackupPresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Brother,
-            TestPsbt::WifePresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Brother,
-            TestPsbt::BackupFuture
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Brother,
-            TestPsbt::WifeFuture
-        ));
-        assert!(wallet_can_sign(
-            TestKeyProvider::Brother,
-            TestPsbt::BrotherFuture
-        ));
+    #[tokio::test]
+    async fn wife_wallet_signature() {
+        assert!(wallet_cannot_sign(TestKeyProvider::Wife, TestPsbt::OwnerDrain).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Wife, TestPsbt::OwnerRecipients).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Wife, TestPsbt::BackupPresent).await);
+        assert!(wallet_can_sign(TestKeyProvider::Wife, TestPsbt::WifePresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Wife, TestPsbt::BackupFuture).await);
+        assert!(wallet_can_sign(TestKeyProvider::Wife, TestPsbt::WifeFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Wife, TestPsbt::BrotherFuture).await);
     }
 
-    #[test]
-    fn random_wallet_signature() {
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Random,
-            TestPsbt::OwnerDrain
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Random,
-            TestPsbt::OwnerRecipients
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Random,
-            TestPsbt::BackupPresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Random,
-            TestPsbt::WifePresent
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Random,
-            TestPsbt::BackupFuture
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Random,
-            TestPsbt::WifeFuture
-        ));
-        assert!(wallet_cannot_sign(
-            TestKeyProvider::Random,
-            TestPsbt::BrotherFuture
-        ));
+    #[tokio::test]
+    async fn brother_wallet_signature() {
+        assert!(wallet_cannot_sign(TestKeyProvider::Brother, TestPsbt::OwnerDrain).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Brother, TestPsbt::OwnerRecipients).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Brother, TestPsbt::BackupPresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Brother, TestPsbt::WifePresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Brother, TestPsbt::BackupFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Brother, TestPsbt::WifeFuture).await);
+        assert!(wallet_can_sign(TestKeyProvider::Brother, TestPsbt::BrotherFuture).await);
+    }
+
+    #[tokio::test]
+    async fn random_wallet_signature() {
+        assert!(wallet_cannot_sign(TestKeyProvider::Random, TestPsbt::OwnerDrain).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Random, TestPsbt::OwnerRecipients).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Random, TestPsbt::BackupPresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Random, TestPsbt::WifePresent).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Random, TestPsbt::BackupFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Random, TestPsbt::WifeFuture).await);
+        assert!(wallet_cannot_sign(TestKeyProvider::Random, TestPsbt::BrotherFuture).await);
     }
 
     // Verify the wallet signature process yield the expected PSBT
-    fn signed_psbt_is_expected(tkp: TestKeyProvider, tp: TestPsbt) -> () {
+    async fn signed_psbt_is_expected(tkp: TestKeyProvider, tp: TestPsbt) -> () {
         let local_key = get_test_key_provider(tkp);
         let expected_tx = extract_tx(get_test_signed_psbt(tp)).unwrap();
         let mut psbt = get_test_unsigned_psbt(tp);
-        local_key.sign_psbt(&mut psbt).unwrap();
+        local_key.sign_psbt(&mut psbt).await.unwrap();
         let tx = extract_tx(psbt).unwrap();
         assert_eq!(
             tx.ntxid(),
@@ -691,23 +601,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn signed_psbt_are_expected() {
-        signed_psbt_is_expected(TestKeyProvider::Owner, TestPsbt::OwnerDrain);
-        signed_psbt_is_expected(TestKeyProvider::Owner, TestPsbt::OwnerRecipients);
-        signed_psbt_is_expected(TestKeyProvider::Backup, TestPsbt::BackupPresent);
-        signed_psbt_is_expected(TestKeyProvider::Backup, TestPsbt::BackupFuture);
-        signed_psbt_is_expected(TestKeyProvider::Wife, TestPsbt::WifePresent);
-        signed_psbt_is_expected(TestKeyProvider::Wife, TestPsbt::WifeFuture);
-        signed_psbt_is_expected(TestKeyProvider::Brother, TestPsbt::BrotherFuture);
+    #[tokio::test]
+    async fn signed_psbt_are_expected() {
+        signed_psbt_is_expected(TestKeyProvider::Owner, TestPsbt::OwnerDrain).await;
+        signed_psbt_is_expected(TestKeyProvider::Owner, TestPsbt::OwnerRecipients).await;
+        signed_psbt_is_expected(TestKeyProvider::Backup, TestPsbt::BackupPresent).await;
+        signed_psbt_is_expected(TestKeyProvider::Backup, TestPsbt::BackupFuture).await;
+        signed_psbt_is_expected(TestKeyProvider::Wife, TestPsbt::WifePresent).await;
+        signed_psbt_is_expected(TestKeyProvider::Wife, TestPsbt::WifeFuture).await;
+        signed_psbt_is_expected(TestKeyProvider::Brother, TestPsbt::BrotherFuture).await;
     }
 
     // Verify the xpub generation
-    #[test]
-    fn xpub_generation() {
+    #[tokio::test]
+    async fn xpub_generation() {
         let local_key = get_test_key_provider(TestKeyProvider::Owner);
         let xpubs = local_key
             .derive_accounts_xpubs(0..20)
+            .await
             .unwrap()
             .into_iter()
             .map(|axp| axp.to_string())
@@ -737,10 +648,11 @@ mod tests {
         ])
     }
 
-    fn heir_shp_generation(tw: TestKeyProvider) -> String {
+    async fn heir_shp_generation(tw: TestKeyProvider) -> String {
         let local_key = get_test_key_provider(tw);
         let HeirConfig::SingleHeirPubkey(shp) = local_key
             .derive_heir_config(HeirConfigType::SingleHeirPubkey)
+            .await
             .unwrap()
         else {
             unreachable!()
@@ -748,17 +660,18 @@ mod tests {
         shp.to_string()
     }
     // Verify the heirs xpub generation
-    #[test]
-    fn heirs_shp_generation() {
-        assert_eq!(heir_shp_generation(TestKeyProvider::Backup), "[f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20");
-        assert_eq!(heir_shp_generation(TestKeyProvider::Wife), "[c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf");
-        assert_eq!(heir_shp_generation(TestKeyProvider::Brother), "[767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e");
+    #[tokio::test]
+    async fn heirs_shp_generation() {
+        assert_eq!(heir_shp_generation(TestKeyProvider::Backup).await, "[f0d79bf6/86'/1'/1751476594'/0/0]025dfb71d525758f58a22106a743b5dbed8f1af1ebee044c80eb7c381e3d3e8b20");
+        assert_eq!(heir_shp_generation(TestKeyProvider::Wife).await, "[c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf");
+        assert_eq!(heir_shp_generation(TestKeyProvider::Brother).await, "[767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e");
     }
 
-    fn heir_xpub_generation(tw: TestKeyProvider) -> String {
+    async fn heir_xpub_generation(tw: TestKeyProvider) -> String {
         let local_key = get_test_key_provider(tw);
         let HeirConfig::HeirXPubkey(xk) = local_key
             .derive_heir_config(HeirConfigType::HeirXPubkey)
+            .await
             .unwrap()
         else {
             unreachable!()
@@ -766,11 +679,11 @@ mod tests {
         xk.to_string()
     }
     // Verify the heirs xpub generation
-    #[test]
-    fn heirs_xpub_generation() {
-        assert_eq!(heir_xpub_generation(TestKeyProvider::Backup), "[f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*");
-        assert_eq!(heir_xpub_generation(TestKeyProvider::Wife), "[c907dcb9/86'/1'/1751476594']tpubDCH1wd7tX4HBrvELXe92EbfPeqV1Za6YxjDueUnFqThFSSijSJdkbhc2ReLeLhJfbfXTLPE5kHsB7mPFmbw87mQ6d3QbaRaKo2DPMDpRHH8/*");
-        assert_eq!(heir_xpub_generation(TestKeyProvider::Brother), "[767e581a/86'/1'/1751476594']tpubDDkHPEg5JvFW1r1VqA7vo8kzuuBRywUv2DhVRepUUar3M4bHKGUJnmaHKqketdzhzenZWVWvLDmoFMtsGqh6xz9tPEG7SRkATQsbvoxuu8J/*");
+    #[tokio::test]
+    async fn heirs_xpub_generation() {
+        assert_eq!(heir_xpub_generation(TestKeyProvider::Backup).await, "[f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/*");
+        assert_eq!(heir_xpub_generation(TestKeyProvider::Wife).await, "[c907dcb9/86'/1'/1751476594']tpubDCH1wd7tX4HBrvELXe92EbfPeqV1Za6YxjDueUnFqThFSSijSJdkbhc2ReLeLhJfbfXTLPE5kHsB7mPFmbw87mQ6d3QbaRaKo2DPMDpRHH8/*");
+        assert_eq!(heir_xpub_generation(TestKeyProvider::Brother).await, "[767e581a/86'/1'/1751476594']tpubDDkHPEg5JvFW1r1VqA7vo8kzuuBRywUv2DhVRepUUar3M4bHKGUJnmaHKqketdzhzenZWVWvLDmoFMtsGqh6xz9tPEG7SRkATQsbvoxuu8J/*");
     }
 
     fn hex_string_to_bytes(s: &str) -> Vec<u8> {

@@ -34,19 +34,28 @@ pub struct MnemonicBackup {
 pub trait KeyProvider: BoundFingerprint {
     /// Sign all the (Tap) inputs of the given PSBT that can be signed using the privates keys
     /// and return the number of inputs signed.
-    fn sign_psbt(&self, psbt: &mut PartiallySignedTransaction) -> Result<usize>;
+    fn sign_psbt(
+        &self,
+        psbt: &mut PartiallySignedTransaction,
+    ) -> impl std::future::Future<Output = Result<usize>> + Send;
     /// Return a list of the first `count` account eXtended Public Keys as a [Vec<AccountXPub>]
-    fn derive_accounts_xpubs(&self, range: Range<u32>) -> Result<Vec<AccountXPub>>;
+    fn derive_accounts_xpubs(
+        &self,
+        range: Range<u32>,
+    ) -> impl std::future::Future<Output = Result<Vec<AccountXPub>>> + Send;
     /// Return an [HeirConfig] of the [HeirConfigType] asked for.
     /// Both [HeirConfigType::SingleHeirPubkey] and [HeirConfigType::HeirXPubkey] are taken from the account 1751476594 which is the decimal value corresponding
     /// to `u32::from_be_bytes(*b"heir")`.
-    fn derive_heir_config(&self, heir_config_type: HeirConfigType) -> Result<HeirConfig>;
+    fn derive_heir_config(
+        &self,
+        heir_config_type: HeirConfigType,
+    ) -> impl std::future::Future<Output = Result<HeirConfig>> + Send;
     /// Return the [Mnemonic] of the Offline wallet.
     ///
     /// # Beware
     /// This is critical information. Assuming there is no password-protection,
     /// the mnemonic is enough to generate any and all wallet private keys
-    fn backup_mnemonic(&self) -> Result<MnemonicBackup>;
+    fn backup_mnemonic(&self) -> impl std::future::Future<Output = Result<MnemonicBackup>> + Send;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,15 +88,15 @@ impl AnyKeyProvider {
 
 macro_rules! impl_key_provider_fn {
     ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+        async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
             impl_key_provider_fn!($self $fn_name($($a : $t),*))
         }
     };
     ($self:ident $fn_name:ident($($a:ident : $t:ty),*)) => {
             match $self {
                 AnyKeyProvider::None => Err(Error::MissingKeyProvider),
-                AnyKeyProvider::LocalKey(lk) => lk.$fn_name($($a),*),
-                AnyKeyProvider::Ledger(ledger) => ledger.$fn_name($($a),*),
+                AnyKeyProvider::LocalKey(lk) => lk.$fn_name($($a),*).await,
+                AnyKeyProvider::Ledger(ledger) => ledger.$fn_name($($a),*).await,
             }
     };
 }
@@ -99,13 +108,19 @@ impl KeyProvider for AnyKeyProvider {
     impl_key_provider_fn!(backup_mnemonic(&self) -> Result<MnemonicBackup>);
 }
 impl BoundFingerprint for AnyKeyProvider {
-    impl_key_provider_fn!(fingerprint(&self) -> Result<Fingerprint>);
+    fn fingerprint(&self) -> Result<Fingerprint> {
+        match self {
+            AnyKeyProvider::None => Err(Error::MissingKeyProvider),
+            AnyKeyProvider::LocalKey(lk) => lk.fingerprint(),
+            AnyKeyProvider::Ledger(ledger) => ledger.fingerprint(),
+        }
+    }
 }
 
 macro_rules! impl_key_provider {
     ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
-        fn $fn_name(& $self $(,$a : $t)*) -> $ret {
-            $self.key_provider.$fn_name($($a),*)
+        async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
+            $self.key_provider.$fn_name($($a),*).await
         }
     };
     ($name:ident$(<$lf:lifetime>)?) => {

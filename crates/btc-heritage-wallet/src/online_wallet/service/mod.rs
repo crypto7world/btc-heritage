@@ -31,7 +31,7 @@ pub struct ServiceBinding {
     service_client: Option<HeritageServiceClient>,
 }
 impl ServiceBinding {
-    pub fn create(
+    pub async fn create(
         wallet_name: &str,
         backup: Option<HeritageWalletBackup>,
         block_inclusion_objective: u16,
@@ -45,7 +45,7 @@ impl ServiceBinding {
                 block_inclusion_objective,
             )),
         };
-        let wallet_meta = service_client.post_wallets(create)?;
+        let wallet_meta = service_client.post_wallets(create).await?;
         let wallet_id = wallet_meta.id;
         let fingerprint = wallet_meta.fingerprint;
         Ok(Self {
@@ -67,12 +67,12 @@ impl ServiceBinding {
             service_client: Some(service_client),
         })
     }
-    pub fn bind_by_name(
+    pub async fn bind_by_name(
         existing_wallet_name: &str,
         service_client: HeritageServiceClient,
         network: Network,
     ) -> Result<Self> {
-        let wallets = service_client.list_wallets()?;
+        let wallets = service_client.list_wallets().await?;
         let mut wallets = wallets
             .into_iter()
             .filter(|w| w.name == existing_wallet_name)
@@ -85,25 +85,26 @@ impl ServiceBinding {
         }
         ServiceBinding::bind(wallets.pop().unwrap(), service_client, network)
     }
-    pub fn bind_by_id(
+    pub async fn bind_by_id(
         existing_wallet_id: &str,
         service_client: HeritageServiceClient,
         network: Network,
     ) -> Result<Self> {
         let wallet = service_client
             .get_wallet(&existing_wallet_id)
+            .await
             .map_err(|e| {
                 log::error!("{e}");
                 Error::NoServiceWalletFound
             })?;
         ServiceBinding::bind(wallet, service_client, network)
     }
-    pub fn bind_by_fingerprint(
+    pub async fn bind_by_fingerprint(
         existing_wallet_fingerprint: Fingerprint,
         service_client: HeritageServiceClient,
         network: Network,
     ) -> Result<Self> {
-        let wallets = service_client.list_wallets()?;
+        let wallets = service_client.list_wallets().await?;
         let mut wallets = wallets
             .into_iter()
             .filter(|w| {
@@ -119,8 +120,16 @@ impl ServiceBinding {
         }
         ServiceBinding::bind(wallets.pop().unwrap(), service_client, network)
     }
-    pub fn init_service_client(&mut self, service_client: HeritageServiceClient) -> Result<()> {
-        if service_client.get_wallet(&self.wallet_id)?.fingerprint != self.fingerprint {
+    pub async fn init_service_client(
+        &mut self,
+        service_client: HeritageServiceClient,
+    ) -> Result<()> {
+        if service_client
+            .get_wallet(&self.wallet_id)
+            .await?
+            .fingerprint
+            != self.fingerprint
+        {
             return Err(Error::IncoherentServiceWalletFingerprint);
         }
         self.init_service_client_unchecked(service_client);
@@ -146,82 +155,93 @@ impl ServiceBinding {
 }
 
 impl super::OnlineWallet for ServiceBinding {
-    fn backup_descriptors(&self) -> Result<HeritageWalletBackup> {
+    async fn backup_descriptors(&self) -> Result<HeritageWalletBackup> {
         Ok(self
             .unwrap_service_client()?
-            .get_wallet_descriptors_backup(&self.wallet_id)?)
+            .get_wallet_descriptors_backup(&self.wallet_id)
+            .await?)
     }
 
-    fn get_address(&self) -> Result<String> {
+    async fn get_address(&self) -> Result<String> {
         Ok(self
             .unwrap_service_client()?
-            .post_wallet_create_address(&self.wallet_id)?)
+            .post_wallet_create_address(&self.wallet_id)
+            .await?)
     }
 
-    fn list_addresses(&self) -> Result<Vec<WalletAddress>> {
+    async fn list_addresses(&self) -> Result<Vec<WalletAddress>> {
         Ok(self
             .unwrap_service_client()?
-            .list_wallet_addresses(&self.wallet_id)?)
+            .list_wallet_addresses(&self.wallet_id)
+            .await?)
     }
 
-    fn list_transactions(&self) -> Result<Vec<TransactionSummary>> {
+    async fn list_transactions(&self) -> Result<Vec<TransactionSummary>> {
         Ok(self
             .unwrap_service_client()?
-            .list_wallet_transactions(&self.wallet_id)?)
+            .list_wallet_transactions(&self.wallet_id)
+            .await?)
     }
 
-    fn list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
+    async fn list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
         Ok(self
             .unwrap_service_client()?
-            .list_wallet_utxos(&self.wallet_id)?)
+            .list_wallet_utxos(&self.wallet_id)
+            .await?)
     }
 
-    fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>> {
+    async fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>> {
         Ok(self
             .unwrap_service_client()?
-            .list_wallet_account_xpubs(&self.wallet_id)?)
+            .list_wallet_account_xpubs(&self.wallet_id)
+            .await?)
     }
-    fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()> {
+    async fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()> {
         let fingerprint = account_xpubs
             .get(0)
             .map(|axpub| axpub.descriptor_public_key().master_fingerprint());
 
         self.unwrap_service_client()?
-            .post_wallet_account_xpubs(&self.wallet_id, account_xpubs)?;
+            .post_wallet_account_xpubs(&self.wallet_id, account_xpubs)
+            .await?;
         if self.fingerprint.is_none() {
             self.fingerprint = fingerprint;
         }
         Ok(())
     }
 
-    fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {
+    async fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {
         Ok(self
             .unwrap_service_client()?
-            .list_wallet_heritage_configs(&self.wallet_id)?)
+            .list_wallet_heritage_configs(&self.wallet_id)
+            .await?)
     }
 
-    fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig> {
+    async fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig> {
         Ok(self
             .unwrap_service_client()?
-            .post_wallet_heritage_configs(&self.wallet_id, new_hc)?)
+            .post_wallet_heritage_configs(&self.wallet_id, new_hc)
+            .await?)
     }
 
-    fn set_block_inclusion_objective(&mut self, bio: u16) -> Result<super::WalletStatus> {
+    async fn set_block_inclusion_objective(&mut self, bio: u16) -> Result<super::WalletStatus> {
         Ok(self
             .unwrap_service_client()?
             .patch_wallet(
                 &self.wallet_id,
                 None,
                 Some(BlockInclusionObjective::from(bio)),
-            )?
+            )
+            .await?
             .into())
     }
 
-    fn sync(&mut self) -> Result<()> {
+    async fn sync(&mut self) -> Result<()> {
         // Ask for a sync
         let mut sync = self
             .unwrap_service_client()?
-            .post_wallet_synchronize(&self.wallet_id)?;
+            .post_wallet_synchronize(&self.wallet_id)
+            .await?;
         print!("Syncing");
         let _ = stdout().flush();
         loop {
@@ -244,28 +264,36 @@ impl super::OnlineWallet for ServiceBinding {
             }
             sync = self
                 .unwrap_service_client()?
-                .get_wallet_synchronize(&self.wallet_id)?;
+                .get_wallet_synchronize(&self.wallet_id)
+                .await?;
         }
     }
 
-    fn get_wallet_status(&self) -> Result<super::WalletStatus> {
-        let hwm = self.unwrap_service_client()?.get_wallet(&self.wallet_id)?;
+    async fn get_wallet_status(&self) -> Result<super::WalletStatus> {
+        let hwm = self
+            .unwrap_service_client()?
+            .get_wallet(&self.wallet_id)
+            .await?;
         Ok(hwm.into())
     }
 
-    fn create_psbt(
+    async fn create_psbt(
         &self,
         new_tx: NewTx,
     ) -> Result<(PartiallySignedTransaction, TransactionSummary)> {
         Ok(self
             .unwrap_service_client()?
-            .post_wallet_create_unsigned_tx(&self.wallet_id, new_tx)?)
+            .post_wallet_create_unsigned_tx(&self.wallet_id, new_tx)
+            .await?)
     }
 }
 
 impl Broadcaster for ServiceBinding {
-    fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid> {
-        Ok(self.unwrap_service_client()?.post_broadcast_tx(psbt)?)
+    async fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid> {
+        Ok(self
+            .unwrap_service_client()?
+            .post_broadcast_tx(psbt)
+            .await?)
     }
 }
 
