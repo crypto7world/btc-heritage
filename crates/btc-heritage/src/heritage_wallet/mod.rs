@@ -3,8 +3,11 @@ pub mod backup;
 pub mod online;
 mod types;
 
-use core::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{BTreeMap, HashMap, HashSet},
+    fmt::Debug,
+};
 
 use crate::{
     account_xpub::AccountXPub,
@@ -55,13 +58,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn generate_backup(&self) -> Result<HeritageWalletBackup> {
         log::debug!("HeritageWallet::generate_backup");
         Ok(HeritageWalletBackup(
-            self.database
-                .borrow()
+            self.database()
                 .list_obsolete_subwallet_configs()?
                 .into_iter()
                 .chain(
-                    self.database
-                        .borrow()
+                    self.database()
                         .get_subwallet_config(SubwalletConfigId::Current)?,
                 )
                 .map(|swc| {
@@ -118,7 +119,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .0
             .subwallet_id();
         log::debug!("HeritageWallet::restore_backup - last_id={last_id}");
-        let mut transaction = self.database.borrow().begin_transac();
+        let mut transaction = self.database().begin_transac();
         for (swc, _) in swc_and_backups.iter() {
             let swc_id = swc.subwallet_id();
             let swc_id = if swc_id == last_id {
@@ -132,7 +133,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             );
             transaction.put_subwallet_config(swc_id, swc)?;
         }
-        self.database.borrow_mut().commit_transac(transaction)?;
+        self.database_mut().commit_transac(transaction)?;
         log::info!("HeritageWallet::restore_backup - All SubwalletConfig(s) written to DB");
 
         for (swc, swc_backup) in swc_and_backups.into_iter() {
@@ -177,13 +178,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         };
 
         let intermediate_results = self
-            .database
-            .borrow()
+            .database()
             .list_obsolete_subwallet_configs()?
             .into_iter()
             .chain(
-                self.database
-                    .borrow()
+                self.database()
                     .get_subwallet_config(SubwalletConfigId::Current)?,
             )
             // Map each subwallet config to a WalletAddress iterator
@@ -267,17 +266,20 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn database(&self) -> impl core::ops::Deref<Target = D> + '_ {
         self.database.borrow()
     }
+    fn database_mut(&self) -> impl core::ops::DerefMut<Target = D> + '_ {
+        self.database.borrow_mut()
+    }
 
     pub fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWallet::list_used_account_xpubs");
-        let res = self.database.borrow().list_used_account_xpubs()?;
+        let res = self.database().list_used_account_xpubs()?;
         log::debug!("HeritageWallet::list_used_account_xpubs - res={res:?}");
         Ok(res)
     }
 
     pub fn list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWallet::list_unused_account_xpubs");
-        let res = self.database.borrow().list_unused_account_xpubs()?;
+        let res = self.database().list_unused_account_xpubs()?;
         log::debug!("HeritageWallet::list_unused_account_xpubs - res={res:?}");
         Ok(res)
     }
@@ -288,8 +290,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn fingerprint(&self) -> Result<Option<Fingerprint>> {
         log::debug!("HeritageWallet::fingerprint");
         let res = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
             .map(|swc| {
                 swc.account_xpub()
@@ -302,8 +303,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 "HeritageWallet::fingerprint - No Current SubwalletConfig, \
             trying to find fingerprint on an Unused Account XPub"
             );
-            self.database
-                .borrow()
+            self.database()
                 .get_unused_account_xpub()?
                 .map(|axpub| axpub.descriptor_public_key().master_fingerprint())
         } else {
@@ -315,8 +315,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
     pub fn get_sync_time(&self) -> Result<Option<BlockTime>> {
         if let Some(current_subwalletconfig) = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
         {
             if let Some(sync_time) = self
@@ -327,8 +326,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             {
                 return Ok(Some(sync_time.block_time));
             }
-            let obsolete_subwalletconfigs =
-                self.database.borrow().list_obsolete_subwallet_configs()?;
+            let obsolete_subwalletconfigs = self.database().list_obsolete_subwallet_configs()?;
             for obsolete_subwalletconfig in obsolete_subwalletconfigs {
                 if let Some(sync_time) = self
                     .get_subwallet(&obsolete_subwalletconfig)?
@@ -351,8 +349,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     /// This function will return an error if there are problems with the database.
     pub fn is_mine_and_current(&self, script: &Script) -> Result<bool> {
         match self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
         {
             Some(subwalletconfig) => Ok(self
@@ -375,8 +372,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     /// This function will return an error if there are problems with the database.
     pub fn is_mine(&self, script: &Script) -> Result<bool> {
         if let Some(current_subwalletconfig) = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
         {
             if self
@@ -387,7 +383,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 return Ok(true);
             }
             let mut obsolete_subwalletconfigs =
-                self.database.borrow().list_obsolete_subwallet_configs()?;
+                self.database().list_obsolete_subwallet_configs()?;
             obsolete_subwalletconfigs.reverse();
             for obsolete_subwalletconfig in obsolete_subwalletconfigs {
                 if self
@@ -444,8 +440,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             }
         }
         log::debug!("HeritageWallet::append_account_xpubs - account_xpubs={account_xpubs:?}");
-        self.database
-            .borrow_mut()
+        self.database_mut()
             .add_unused_account_xpubs(&account_xpubs)
             .map_err(Into::into)
     }
@@ -468,8 +463,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
         // Get the current subwallet_config if any
         let Some(current_subwallet_config) = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
         else {
             log::debug!("HeritageWallet::update_heritage_config - No Current SubwalletConfig");
@@ -507,8 +501,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             log::debug!(
                 "HeritageWallet::update_heritage_config - new_subwallet_config={new_subwallet_config:?}"
             );
-            self.database
-                .borrow_mut()
+            self.database_mut()
                 .safe_update_current_subwallet_config(
                     &new_subwallet_config,
                     Some(&old_subwallet_config),
@@ -528,8 +521,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Get the current subwallet_config
         // return the HeritageConfig
         let res = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)
             .map(|subwallet_config| subwallet_config.map(|s| s.into_parts().1))?;
         log::debug!("HeritageWallet::get_current_heritage_config - res={res:?}");
@@ -541,8 +533,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Get the obsolete subwallet_configs
         // return the HeritageConfigs
         let res = self
-            .database
-            .borrow()
+            .database()
             .list_obsolete_subwallet_configs()?
             .into_iter()
             .map(|subwallet_config| subwallet_config.into_parts().1)
@@ -553,7 +544,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
     pub fn get_balance(&self) -> Result<HeritageWalletBalance> {
         log::debug!("HeritageWallet::get_balance");
-        let res = self.database.borrow().get_balance()?.unwrap_or_default();
+        let res = self.database().get_balance()?.unwrap_or_default();
         log::debug!("HeritageWallet::get_balance - res={res:?}");
         Ok(res)
     }
@@ -569,15 +560,13 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
     pub fn get_block_inclusion_objective(&self) -> Result<BlockInclusionObjective> {
         Ok(self
-            .database
-            .borrow()
+            .database()
             .get_block_inclusion_objective()?
             .unwrap_or_default())
     }
 
     pub fn set_block_inclusion_objective(&self, new_bio: BlockInclusionObjective) -> Result<()> {
-        self.database
-            .borrow_mut()
+        self.database_mut()
             .set_block_inclusion_objective(new_bio)
             .map_err(|e| DatabaseError::Generic(e.to_string()).into())
     }
@@ -654,8 +643,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
         // We do this now so if it fails we don't bother to go further
         let current_subwallet_config = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
             .ok_or(Error::MissingCurrentSubwalletConfig)?;
         log::debug!(
@@ -706,8 +694,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
         // Gather all the UTXO of the obsolete wallet configs
         log::debug!("HeritageWallet::create_psbt - Listing obsolete subwallet_configs");
-        let obsolete_subwallet_configs =
-            self.database.borrow().list_obsolete_subwallet_configs()?;
+        let obsolete_subwallet_configs = self.database().list_obsolete_subwallet_configs()?;
 
         // Here we compute what will be the "present" for this PSBT creation
         // If we got it as a paramter, just use it
@@ -879,7 +866,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 FeePolicy::FeeRate(fee_rate) => Some(fee_rate),
             },
             None => {
-                Some(self.database.borrow().get_fee_rate()?.unwrap_or_else(||{
+                Some(self.database().get_fee_rate()?.unwrap_or_else(||{
                     log::warn!("HeritageWallet::create_psbt - No FeeRate in the database. Maybe call sync_fee_rate");
                     FeeRate::BROADCAST_MIN
                 }))
@@ -1295,14 +1282,13 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // If different, then we need to archive the old subwallet_config and create a new one
         // With a new AccountXPub
         let new_account_xpub = self
-            .database
-            .borrow()
+            .database()
             .get_unused_account_xpub()?
             .ok_or(Error::MissingUnusedAccountXPub)?;
         log::debug!(
             "HeritageWallet::update_heritage_config - new_account_xpub={new_account_xpub:?}"
         );
-        let mut transaction = self.database.borrow().begin_transac();
+        let mut transaction = self.database().begin_transac();
         transaction.delete_unused_account_xpub(&new_account_xpub)?;
         let new_subwallet_config = SubwalletConfig::new(new_account_xpub, heritage_config);
         log::info!("HeritageWallet::update_heritage_config - Creating a new SubwalletConfig for the new HeritageConfig");
@@ -1319,7 +1305,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 &old_subwallet_config,
             )?;
         }
-        self.database.borrow_mut().commit_transac(transaction)?;
+        self.database_mut().commit_transac(transaction)?;
         Ok(())
     }
 
@@ -1329,8 +1315,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     ) -> Result<Wallet<<D as PartitionableDatabase>::SubDatabase>> {
         log::debug!("HeritageWallet::get_subwallet - Opening subwallet database");
         let subdatabase = self
-            .database
-            .borrow()
+            .database()
             .get_subdatabase(SubdatabaseId::from(subwalletconfig.subwallet_id()))?;
         log::debug!("HeritageWallet::get_subwallet - Creating subwallet");
         Ok(subwalletconfig.get_subwallet(subdatabase))
@@ -1340,8 +1325,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         log::debug!("HeritageWallet::internal_get_new_address - keychain_kind={keychain_kind:?}");
 
         let current_subwallet_config = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
             .ok_or(Error::MissingCurrentSubwalletConfig)?;
         log::debug!("HeritageWallet::internal_get_new_address - current_subwallet_config={current_subwallet_config:?}");
@@ -1357,12 +1341,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             log::debug!(
                 "HeritageWallet::internal_get_new_address - new_current_subwallet_config={new_current_subwallet_config:?}"
             );
-            self.database
-                .borrow_mut()
-                .safe_update_current_subwallet_config(
-                    &new_current_subwallet_config,
-                    Some(&current_subwallet_config),
-                )?;
+            self.database_mut().safe_update_current_subwallet_config(
+                &new_current_subwallet_config,
+                Some(&current_subwallet_config),
+            )?;
         }
         log::debug!("HeritageWallet::internal_get_new_address - get_subwallet");
         let subwallet = self.get_subwallet(&current_subwallet_config)?;

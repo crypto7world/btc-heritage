@@ -35,7 +35,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Start obsolete_balance at zero
         let mut obsolete_balance = Balance::default();
         // Walk over every subwallets and sync them
-        let mut subwalletconfigs = self.database.borrow().list_obsolete_subwallet_configs()?;
+        let mut subwalletconfigs = self.database().list_obsolete_subwallet_configs()?;
         // Make sure the obsolete_subwallet_configs are in order
         subwalletconfigs.sort_by_key(|swc| {
             swc.subwallet_firstuse_time()
@@ -56,8 +56,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         }
 
         let uptodate_balance = if let Some(current_subwallet_config) = self
-            .database
-            .borrow()
+            .database()
             .get_subwallet_config(SubwalletConfigId::Current)?
         {
             let mut balance = Balance::default();
@@ -76,21 +75,22 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             log::warn!("No current SubWallet to synchronize");
             Balance::default()
         };
+        {
+            // Update the balance
+            let mut db_mut = self.database_mut();
+            let new_balance = HeritageWalletBalance::new(uptodate_balance, obsolete_balance);
+            log::info!("HeritageWallet::sync - new_balance={new_balance:?}");
+            db_mut.set_balance(&new_balance)?;
 
-        // Update the balance
-        let new_balance = HeritageWalletBalance::new(uptodate_balance, obsolete_balance);
-        log::info!("HeritageWallet::sync - new_balance={new_balance:?}");
-        self.database.borrow_mut().set_balance(&new_balance)?;
-
-        log::info!(
-            "HeritageWallet::sync - utxos - remove={} add={}",
-            utxos_to_delete.len(),
-            utxos_to_add.len()
-        );
-        // Update the HeritageUtxos
-        self.database.borrow_mut().delete_utxos(&utxos_to_delete)?;
-        self.database.borrow_mut().add_utxos(&utxos_to_add)?;
-
+            log::info!(
+                "HeritageWallet::sync - utxos - remove={} add={}",
+                utxos_to_delete.len(),
+                utxos_to_add.len()
+            );
+            // Update the HeritageUtxos
+            db_mut.delete_utxos(&utxos_to_delete)?;
+            db_mut.add_utxos(&utxos_to_add)?;
+        }
         // Update the TransactionSummaries
         // List the existing ones
         let existing_txsum = self.database().list_transaction_summaries()?;
@@ -133,16 +133,16 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             existing_txsum_to_delete.len(),
             txsum_to_add.len(),
         );
-        self.database.borrow_mut().delete_transaction_summaries(
-            &existing_txsum_to_delete
-                .into_iter()
-                .map(|txsum| (txsum.txid, txsum.confirmation_time))
-                .collect(),
-        )?;
-        self.database
-            .borrow_mut()
-            .add_transaction_summaries(&txsum_to_add)?;
-
+        {
+            let mut db_mut = self.database_mut();
+            db_mut.delete_transaction_summaries(
+                &existing_txsum_to_delete
+                    .into_iter()
+                    .map(|txsum| (txsum.txid, txsum.confirmation_time))
+                    .collect(),
+            )?;
+            db_mut.add_transaction_summaries(&txsum_to_add)?;
+        }
         // Sync FeeRate
         let fee_rate = self.sync_fee_rate(blockchain_factory)?;
         log::info!("HeritageWallet::sync - fee_rate={fee_rate:?}");
@@ -376,7 +376,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .map_err(|e| Error::BlockchainProviderError(e.to_string()))?;
 
         let fee_rate = FeeRate::from_sat_per_vb_unchecked(bdk_fee_rate.as_sat_per_vb() as u64);
-        self.database.borrow_mut().set_fee_rate(&fee_rate)?;
+        self.database_mut().set_fee_rate(&fee_rate)?;
         Ok(fee_rate)
     }
 }
