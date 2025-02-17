@@ -74,10 +74,9 @@ impl LocalHeritageWallet {
         block_inclusion_objective: u16,
     ) -> Result<Self> {
         let heritage_wallet_id = format!("{:032x}", rand::random::<u128>());
-        let heritage_wallet = HeritageWallet::new(HeritageWalletDatabase::create(
-            heritage_wallet_id.clone(),
-            db,
-        )?);
+        let heritage_wallet = HeritageWallet::new(
+            HeritageWalletDatabase::create(heritage_wallet_id.clone(), db).await?,
+        );
 
         if let Some(backup) = backup {
             tokio::task::block_in_place(|| heritage_wallet.restore_backup(backup))?;
@@ -97,17 +96,17 @@ impl LocalHeritageWallet {
         Ok(local_heritage_wallet)
     }
 
-    pub(crate) fn delete(
+    pub(crate) async fn delete(
         &self,
         db: &mut Database,
     ) -> core::result::Result<(), crate::database::errors::DbError> {
-        db.drop_table(&self.heritage_wallet_id)?;
+        db.drop_table(&self.heritage_wallet_id).await?;
         Ok(())
     }
 
-    pub fn init_heritage_wallet(&mut self, db: &Database) -> Result<()> {
+    pub async fn init_heritage_wallet(&mut self, db: &Database) -> Result<()> {
         self.heritage_wallet = Some(Mutex::new(HeritageWallet::new(
-            HeritageWalletDatabase::get(self.heritage_wallet_id.clone(), db)?,
+            HeritageWalletDatabase::get(self.heritage_wallet_id.clone(), db).await?,
         )));
         Ok(())
     }

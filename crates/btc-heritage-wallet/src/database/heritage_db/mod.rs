@@ -113,15 +113,15 @@ impl HeritageWalletDatabase {
     ///
     /// # Errors
     /// Return an error if there is already a database corresponding to `wallet_id`
-    pub fn create(wallet_id: String, db: &Database) -> Result<Self, super::errors::DbError> {
-        if db.table_exists(&wallet_id)? {
+    pub async fn create(wallet_id: String, db: &Database) -> Result<Self, super::errors::DbError> {
+        if db.table_exists(&wallet_id).await? {
             Err(super::errors::DbError::TableAlreadyExists(
                 wallet_id.to_owned(),
             ))
         } else {
             let mut hdb = Self::new(wallet_id, db);
             // To ensure the table is effectively created we write something
-            hdb.db.put_item("marker_key", &"marker_data")?;
+            hdb.db.put_item("marker_key", &"marker_data").await?;
             Ok(hdb)
         }
     }
@@ -134,8 +134,8 @@ impl HeritageWalletDatabase {
     /// # Panics
     /// `wallet_id` cannot have the same value as [DEFAULT_TABLE_NAME](super::DEFAULT_TABLE_NAME)
     /// and the function will panic if it is the case
-    pub fn get(wallet_id: String, db: &Database) -> Result<Self, super::errors::DbError> {
-        if db.table_exists(&wallet_id)? {
+    pub async fn get(wallet_id: String, db: &Database) -> Result<Self, super::errors::DbError> {
+        if db.table_exists(&wallet_id).await? {
             Ok(Self::new(wallet_id, db))
         } else {
             Err(super::errors::DbError::TableDoesNotExists(
@@ -208,7 +208,15 @@ mod tests {
     // Utilitary function that create a temp database that will be removed at the end
     fn setup_test_env() -> TestEnv {
         let tmpdir = tempfile::tempdir().unwrap();
-        let db = Database::new(tmpdir.path(), Network::Regtest).unwrap();
+        let db = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                Database::new(tmpdir.path(), Network::Regtest)
+                    .await
+                    .unwrap()
+            });
         TestEnv {
             db,
             _tmpdir: tmpdir,

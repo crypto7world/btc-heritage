@@ -73,19 +73,19 @@ crate::database::dbitem::impl_db_item!(
     Wallet,
     "wallet#",
     "default_wallet_name"
-    fn load(db: &crate::Database, name: &str) -> crate::database::errors::Result<Self> {
+    async fn load(db: &crate::Database, name: &str) -> crate::database::errors::Result<Self> {
         let key = Self::name_to_key(name);
         let mut wallet = db
-            .get_item::<Self>(&key)?
+            .get_item::<Self>(&key).await?
             .ok_or(crate::database::errors::DbError::KeyDoesNotExists(key))?;
         wallet.control_fingerprints().map_err(|e|DbError::generic(e))?;
         Ok(wallet)
     }
-    fn delete(&self, db: &mut crate::Database) -> crate::database::errors::Result<()> {
+    async fn delete(&self, db: &mut crate::Database) -> crate::database::errors::Result<()> {
         if let AnyOnlineWallet::Local(lw) = &self.online_wallet{
-            lw.delete(db)?;
+            lw.delete(db).await?;
         }
-        db.delete_item::<Self>(&Self::name_to_key(self.name()))?;
+        db.delete_item::<Self>(&Self::name_to_key(self.name())).await?;
         Ok(())
     }
 );

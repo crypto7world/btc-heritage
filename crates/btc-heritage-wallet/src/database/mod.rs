@@ -98,21 +98,22 @@ pub struct Database {
 }
 
 impl Database {
-    pub fn new(data_dir: &Path, network: Network) -> Result<Self> {
-        prepare_data_dir(data_dir)?;
+    pub async fn new(data_dir: &Path, network: Network) -> Result<Self> {
+        tokio::task::block_in_place(|| prepare_data_dir(data_dir))?;
 
         // We will maintain different DBs for each network
         let database_name = network.to_string().to_lowercase();
         let mut database_path = data_dir.to_path_buf();
         database_path.push(format!("{database_name}.redb"));
 
-        let db = redb::Database::create(database_path.as_path()).map_err(|e| {
-            DbError::Generic(format!(
-                "Cannot create database at {}: {}",
-                database_path.as_path().display(),
-                e.to_string()
-            ))
-        })?;
+        let db = tokio::task::block_in_place(|| redb::Database::create(database_path.as_path()))
+            .map_err(|e| {
+                DbError::Generic(format!(
+                    "Cannot create database at {}: {}",
+                    database_path.as_path().display(),
+                    e.to_string()
+                ))
+            })?;
 
         log::debug!("Main database opened successfully");
 
@@ -122,11 +123,11 @@ impl Database {
         })
     }
 
-    pub fn begin_transac(&self) -> DatabaseTransaction {
+    fn _begin_transac(&self) -> DatabaseTransaction {
         DatabaseTransaction(Vec::new())
     }
 
-    pub fn commit_transac(&mut self, transac: DatabaseTransaction) -> Result<()> {
+    fn _commit_transac(&mut self, transac: DatabaseTransaction) -> Result<()> {
         log::info!("Database::commit_transac - {} ops", transac.0.len());
         let txn = self.internal_db.begin_write()?;
         let tx_res = 'txn: {
@@ -163,7 +164,7 @@ impl Database {
                         old_value,
                         new_value,
                     } => {
-                        match Database::_compare_and_swap(
+                        match Database::_compare_and_swap_inner(
                             &mut table,
                             &key,
                             old_value.as_deref(),
@@ -195,7 +196,7 @@ impl Database {
         tx_res
     }
 
-    pub fn table_exists(&self, table_name: &str) -> Result<bool> {
+    fn _table_exists(&self, table_name: &str) -> Result<bool> {
         let table_def: TableDefinition<'_, &'static str, &'static [u8]> =
             TableDefinition::new(table_name);
         match self.internal_db.begin_read()?.open_table(table_def) {
@@ -207,7 +208,11 @@ impl Database {
         }
     }
 
-    pub fn drop_table(&mut self, table_name: &str) -> Result<bool> {
+    pub async fn table_exists(&self, table_name: &str) -> Result<bool> {
+        tokio::task::block_in_place(|| self._table_exists(table_name))
+    }
+
+    fn _drop_table(&mut self, table_name: &str) -> Result<bool> {
         let txn = self.internal_db.begin_write()?;
         let table_exist = {
             let table_def: TableDefinition<'_, &'static str, &'static [u8]> =
@@ -218,8 +223,12 @@ impl Database {
         Ok(table_exist)
     }
 
-    pub fn get_item<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
-        if let Some(table) = self.read_tnx()? {
+    pub async fn drop_table(&mut self, table_name: &str) -> Result<bool> {
+        tokio::task::block_in_place(|| self._drop_table(table_name))
+    }
+
+    fn _get_item<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
+        if let Some(table) = self._read_tnx()? {
             Ok(table
                 .get(key)?
                 .map(|sl| serde_json::from_slice(&sl.value()))
@@ -230,12 +239,17 @@ impl Database {
         }
     }
 
-    pub fn put_item<T: Serialize>(&mut self, key: &str, item: &T) -> Result<()> {
+    pub async fn get_item<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>> {
+        tokio::task::block_in_place(|| self._get_item(key))
+    }
+
+    fn _put_item<T: Serialize>(&mut self, key: &str, item: &T) -> Result<()> {
         let bytes_value = serde_json::to_vec(item).map_err(|e| DbError::serde(key, e))?;
         let txn = self.internal_db.begin_write()?;
         let put_ok = {
             let mut table = txn.open_table(self.table_def())?;
-            match Self::_compare_and_swap(&mut table, key, None, Some(bytes_value.as_slice())) {
+            match Self::_compare_and_swap_inner(&mut table, key, None, Some(bytes_value.as_slice()))
+            {
                 Ok(_) => true,
                 Err(e) => match e {
                     DbError::CompareAndSwapError(_) => false,
@@ -252,7 +266,11 @@ impl Database {
         }
     }
 
-    pub fn update_item<T: Serialize>(&mut self, key: &str, item: &T) -> Result<bool> {
+    pub async fn put_item<T: Serialize>(&mut self, key: &str, item: &T) -> Result<()> {
+        tokio::task::block_in_place(|| self._put_item(key, item))
+    }
+
+    fn _update_item<T: Serialize>(&mut self, key: &str, item: &T) -> Result<bool> {
         let bytes_value = serde_json::to_vec(item).map_err(|e| DbError::serde(key, e))?;
         let txn = self.internal_db.begin_write()?;
         let exist = {
@@ -264,7 +282,11 @@ impl Database {
         Ok(exist)
     }
 
-    pub fn delete_item<T: DeserializeOwned>(&mut self, key: &str) -> Result<Option<T>> {
+    pub async fn update_item<T: Serialize>(&mut self, key: &str, item: &T) -> Result<bool> {
+        tokio::task::block_in_place(|| self._update_item(key, item))
+    }
+
+    fn _delete_item<T: DeserializeOwned>(&mut self, key: &str) -> Result<Option<T>> {
         let txn = self.internal_db.begin_write()?;
         let old_value = {
             let mut table = txn.open_table(self.table_def())?;
@@ -279,7 +301,11 @@ impl Database {
         Ok(old_value)
     }
 
-    pub fn compare_and_swap<T: Serialize + DeserializeOwned>(
+    pub async fn delete_item<T: DeserializeOwned>(&mut self, key: &str) -> Result<Option<T>> {
+        tokio::task::block_in_place(|| self._delete_item(key))
+    }
+
+    fn _compare_and_swap<T: Serialize + DeserializeOwned>(
         &mut self,
         key: &str,
         old_value: Option<&T>,
@@ -297,18 +323,36 @@ impl Database {
                 .map(|v| serde_json::to_vec(v))
                 .transpose()
                 .map_err(|e| DbError::serde(key, e))?;
-            Self::_compare_and_swap(&mut table, key, old_value.as_deref(), new_value.as_deref())?;
+            Self::_compare_and_swap_inner(
+                &mut table,
+                key,
+                old_value.as_deref(),
+                new_value.as_deref(),
+            )?;
         }
         txn.commit()?;
         Ok(())
     }
 
-    pub fn contains_key(&self, key: &str) -> Result<bool> {
-        if let Some(table) = self.read_tnx()? {
+    pub async fn compare_and_swap<T: Serialize + DeserializeOwned>(
+        &mut self,
+        key: &str,
+        old_value: Option<&T>,
+        new_value: Option<&T>,
+    ) -> Result<()> {
+        tokio::task::block_in_place(|| self._compare_and_swap(key, old_value, new_value))
+    }
+
+    fn _contains_key(&self, key: &str) -> Result<bool> {
+        if let Some(table) = self._read_tnx()? {
             Ok(table.get(key)?.is_some())
         } else {
             Ok(false)
         }
+    }
+
+    pub async fn contains_key(&self, key: &str) -> Result<bool> {
+        tokio::task::block_in_place(|| self._contains_key(key))
     }
 
     /// Returns all the object in the DB whose key begin with `prefix`
@@ -316,8 +360,11 @@ impl Database {
     /// # Errors
     /// Will throw an error if the results from the query are not homogenous (all of the same type).
     /// Will also throw an error if `prefix` is the empty string
-    pub fn query<T: DeserializeOwned>(&self, prefix: &str) -> Result<Vec<T>> {
+    fn _query<T: DeserializeOwned>(&self, prefix: &str) -> Result<Vec<T>> {
         self._query_inner(prefix, None, None, true).map(|(r, _)| r)
+    }
+    pub async fn query<T: DeserializeOwned>(&self, prefix: &str) -> Result<Vec<T>> {
+        tokio::task::block_in_place(|| self._query(prefix))
     }
 
     /// Returns a page of size `page_size` of the object in the DB whose key begin with `prefix`,
@@ -327,7 +374,7 @@ impl Database {
     /// # Errors
     /// Will throw an error if the results from the query are not homogenous (all of the same type).
     /// Will also throw an error if `prefix` is the empty string
-    pub fn query_page<T: DeserializeOwned>(
+    fn _query_page<T: DeserializeOwned>(
         &self,
         prefix: &str,
         page_size: usize,
@@ -335,14 +382,25 @@ impl Database {
     ) -> Result<(Vec<T>, Option<String>)> {
         self._query_inner(prefix, Some(page_size), start_key, true)
     }
+    pub async fn query_page<T: DeserializeOwned>(
+        &self,
+        prefix: &str,
+        page_size: usize,
+        start_key: Option<String>,
+    ) -> Result<(Vec<T>, Option<String>)> {
+        tokio::task::block_in_place(|| self._query_page(prefix, page_size, start_key))
+    }
 
     /// Like [Self::query] but the DB is tranversed in reverse order
     ///
     /// # Errors
     /// Will throw an error if the results from the query are not homogenous (all of the same type).
     /// Will also throw an error if `prefix` is the empty string
-    pub fn query_rev<T: DeserializeOwned>(&self, prefix: &str) -> Result<Vec<T>> {
+    fn _query_rev<T: DeserializeOwned>(&self, prefix: &str) -> Result<Vec<T>> {
         self._query_inner(prefix, None, None, false).map(|(r, _)| r)
+    }
+    pub async fn query_rev<T: DeserializeOwned>(&self, prefix: &str) -> Result<Vec<T>> {
+        tokio::task::block_in_place(|| self._query_rev(prefix))
     }
 
     /// Like [Self::query_page] but the DB is tranversed in reverse order
@@ -350,13 +408,21 @@ impl Database {
     /// # Errors
     /// Will throw an error if the results from the query are not homogenous (all of the same type).
     /// Will also throw an error if `prefix` is the empty string
-    pub fn query_page_rev<T: DeserializeOwned>(
+    fn _query_page_rev<T: DeserializeOwned>(
         &self,
         prefix: &str,
         page_size: usize,
         start_key: Option<String>,
     ) -> Result<(Vec<T>, Option<String>)> {
         self._query_inner(prefix, Some(page_size), start_key, false)
+    }
+    pub async fn query_page_rev<T: DeserializeOwned>(
+        &self,
+        prefix: &str,
+        page_size: usize,
+        start_key: Option<String>,
+    ) -> Result<(Vec<T>, Option<String>)> {
+        tokio::task::block_in_place(|| self._query_page_rev(prefix, page_size, start_key))
     }
 
     fn _query_inner<T: DeserializeOwned>(
@@ -369,7 +435,7 @@ impl Database {
         if prefix.is_empty() {
             return Err(DbError::EmptyPrefix);
         }
-        if let Some(table) = self.read_tnx()? {
+        if let Some(table) = self._read_tnx()? {
             let mut prefix_with_additionnal_max_char = prefix.to_owned();
             prefix_with_additionnal_max_char.push(char::MAX);
 
@@ -423,8 +489,8 @@ impl Database {
 
     /// List all the keys in the DB
     /// If `prefix` is [Some] and not the empty string, returns only keys that begin with `prefix`
-    pub fn list_keys(&self, prefix: Option<&str>) -> Result<Vec<String>> {
-        if let Some(table) = self.read_tnx()? {
+    fn _list_keys(&self, prefix: Option<&str>) -> Result<Vec<String>> {
+        if let Some(table) = self._read_tnx()? {
             if prefix.is_some_and(|s| !s.is_empty()) {
                 let prefix = prefix.unwrap();
                 let mut prefix_with_next_last_char = prefix.to_owned();
@@ -454,8 +520,11 @@ impl Database {
             Ok(vec![])
         }
     }
+    pub async fn list_keys(&self, prefix: Option<&str>) -> Result<Vec<String>> {
+        tokio::task::block_in_place(|| self._list_keys(prefix))
+    }
 
-    fn read_tnx(&self) -> Result<Option<ReadOnlyTable<&'static str, &'static [u8]>>> {
+    fn _read_tnx(&self) -> Result<Option<ReadOnlyTable<&'static str, &'static [u8]>>> {
         Ok(
             (match self.internal_db.begin_read()?.open_table(self.table_def()) {
                 Ok(table) => Ok(Some(table)),
@@ -474,7 +543,7 @@ impl Database {
             .unwrap_or(DEFAULT_TABLE)
     }
 
-    fn _compare_and_swap(
+    fn _compare_and_swap_inner(
         table: &mut Table<&str, &[u8]>,
         key: &str,
         old_value: Option<&[u8]>,
@@ -494,32 +563,33 @@ impl Database {
 }
 
 impl TokenCache for Database {
-    fn save_tokens(
+    async fn save_tokens(
         &mut self,
         tokens: &heritage_service_api_client::Tokens,
     ) -> core::result::Result<(), heritage_service_api_client::Error> {
-        self.update_item(TOKEN_KEY, tokens).map_err(|e| {
+        self.update_item(TOKEN_KEY, tokens).await.map_err(|e| {
             log::error!("{e}");
             heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
         })?;
         Ok(())
     }
 
-    fn load_tokens(
+    async fn load_tokens(
         &self,
     ) -> core::result::Result<
         Option<heritage_service_api_client::Tokens>,
         heritage_service_api_client::Error,
     > {
-        self.get_item(TOKEN_KEY).map_err(|e| {
+        self.get_item(TOKEN_KEY).await.map_err(|e| {
             log::error!("{e}");
             heritage_service_api_client::Error::TokenCacheReadError(e.to_string())
         })
     }
 
-    fn clear(&mut self) -> core::result::Result<bool, heritage_service_api_client::Error> {
+    async fn clear(&mut self) -> core::result::Result<bool, heritage_service_api_client::Error> {
         Ok(self
             .delete_item::<heritage_service_api_client::Tokens>(TOKEN_KEY)
+            .await
             .map_err(|e| {
                 log::error!("{e}");
                 heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
