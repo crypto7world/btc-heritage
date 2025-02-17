@@ -115,6 +115,7 @@ The roadmap is accurate regarding my immediate goals for the project.
 - [x] Capability for the wallet library to use a custom Bitcoin Core or Electrum node instead of the service
 - [ ] Create a GUI Heritage wallet tool (see [btcherit.com][heritage-wallet-service], the online service in the time being)
 - [ ] Add support for MultiSig N-of-M Heir to allow kind-of inheritance sharing
+- [ ] Add privacy features to the Heritage Config renewal (split in multiple Txs, UTXO independence preservation, random temporal repartition)
 - [ ] Add lightning support
 - [ ] Eliminate dependency to BDK
 
