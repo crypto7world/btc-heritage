@@ -92,6 +92,8 @@ While I hope the [btcherit.com][heritage-wallet-service] service will help me pa
 
 ## Stability and versioning
 
+Commits between releases SHOULD NOT be considered stable. You should only use tagged releases.
+
 All the software provided is in working order and can be safely used to manage Bitcoin's holdings (I do since February 2024).
 
 We are using [Semantic Versioning](https://github.com/semver/semver) (MAJOR.MINOR.PATCH).
