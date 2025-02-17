@@ -208,7 +208,9 @@ mod tests {
     // Utilitary function that create a temp database that will be removed at the end
     fn setup_test_env() -> TestEnv {
         let tmpdir = tempfile::tempdir().unwrap();
-        let db = tokio::runtime::Builder::new_current_thread()
+        let db = tokio::runtime::Builder::new_multi_thread()
+            .max_blocking_threads(4)
+            .worker_threads(4)
             .enable_all()
             .build()
             .unwrap()
