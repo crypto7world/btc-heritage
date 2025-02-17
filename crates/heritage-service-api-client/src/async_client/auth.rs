@@ -104,7 +104,7 @@ impl Tokens {
             if timestamp_now() >= auth_expiration_ts {
                 return Err(Error::AuthenticationProcessExpired);
             }
-            std::thread::sleep(core::time::Duration::from_secs(sleep_interval));
+            tokio::time::sleep(core::time::Duration::from_secs(sleep_interval)).await;
 
             log::debug!("Trying to retrieve tokens");
             let req = client.post(auth_url).form(&[
