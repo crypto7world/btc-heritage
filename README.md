@@ -141,7 +141,7 @@ Thanks.
 
 ## Minimum Supported Rust Version (MSRV)
 
-This library compile with Rust 1.79.0.
+This library compile with Rust 1.81.0.
 
 While I will always remain on stable Rust (i.e. _NOT_ depend on nightly), I do not plan on being conservative on the MSRV. If at some point a mildly interesting feature pops in a new Rust version, I will happily bump up the MSRV.
 
