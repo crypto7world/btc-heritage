@@ -56,9 +56,12 @@ enum DeviceFlowError {
 
 /// A trait providing methods for the OAuth tokens to be cached and retrieved
 pub trait TokenCache {
-    fn save_tokens(&mut self, tokens: &Tokens) -> Result<()>;
-    fn load_tokens(&self) -> Result<Option<Tokens>>;
-    fn clear(&mut self) -> Result<bool>;
+    fn save_tokens(
+        &mut self,
+        tokens: &Tokens,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn load_tokens(&self) -> impl std::future::Future<Output = Result<Option<Tokens>>> + Send;
+    fn clear(&mut self) -> impl std::future::Future<Output = Result<bool>> + Send;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -191,11 +194,11 @@ impl Tokens {
         &self.access_token
     }
 
-    pub fn save<T: TokenCache>(&self, db: &mut T) -> Result<()> {
-        db.save_tokens(self)
+    pub async fn save<T: TokenCache>(&self, db: &mut T) -> Result<()> {
+        db.save_tokens(self).await
     }
 
-    pub fn load<T: TokenCache>(db: &T) -> Result<Option<Self>> {
-        db.load_tokens()
+    pub async fn load<T: TokenCache>(db: &T) -> Result<Option<Self>> {
+        db.load_tokens().await
     }
 }
