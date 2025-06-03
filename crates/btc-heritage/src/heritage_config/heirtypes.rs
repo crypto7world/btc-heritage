@@ -120,7 +120,14 @@ pub enum HeirConfig {
     HeirXPubkey(AccountXPub),
     // SingleHeirPubKeyHash(KeyHash),
 }
-
+impl Display for HeirConfig {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            HeirConfig::SingleHeirPubkey(single_heir_pubkey) => single_heir_pubkey.fmt(f),
+            HeirConfig::HeirXPubkey(account_xpub) => account_xpub.fmt(f),
+        }
+    }
+}
 impl core::hash::Hash for HeirConfig {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         match self {

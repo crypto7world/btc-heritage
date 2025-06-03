@@ -91,7 +91,7 @@ impl DatabaseTransaction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Database {
     internal_db: Arc<redb::Database>,
     table_name: Option<String>,

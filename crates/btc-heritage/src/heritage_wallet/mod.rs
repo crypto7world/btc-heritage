@@ -54,7 +54,16 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             database: RefCell::new(database),
         }
     }
+    /// Return an immutable reference to the internal database
+    pub fn database(&self) -> impl core::ops::Deref<Target = D> + '_ {
+        self.database.borrow()
+    }
+    fn database_mut(&self) -> impl core::ops::DerefMut<Target = D> + '_ {
+        self.database.borrow_mut()
+    }
+}
 
+impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn generate_backup(&self) -> Result<HeritageWalletBackup> {
         log::debug!("HeritageWallet::generate_backup");
         Ok(HeritageWalletBackup(
@@ -260,14 +269,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .flatten()
             .rev()
             .collect())
-    }
-
-    /// Return an immutable reference to the internal database
-    pub fn database(&self) -> impl core::ops::Deref<Target = D> + '_ {
-        self.database.borrow()
-    }
-    fn database_mut(&self) -> impl core::ops::DerefMut<Target = D> + '_ {
-        self.database.borrow_mut()
     }
 
     pub fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>> {

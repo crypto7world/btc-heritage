@@ -3,6 +3,7 @@ use core::fmt::Debug;
 use thiserror::Error;
 
 pub type Result<T> = core::result::Result<T, Error>;
+pub use crate::database::errors::DbError;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -60,8 +61,8 @@ pub enum Error {
     IncoherentLedgerWalletFingerprint,
     #[error("No Service Client has been provided to perform this operation")]
     UninitializedServiceClient,
-    #[error("No Ledger Client has been provided to perform this operation")]
-    UninitializedLedgerClient,
+    #[error("No Ledger device can be reached")]
+    NoLedgerDevice,
     #[error("No BlockChain factory has been provided to perform this operation")]
     UninitializedBlockchainFactory,
     #[error("No HeritageWallet has been provided to perform this operation")]
@@ -86,7 +87,7 @@ pub enum Error {
     #[error("Database error: {source}")]
     DatabaseError {
         #[from]
-        source: crate::database::errors::DbError,
+        source: DbError,
     },
     #[error("SerDe error: {source}")]
     SerDeError {

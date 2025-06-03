@@ -4,6 +4,7 @@ use std::collections::BTreeSet;
 use btc_heritage::{
     bitcoin::OutPoint,
     heritage_wallet::{FeePolicy, UtxoSelection},
+    subwallet_config::SubwalletConfig,
     Amount, HeirConfig,
 };
 use serde::{Deserialize, Serialize};
@@ -58,6 +59,25 @@ pub struct HeritageWalletMetaUpdate {
 pub enum AccountXPubWithStatus {
     Used(AccountXPub),
     Unused(AccountXPub),
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct SubwalletConfigMeta {
+    pub account_xpub: AccountXPub,
+    pub heritage_config: HeritageConfig,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub firstuse_ts: Option<u64>,
+}
+impl From<SubwalletConfig> for SubwalletConfigMeta {
+    fn from(value: SubwalletConfig) -> Self {
+        let firstuse_ts = value.subwallet_firstuse_time();
+        let (account_xpub, heritage_config) = value.into_parts();
+        Self {
+            account_xpub,
+            heritage_config,
+            firstuse_ts,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -236,6 +256,12 @@ impl TryFrom<String> for EmailAddress {
         } else {
             Err(format!("{value} is not a valid Email address"))
         }
+    }
+}
+impl Deref for EmailAddress {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 

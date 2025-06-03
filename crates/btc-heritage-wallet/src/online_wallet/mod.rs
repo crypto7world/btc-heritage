@@ -14,7 +14,8 @@ mod local;
 mod service;
 
 use heritage_service_api_client::{
-    AccountXPubWithStatus, HeritageUtxo, HeritageWalletMeta, NewTx, TransactionSummary,
+    AccountXPubWithStatus, HeritageUtxo, HeritageWalletMeta, NewTx, SubwalletConfigMeta,
+    TransactionSummary,
 };
 pub use local::{AnyBlockchainFactory, LocalHeritageWallet};
 use serde::{Deserialize, Serialize};
@@ -65,6 +66,10 @@ pub trait OnlineWallet: Broadcaster + BoundFingerprint {
         &mut self,
         account_xpubs: Vec<AccountXPub>,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+    fn list_subwallet_configs(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<SubwalletConfigMeta>>> + Send;
+    #[deprecated = "use list_subwallet_configs instead"]
     fn list_heritage_configs(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<HeritageConfig>>> + Send;
@@ -101,12 +106,14 @@ impl AnyOnlineWallet {
 }
 
 macro_rules! impl_online_wallet_fn {
-    ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+    ($(#[$attrs:meta])? $fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        $(#[$attrs])?
         async fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
             impl_online_wallet_fn!($self $fn_name($($a : $t),*))
         }
     };
-    ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+    ($(#[$attrs:meta])? $fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        $(#[$attrs])?
         async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
             impl_online_wallet_fn!($self $fn_name($($a : $t),*))
         }
@@ -128,7 +135,10 @@ impl OnlineWallet for AnyOnlineWallet {
     impl_online_wallet_fn!(list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>>);
     impl_online_wallet_fn!(list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>>);
     impl_online_wallet_fn!(feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()>);
-    impl_online_wallet_fn!(list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
+    impl_online_wallet_fn!(list_subwallet_configs(&self) -> Result<Vec<SubwalletConfigMeta>>);
+    impl_online_wallet_fn!(
+        #[allow(deprecated)]
+        list_heritage_configs(&self) -> Result<Vec<HeritageConfig>>);
     impl_online_wallet_fn!(set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig>);
     impl_online_wallet_fn!(sync(&mut self) -> Result<()>);
     impl_online_wallet_fn!(get_wallet_status(&self) -> Result<WalletStatus>);
@@ -149,12 +159,14 @@ impl BoundFingerprint for AnyOnlineWallet {
 }
 
 macro_rules! impl_online_wallet {
-    ($fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+    ($(#[$attrs:meta])? $fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        $(#[$attrs])?
         async fn $fn_name(&mut $self $(,$a : $t)*) -> $ret {
             $self.online_wallet.$fn_name($($a),*).await
         }
     };
-    ($fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+    ($(#[$attrs:meta])? $fn_name:ident(& $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
+        $(#[$attrs])?
         async fn $fn_name(& $self $(,$a : $t)*) -> $ret {
             $self.online_wallet.$fn_name($($a),*).await
         }
@@ -176,7 +188,11 @@ macro_rules! impl_online_wallet {
             crate::online_wallet::impl_online_wallet!(list_heritage_utxos(&self) -> Result<Vec<btc_heritage::heritage_wallet::HeritageUtxo>>);
             crate::online_wallet::impl_online_wallet!(list_account_xpubs(&self) -> Result<Vec<heritage_service_api_client::AccountXPubWithStatus>>);
             crate::online_wallet::impl_online_wallet!(feed_account_xpubs(&mut self, account_xpubs: Vec<btc_heritage::AccountXPub>) -> Result<()>);
-            crate::online_wallet::impl_online_wallet!(list_heritage_configs(&self) -> Result<Vec<btc_heritage::HeritageConfig>>);
+            crate::online_wallet::impl_online_wallet!(list_subwallet_configs(&self) -> Result<Vec<heritage_service_api_client::SubwalletConfigMeta>>);
+            crate::online_wallet::impl_online_wallet!(
+                #[allow(deprecated)]
+                list_heritage_configs(&self) -> Result<Vec<btc_heritage::HeritageConfig>>
+            );
             crate::online_wallet::impl_online_wallet!(set_heritage_config(&mut self, new_hc: btc_heritage::HeritageConfig) -> Result<btc_heritage::HeritageConfig>);
             crate::online_wallet::impl_online_wallet!(sync(&mut self) -> Result<()>);
             crate::online_wallet::impl_online_wallet!(get_wallet_status(&self) -> Result<crate::online_wallet::WalletStatus>);

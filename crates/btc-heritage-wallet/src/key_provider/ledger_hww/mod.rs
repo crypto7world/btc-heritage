@@ -1,5 +1,8 @@
 use core::{fmt::Debug, ops::Deref, str::FromStr};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     errors::{Error, Result},
@@ -29,8 +32,60 @@ use super::MnemonicBackup;
 
 pub(crate) mod policy;
 
+/// Global static mutex containing an optional reference-counted LedgerClient instance
+/// that can be shared throughout the application.
+static LEDGER_CLIENT: Mutex<Option<LedgerClient>> = Mutex::new(None);
+
+/// Provides access to the LedgerClient singleton, creating it if needed.
+///
+/// This function manages the lifecycle of a shared LedgerClient instance:
+/// - If a valid client already exists, returns it with its fingerprint
+/// - If the existing client has become invalid, removes it and returns None
+/// - If no client exists, attempts to create one
+///
+/// # Returns
+///
+/// Some((client, fingerprint)) if a valid LedgerClient is available, otherwise None.
+///
+/// # Examples
+///
+/// ```
+/// if let Some((client, fingerprint)) = ledger_client().await {
+///     // Use client and fingerprint
+/// } else {
+///     // Handle missing or invalid Ledger device
+/// }
+/// ```
+async fn ledger_client() -> Option<(LedgerClient, Fingerprint)> {
+    let opt_ledger_client = { LEDGER_CLIENT.lock().unwrap().clone() };
+    match opt_ledger_client {
+        Some(lc) => match lc.fingerprint().await {
+            Ok(fg) => Some((lc.clone(), fg)),
+            Err(e) => {
+                log::error!("{e}");
+                LEDGER_CLIENT.lock().unwrap().take();
+                None
+            }
+        },
+        None => match LedgerClient::new() {
+            Ok(lc) => {
+                if let Ok(fg) = lc.fingerprint().await {
+                    LEDGER_CLIENT.lock().unwrap().replace(lc.clone());
+                    Some((lc, fg))
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                log::error!("{e}");
+                None
+            }
+        },
+    }
+}
+
 /// Transport with the Ledger device.
-pub(crate) struct TransportHID(TransportNativeHID);
+pub struct TransportHID(TransportNativeHID);
 impl Debug for TransportHID {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("TransportHID").finish()
@@ -64,25 +119,39 @@ impl Transport for TransportHID {
     }
 }
 
-struct LedgerClient(BitcoinClient<TransportHID>);
+pub struct LedgerClient(Arc<BitcoinClient<TransportHID>>);
 impl Debug for LedgerClient {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_tuple("LedgerClient").finish()
     }
 }
+impl Clone for LedgerClient {
+    fn clone(&self) -> Self {
+        Self(Arc::clone(&self.0))
+    }
+}
 impl LedgerClient {
-    pub fn new() -> Result<Self> {
-        Ok(Self(BitcoinClient::new(TransportHID::new(
+    fn new() -> Result<Self> {
+        Ok(Self(Arc::new(BitcoinClient::new(TransportHID::new(
             TransportNativeHID::new(&HidApi::new().expect("unable to get HIDAPI"))
                 .map_err(|e| Error::LedgerClientError(e.to_string()))?,
-        ))))
+        )))))
+    }
+    pub async fn fingerprint(&self) -> Result<Fingerprint> {
+        Ok(
+            tokio::task::block_in_place(|| self.get_master_fingerprint()).map(|fg| {
+                // Because for now we are bound to the rust-bitcoin version of BDK
+                // which is different than the one used by ledger_bitcoin_client
+                Fingerprint::from(fg.as_bytes())
+            })?,
+        )
     }
 }
 
 impl Deref for LedgerClient {
     type Target = BitcoinClient<TransportHID>;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.0.deref()
     }
 }
 
@@ -92,43 +161,34 @@ pub struct LedgerKey {
     network: Network,
     #[serde(default)]
     registered_policies: HashMap<AccountXPubId, (LedgerPolicy, LedgerPolicyId, LedgerPolicyHMAC)>,
-    #[serde(skip, default)]
-    ledger_client: Option<LedgerClient>,
 }
 
 impl LedgerKey {
     pub async fn new(network: Network) -> Result<Self> {
-        let ledger_client = Some(LedgerClient::new()?);
-        let fingerprint = tokio::task::block_in_place(|| {
-            ledger_client.as_ref().unwrap().get_master_fingerprint()
-        })?;
+        let (_, fingerprint) = ledger_client().await.ok_or(Error::NoLedgerDevice)?;
         Ok(Self {
-            // Because for now we are bound to the rust-bitcoin version of BDK
-            // which is different than the one used by ledger_bitcoin_client
-            fingerprint: Fingerprint::from(fingerprint.as_bytes()),
+            fingerprint,
             network,
             registered_policies: HashMap::new(),
-            ledger_client,
         })
     }
-    pub async fn init_ledger_client(&mut self) -> Result<()> {
-        self.ledger_client = Some(LedgerClient::new()?);
 
-        let ledger_fg = tokio::task::block_in_place(|| {
-            self.ledger_client
-                .as_ref()
-                .unwrap()
-                .get_master_fingerprint()
-        })?;
-        if ledger_fg.as_bytes() != self.fingerprint.as_bytes() {
+    async fn ledger_client(&self) -> Result<LedgerClient> {
+        let (client, fingerprint) = ledger_client().await.ok_or(Error::NoLedgerDevice)?;
+        if fingerprint != self.fingerprint {
             return Err(Error::IncoherentLedgerWalletFingerprint);
         }
-        Ok(())
+        Ok(client)
     }
-    fn ledger_client(&self) -> Result<&LedgerClient> {
-        self.ledger_client
-            .as_ref()
-            .ok_or(Error::UninitializedLedgerClient)
+
+    pub async fn ledger_connected_and_ready(&self) -> bool {
+        match self.ledger_client().await {
+            Ok(_) => true,
+            Err(e) => {
+                log::warn!("Ledger not ready: {e}");
+                false
+            }
+        }
     }
     pub async fn register_policies<P>(
         &mut self,
@@ -138,7 +198,7 @@ impl LedgerKey {
     where
         P: Fn(&WalletPolicy),
     {
-        let client = self.ledger_client()?;
+        let client = self.ledger_client().await?;
         let register_results = policies
             .iter()
             .map(|policy| {
@@ -222,7 +282,8 @@ impl super::KeyProvider for LedgerKey {
         .map_err(Error::generic)?;
 
         let mut signed_inputs = 0;
-        let client = self.ledger_client()?;
+
+        let client = self.ledger_client().await?;
         for account_id in account_ids_present {
             let (pol, _, hmac) = self
                 .registered_policies
@@ -288,7 +349,7 @@ impl super::KeyProvider for LedgerKey {
         ];
         let base_derivation_path = DerivationPath::from(base_derivation_path);
 
-        let client = self.ledger_client()?;
+        let client = self.ledger_client().await?;
         let xpubs = range
             .into_iter()
             .map(|i| {

@@ -11,11 +11,13 @@ use btc_heritage::{
     bitcoincore_rpc::{Client, RpcApi},
     database::HeritageDatabase,
     electrum_client::ElectrumApi,
-    heritage_wallet::{CreatePsbtOptions, TransactionSummary, WalletAddress},
+    heritage_wallet::{CreatePsbtOptions, SubwalletConfigId, TransactionSummary, WalletAddress},
     AccountXPub, Amount, BlockInclusionObjective, HeritageConfig, HeritageWallet,
     HeritageWalletBackup, PartiallySignedTransaction, SpendingConfig,
 };
-use heritage_service_api_client::{AccountXPubWithStatus, NewTx, NewTxDrainTo};
+use heritage_service_api_client::{
+    AccountXPubWithStatus, NewTx, NewTxDrainTo, SubwalletConfigMeta,
+};
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -200,6 +202,24 @@ impl super::OnlineWallet for LocalHeritageWallet {
             self.fingerprint = fingerprint;
         }
         Ok(())
+    }
+
+    async fn list_subwallet_configs(&self) -> Result<Vec<SubwalletConfigMeta>> {
+        let wallet = self.heritage_wallet().await?;
+        let mut obsolete_subwallet_configs =
+            tokio::task::block_in_place(|| wallet.database().list_obsolete_subwallet_configs())?;
+        if let Some(swc) = tokio::task::block_in_place(|| {
+            wallet
+                .database()
+                .get_subwallet_config(SubwalletConfigId::Current)
+        })? {
+            obsolete_subwallet_configs.push(swc);
+        }
+        obsolete_subwallet_configs.reverse();
+        Ok(obsolete_subwallet_configs
+            .into_iter()
+            .map(SubwalletConfigMeta::from)
+            .collect())
     }
 
     async fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {

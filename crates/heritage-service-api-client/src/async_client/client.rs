@@ -3,7 +3,7 @@ use crate::{
     errors::{Error, Result},
     types::{AccountXPubWithStatus, HeritageWalletMeta, NewTx},
     Heir, HeirContact, HeirCreate, HeirUpdate, Heritage, HeritageWalletMetaCreate, NewTxDrainTo,
-    Synchronization, UnsignedPsbt,
+    SubwalletConfigMeta, Synchronization, UnsignedPsbt,
 };
 use btc_heritage::{
     bitcoin::{psbt::Psbt, Txid},
@@ -73,6 +73,10 @@ impl HeritageServiceClient {
 
     pub async fn has_tokens(&self) -> bool {
         self.tokens.read().await.is_some()
+    }
+
+    pub fn get_tokens(&self) -> Arc<RwLock<Option<Tokens>>> {
+        self.tokens.clone()
     }
 
     /// The tokens are interiorly-mutable due to the need of (maybe) renewing
@@ -189,6 +193,15 @@ impl HeritageServiceClient {
         Ok(())
     }
 
+    pub async fn list_wallet_subwallet_configs(
+        &self,
+        wallet_id: &str,
+    ) -> Result<Vec<SubwalletConfigMeta>> {
+        let path = format!("wallets/{wallet_id}/subwallet-configs");
+        Ok(serde_json::from_value(self.api_call_get(&path).await?)?)
+    }
+
+    #[deprecated = "use list_wallet_subwallet_configs instead"]
     pub async fn list_wallet_heritage_configs(
         &self,
         wallet_id: &str,

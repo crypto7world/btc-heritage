@@ -1,4 +1,5 @@
 use btc_heritage::{bitcoin::bip32::Fingerprint, HeirConfig};
+use heritage_service_api_client::HeritageServiceClient;
 use serde::{Deserialize, Serialize};
 
 use crate::{

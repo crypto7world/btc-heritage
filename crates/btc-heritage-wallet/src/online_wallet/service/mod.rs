@@ -17,7 +17,8 @@ use btc_heritage::{
 };
 use heritage_service_api_client::{
     AccountXPubWithStatus, HeritageServiceClient, HeritageUtxo, HeritageWalletMeta,
-    HeritageWalletMetaCreate, NewTx, SynchronizationStatus, TransactionSummary,
+    HeritageWalletMetaCreate, NewTx, SubwalletConfigMeta, SynchronizationStatus,
+    TransactionSummary,
 };
 
 use serde::{Deserialize, Serialize};
@@ -210,6 +211,14 @@ impl super::OnlineWallet for ServiceBinding {
         Ok(())
     }
 
+    async fn list_subwallet_configs(&self) -> Result<Vec<SubwalletConfigMeta>> {
+        Ok(self
+            .unwrap_service_client()?
+            .list_wallet_subwallet_configs(&self.wallet_id)
+            .await?)
+    }
+
+    #[allow(deprecated)]
     async fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {
         Ok(self
             .unwrap_service_client()?
