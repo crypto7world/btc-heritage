@@ -14,6 +14,3 @@ Cargo.lock
 *.pdb
 
 /.direnv
-/.envrc
-/flake.nix
-/flake.lock
