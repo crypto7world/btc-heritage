@@ -49,7 +49,7 @@ static LEDGER_CLIENT: Mutex<Option<LedgerClient>> = Mutex::new(None);
 ///
 /// # Examples
 ///
-/// ```
+/// ```ignore
 /// if let Some((client, fingerprint)) = ledger_client().await {
 ///     // Use client and fingerprint
 /// } else {

@@ -308,6 +308,34 @@ impl HeritageUtxo {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TransactionSummaryIOTotals {
+    pub count: usize,
+    #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
+    pub amount: Amount,
+}
+impl TransactionSummaryIOTotals {
+    /// Increments the count and adds the given amount to the total
+    ///
+    /// This method is used to track both the number of inputs/outputs
+    /// and their cumulative amount in a transaction summary.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage::heritage_wallet::TransactionSummaryIOTotals;
+    /// use btc_heritage::bitcoin::Amount;
+    /// let mut totals = TransactionSummaryIOTotals::default();
+    /// totals.count_io_amount(Amount::from_sat(1000));
+    /// assert_eq!(totals.count, 1);
+    /// assert_eq!(totals.amount, Amount::from_sat(1000));
+    /// ```
+    pub fn count_io_amount(&mut self, amount: Amount) {
+        self.count += 1;
+        self.amount += amount;
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionSummaryOwnedIO {
     pub outpoint: OutPoint,
@@ -327,8 +355,12 @@ pub struct TransactionSummary {
     pub confirmation_time: Option<BlockTime>,
     /// The owned inputs addresses and amounts of this transaction
     pub owned_inputs: Vec<TransactionSummaryOwnedIO>,
+    /// The total count and total amounts of this transaction inputs
+    pub inputs_totals: TransactionSummaryIOTotals,
     /// The owned outputs addresses and amounts of this transaction
     pub owned_outputs: Vec<TransactionSummaryOwnedIO>,
+    /// The total count and total amounts of this transaction outputs
+    pub outputs_totals: TransactionSummaryIOTotals,
     /// Fee value (sats)
     #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
     pub fee: Amount,
@@ -350,8 +382,7 @@ pub struct TransactionSummary {
 // }
 
 /// A [Address<NetworkChecked>] with [(Fingerprint, DerivationPath)] informations
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(into = "String", try_from = "String")]
 pub struct WalletAddress {
     pub(crate) origin: (Fingerprint, DerivationPath),

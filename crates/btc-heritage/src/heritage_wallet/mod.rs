@@ -1085,6 +1085,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 }
             })
             .collect::<Vec<_>>();
+        let inputs_totals = TransactionSummaryIOTotals {
+            count: owned_inputs.len(),
+            amount: owned_inputs.iter().map(|io| io.amount).sum(),
+        };
         // Compute the future TxId
         let txid = psbt.unsigned_tx.txid();
         // Creating the owned_outputs Vec
@@ -1097,6 +1101,13 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 amount: Amount::from_sat(o.value),
             })
             .collect::<Vec<_>>();
+        let outputs_totals = psbt.unsigned_tx.output.iter().fold(
+            TransactionSummaryIOTotals::default(),
+            |mut io_tot, tx_out| {
+                io_tot.count_io_amount(Amount::from_sat(tx_out.value));
+                io_tot
+            },
+        );
 
         // Create the parent_ids
         let parent_txids = psbt
@@ -1117,7 +1128,9 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             txid,
             confirmation_time: None,
             owned_inputs,
+            inputs_totals,
             owned_outputs,
+            outputs_totals,
             fee,
             fee_rate,
             parent_txids,

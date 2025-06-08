@@ -187,7 +187,7 @@ pub mod tests {
             get_test_account_xpub, get_test_heritage_config, get_test_subwallet_config,
             TestHeritageConfig,
         },
-        heritage_wallet::TransactionSummaryOwnedIO,
+        heritage_wallet::{TransactionSummaryIOTotals, TransactionSummaryOwnedIO},
     };
 
     use super::*;
@@ -620,7 +620,15 @@ pub mod tests {
                     .unwrap(),
                 amount: Amount::from_sat(100_000),
             }],
+            inputs_totals: TransactionSummaryIOTotals {
+                count: 1,
+                amount: Amount::from_sat(100_000),
+            },
             owned_outputs: vec![],
+            outputs_totals: TransactionSummaryIOTotals {
+                count: 1,
+                amount: Amount::from_sat(90_000),
+            },
             fee: Amount::from_sat(10_000),
             fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::new(),
@@ -635,6 +643,10 @@ pub mod tests {
                 timestamp: 1_700_000_000,
             }),
             owned_inputs: vec![],
+            inputs_totals: TransactionSummaryIOTotals {
+                count: 1,
+                amount: Amount::from_sat(200_000),
+            },
             owned_outputs: vec![TransactionSummaryOwnedIO {
                 outpoint: OutPoint { txid, vout: 0 },
                 address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
@@ -642,6 +654,10 @@ pub mod tests {
                     .unwrap(),
                 amount: Amount::from_sat(100_000),
             }],
+            outputs_totals: TransactionSummaryIOTotals {
+                count: 2,
+                amount: Amount::from_sat(190_000),
+            },
             fee: Amount::from_sat(10_000),
             fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::new(),
@@ -668,13 +684,21 @@ pub mod tests {
                     .unwrap(),
                 amount: Amount::from_sat(100_000),
             }],
+            inputs_totals: TransactionSummaryIOTotals {
+                count: 1,
+                amount: Amount::from_sat(100_000),
+            },
             owned_outputs: vec![TransactionSummaryOwnedIO {
                 outpoint: OutPoint { txid, vout: 0 },
                 address: "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya"
                     .try_into()
                     .unwrap(),
-                amount: Amount::from_sat(100_000),
+                amount: Amount::from_sat(90_000),
             }],
+            outputs_totals: TransactionSummaryIOTotals {
+                count: 1,
+                amount: Amount::from_sat(90_000),
+            },
             fee: Amount::from_sat(10_000),
             fee_rate: FeeRate::from_sat_per_vb_unchecked(3),
             parent_txids: HashSet::from([Txid::from_str(

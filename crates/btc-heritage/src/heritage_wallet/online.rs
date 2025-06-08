@@ -13,7 +13,7 @@ use crate::{
     bitcoin::{Amount, FeeRate, OutPoint, Txid},
     database::TransacHeritageDatabase,
     errors::{DatabaseError, Error, Result},
-    heritage_wallet::TransactionSummaryOwnedIO,
+    heritage_wallet::{TransactionSummaryIOTotals, TransactionSummaryOwnedIO},
     subwallet_config::SubwalletConfig,
     utils::sort_transactions_with_parents,
 };
@@ -298,8 +298,9 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 
                 // Process the Outputs to verify if they are owned
                 // Update the cache as we construct the owned_outputs
+
                 let mut owned_outputs = (0u32..)
-                    .zip(raw_tx.output.into_iter())
+                    .zip(raw_tx.output.iter())
                     .filter(|(_, o)| subwallet_spks.contains(&o.script_pubkey))
                     .map(|(i, o)| {
                         let outpoint = OutPoint {
@@ -315,40 +316,59 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                         tsoio
                     })
                     .collect::<Vec<_>>();
+                let outputs_totals = raw_tx.output.iter().fold(
+                    TransactionSummaryIOTotals::default(),
+                    |mut io_tot, tx_out| {
+                        io_tot.count_io_amount(Amount::from_sat(tx_out.value));
+                        io_tot
+                    },
+                );
 
                 // Process the Inputs to verify if they are owned
                 let mut owned_inputs = raw_tx
                     .input
-                    .into_iter()
+                    .iter()
                     // Remove is appropriate because a BTC UTXO can only be consummed once
                     // So if we match, we might as well remove the match from the cache
                     // + it is neat because we don't have to clone and it fits naturally in filter_map
                     .filter_map(|i| tx_owned_io_cache.remove(&i.previous_output))
                     .collect::<Vec<_>>();
 
-                let fee_info = subwallet_tx.fee.map(|fee| {
-                    let fee = Amount::from_sat(fee);
-                    let fee_rate = fee / raw_tx_weight;
-                    (fee, fee_rate)
-                });
+                let (fee_info_present, fee, fee_rate) = subwallet_tx
+                    .fee
+                    .map(|fee| {
+                        let fee = Amount::from_sat(fee);
+                        let fee_rate = fee / raw_tx_weight;
+                        (true, fee, fee_rate)
+                    })
+                    .unwrap_or_else(|| (false, Amount::ZERO, FeeRate::ZERO));
+
+                let inputs_totals = TransactionSummaryIOTotals {
+                    count: raw_tx.input.len(),
+                    amount: outputs_totals.amount + fee,
+                };
 
                 txsum_to_add
                     .entry(subwallet_tx.txid)
                     .and_modify(|tx_sum| {
                         tx_sum.owned_inputs.append(&mut owned_inputs);
                         tx_sum.owned_outputs.append(&mut owned_outputs);
-                        if let Some((fee, fee_rate)) = fee_info {
+                        if fee_info_present {
                             tx_sum.fee = fee;
                             tx_sum.fee_rate = fee_rate;
+                            tx_sum.inputs_totals = inputs_totals;
+                            tx_sum.outputs_totals = outputs_totals;
                         }
                     })
                     .or_insert(TransactionSummary {
                         txid: subwallet_tx.txid,
                         confirmation_time: subwallet_tx.confirmation_time,
                         owned_inputs,
+                        inputs_totals,
                         owned_outputs,
-                        fee: fee_info.map(|fi| fi.0).unwrap_or(Amount::ZERO),
-                        fee_rate: fee_info.map(|fi| fi.1).unwrap_or(FeeRate::ZERO),
+                        outputs_totals,
+                        fee,
+                        fee_rate,
                         parent_txids,
                     });
             }
