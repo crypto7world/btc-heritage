@@ -442,10 +442,12 @@ impl TryFrom<&str> for WalletAddress {
             log::error!("Could not parse fingerprint: {fingerprint_str} ({e})");
             error_c()
         })?;
-        let derivation_path = DerivationPath::from_str(derivation_path_str).map_err(|e| {
-            log::error!("Could not parse derivation_path: {derivation_path_str} ({e})");
-            error_c()
-        })?;
+
+        let derivation_path = DerivationPath::from_str(&format!("m/{derivation_path_str}"))
+            .map_err(|e| {
+                log::error!("Could not parse derivation_path: {derivation_path_str} ({e})");
+                error_c()
+            })?;
         let address = string_to_address(address_str).map_err(|e| {
             log::error!("Could not parse address: {address_str} ({e})");
             error_c()
@@ -475,5 +477,48 @@ impl Display for WalletAddress {
             &origin_str[2..],
             self.address
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::tests::{
+        get_default_test_subwallet_config_expected_address,
+        get_default_test_subwallet_config_expected_address_without_origin, TestHeritageConfig,
+    };
+
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_checked_address_serialization() {
+        let addr_str = get_default_test_subwallet_config_expected_address_without_origin(
+            TestHeritageConfig::BackupWifeY2,
+            0,
+        );
+        let checked_addr = CheckedAddress::try_from(addr_str).unwrap();
+
+        // Test serialization to JSON
+        let serialized = serde_json::to_string(&checked_addr).unwrap();
+        assert_eq!(serialized, format!("\"{}\"", addr_str));
+
+        // Test deserialization from JSON
+        let deserialized: CheckedAddress = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, checked_addr);
+    }
+
+    #[test]
+    fn test_wallet_address_serialization() {
+        let addr_str =
+            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY2, 0);
+        let wallet_addr = WalletAddress::try_from(addr_str).unwrap();
+
+        // Test serialization to JSON
+        let serialized = serde_json::to_string(&wallet_addr).unwrap();
+        assert_eq!(serialized, format!("\"{}\"", addr_str));
+
+        // Test deserialization from JSON
+        let deserialized: WalletAddress = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, wallet_addr);
     }
 }
