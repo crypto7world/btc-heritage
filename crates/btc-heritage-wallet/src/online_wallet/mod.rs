@@ -49,7 +49,7 @@ pub trait OnlineWallet: Broadcaster + BoundFingerprint {
     fn backup_descriptors(
         &self,
     ) -> impl std::future::Future<Output = Result<HeritageWalletBackup>> + Send;
-    fn get_address(&self) -> impl std::future::Future<Output = Result<String>> + Send;
+    fn get_address(&self) -> impl std::future::Future<Output = Result<WalletAddress>> + Send;
     fn list_addresses(
         &self,
     ) -> impl std::future::Future<Output = Result<Vec<WalletAddress>>> + Send;
@@ -129,7 +129,7 @@ macro_rules! impl_online_wallet_fn {
 
 impl OnlineWallet for AnyOnlineWallet {
     impl_online_wallet_fn!(backup_descriptors(&self) -> Result<HeritageWalletBackup>);
-    impl_online_wallet_fn!(get_address(&self) -> Result<String>);
+    impl_online_wallet_fn!(get_address(&self) -> Result<WalletAddress>);
     impl_online_wallet_fn!(list_addresses(&self) -> Result<Vec<WalletAddress>>);
     impl_online_wallet_fn!(list_transactions(&self) -> Result<Vec<TransactionSummary>>);
     impl_online_wallet_fn!(list_heritage_utxos(&self) -> Result<Vec<HeritageUtxo>>);
@@ -182,7 +182,7 @@ macro_rules! impl_online_wallet {
         }
         impl OnlineWallet for $name {
             crate::online_wallet::impl_online_wallet!(backup_descriptors(&self) -> Result<btc_heritage::HeritageWalletBackup>);
-            crate::online_wallet::impl_online_wallet!(get_address(&self) -> Result<String>);
+            crate::online_wallet::impl_online_wallet!(get_address(&self) -> Result<btc_heritage::heritage_wallet::WalletAddress>);
             crate::online_wallet::impl_online_wallet!(list_addresses(&self) -> Result<Vec<btc_heritage::heritage_wallet::WalletAddress>>);
             crate::online_wallet::impl_online_wallet!(list_transactions(&self) -> Result<Vec<btc_heritage::heritage_wallet::TransactionSummary>>);
             crate::online_wallet::impl_online_wallet!(list_heritage_utxos(&self) -> Result<Vec<btc_heritage::heritage_wallet::HeritageUtxo>>);

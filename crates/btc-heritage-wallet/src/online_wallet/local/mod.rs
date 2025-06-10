@@ -144,9 +144,9 @@ impl super::OnlineWallet for LocalHeritageWallet {
         Ok(tokio::task::block_in_place(|| wallet.generate_backup())?)
     }
 
-    async fn get_address(&self) -> Result<String> {
+    async fn get_address(&self) -> Result<WalletAddress> {
         let wallet = self.heritage_wallet().await?;
-        Ok(tokio::task::block_in_place(|| wallet.get_new_address())?.to_string())
+        Ok(tokio::task::block_in_place(|| wallet.get_new_address())?)
     }
 
     async fn list_addresses(&self) -> Result<Vec<WalletAddress>> {

@@ -68,8 +68,8 @@ mod tests {
             {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1731536000))),\
             and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1734560000)))})\
             #j84snf2h",
-            "bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya",
-            "bcrt1pfmle946ue92fvn07y964eucx82a7rx4qum72eapf47vkls8kt04sxyyqs6"
+            "[9c7088e3/86'/1'/0'/0/0]bcrt1p30dak2tfa6m7erhayrmmceykrfmqxy6qf6gqzzdphgv6lw9s9ykq4w70ya",
+            "[9c7088e3/86'/1'/0'/0/1]bcrt1pfmle946ue92fvn07y964eucx82a7rx4qum72eapf47vkls8kt04sxyyqs6"
         ],
         [
             "tr([9c7088e3/86'/1'/1']tpubDD2pKf3K2M2oygc9tQX4ze9o9sMmn738oHEiRTwxAWJyW7HyPYjYQKMrxznXmgWncr416q1htkCszdHg3tbGseUUQXoxFZmjdAbwU8HY9QX/0/*,\
@@ -80,8 +80,8 @@ mod tests {
             {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1763072000))),\
             and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1766096000)))})\
             #r5t9us5w",
-            "bcrt1p5mf2ulak53flxtgaxtlalsclxvp6wuzteut07n46hc8zv6rwc6rs6jldmr",
-            "bcrt1p7rq4t6jkf0f0cm297e22drf8xjmk9228my7yeahzlhdqyc8w38vs0cqh5q"
+            "[9c7088e3/86'/1'/1'/0/0]bcrt1p5mf2ulak53flxtgaxtlalsclxvp6wuzteut07n46hc8zv6rwc6rs6jldmr",
+            "[9c7088e3/86'/1'/1'/0/1]bcrt1p7rq4t6jkf0f0cm297e22drf8xjmk9228my7yeahzlhdqyc8w38vs0cqh5q"
         ],
         [
             "tr([9c7088e3/86'/1'/2']tpubDD2pKf3K2M2p2MS1LdNxnNPKY61JgpGp9VTHf1k3e8coJk4ud2BhkrxYQifa8buLnrCyUbJke4US5cVobaZLr9qU554oMdwucWZpYZj5t13/0/*,\
@@ -92,8 +92,8 @@ mod tests {
             {and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1794608000))),\
             {and_v(v:pk([c907dcb9/86'/1'/1751476594'/0/0]029d47adc090487692bc8c31729085be2ade1a80aa72962da9f1bb80d99d0cd7bf),and_v(v:older(25920),after(1797632000))),and_v(v:pk([767e581a/86'/1'/1751476594'/0/0]03f49679ef0089dda208faa970d7491cca8334bbe2ca541f527a6d7adf06a53e9e),and_v(v:older(38880),after(1800656000)))}})\
             #mh7ydv64",
-            "bcrt1p696kkt5g550uv0c4dmct5w3ul5fxyp4lh9350ud5ejc4lxm4u98shxl2ct",
-            "bcrt1pkzck2ns3wzr9v88ruymymrdg8vdft6uqjatxc79teg96jvnu55fskynp3x"
+            "[9c7088e3/86'/1'/2'/0/0]bcrt1p696kkt5g550uv0c4dmct5w3ul5fxyp4lh9350ud5ejc4lxm4u98shxl2ct",
+            "[9c7088e3/86'/1'/2'/0/1]bcrt1pkzck2ns3wzr9v88ruymymrdg8vdft6uqjatxc79teg96jvnu55fskynp3x"
         ]
     ];
 
@@ -143,6 +143,12 @@ mod tests {
         index: usize,
     ) -> &'static str {
         EXPECTED_VALUES[thc as usize][2 + index]
+    }
+    pub fn get_default_test_subwallet_config_expected_address_without_origin(
+        thc: TestHeritageConfig,
+        index: usize,
+    ) -> &'static str {
+        &get_default_test_subwallet_config_expected_address(thc, index)[24..]
     }
 
     pub fn get_blocktime_for_timestamp(timestamp: u64) -> BlockTime {

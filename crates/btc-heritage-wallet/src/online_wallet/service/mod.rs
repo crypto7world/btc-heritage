@@ -163,7 +163,7 @@ impl super::OnlineWallet for ServiceBinding {
             .await?)
     }
 
-    async fn get_address(&self) -> Result<String> {
+    async fn get_address(&self) -> Result<WalletAddress> {
         Ok(self
             .unwrap_service_client()?
             .post_wallet_create_address(&self.wallet_id)

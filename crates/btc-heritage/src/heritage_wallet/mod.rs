@@ -550,11 +550,10 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
-    pub fn get_new_address(&self) -> Result<Address> {
+    pub fn get_new_address(&self) -> Result<WalletAddress> {
         log::info!("HeritageWallet::get_new_address - Called for a new Bitcoin address");
-        let address = self
-            .internal_get_new_address(KeychainKind::External)?
-            .address;
+        let address = self.internal_get_new_address(KeychainKind::External)?;
+
         log::info!("HeritageWallet::get_new_address - address={address}");
         Ok(address)
     }
@@ -1335,7 +1334,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(subwalletconfig.get_subwallet(subdatabase))
     }
 
-    fn internal_get_new_address(&self, keychain_kind: KeychainKind) -> Result<AddressInfo> {
+    fn internal_get_new_address(&self, keychain_kind: KeychainKind) -> Result<WalletAddress> {
         log::debug!("HeritageWallet::internal_get_new_address - keychain_kind={keychain_kind:?}");
 
         let current_subwallet_config = self
@@ -1363,33 +1362,61 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         log::debug!("HeritageWallet::internal_get_new_address - get_subwallet");
         let subwallet = self.get_subwallet(&current_subwallet_config)?;
 
-        let address = match keychain_kind {
-            KeychainKind::External => {
-                log::debug!("HeritageWallet::internal_get_new_address - subwallet.get_address");
-                subwallet
-                    .get_address(AddressIndex::New)
-                    .map_err(|e| match e {
+        let account_xpub_key = current_subwallet_config
+            .account_xpub()
+            .descriptor_public_key();
+        let fingerprint = account_xpub_key.master_fingerprint();
+        let axpub_derivation_path = account_xpub_key
+            .full_derivation_path()
+            .expect("DerivationPath is present for an Account Xpub");
+
+        let (keychain_dp, AddressInfo { index, address, .. }) =
+            match keychain_kind {
+                KeychainKind::External => {
+                    log::debug!("HeritageWallet::internal_get_new_address - subwallet.get_address");
+                    (
+                        axpub_derivation_path.normal_children().next().unwrap(),
+                        subwallet.get_address(AddressIndex::New).map_err(|e| {
+                            match e {
                         bdk::Error::ScriptDoesntHaveAddressForm => Error::Unknown(
                             "ScriptDoesntHaveAddressForm: Invalid script retrieved from database"
                                 .to_owned(),
                         ),
                         _ => DatabaseError::Generic(e.to_string()).into(),
-                    })?
-            }
-            KeychainKind::Internal => {
-                log::debug!(
-                    "HeritageWallet::internal_get_new_address - subwallet.get_internal_address"
-                );
-                subwallet
-                    .get_internal_address(AddressIndex::New)
-                    .map_err(|e| match e {
+                    }
+                        })?,
+                    )
+                }
+                KeychainKind::Internal => {
+                    log::debug!(
+                        "HeritageWallet::internal_get_new_address - subwallet.get_internal_address"
+                    );
+                    (
+                        axpub_derivation_path
+                            .normal_children()
+                            .skip(1)
+                            .next()
+                            .unwrap(),
+                        subwallet
+                            .get_internal_address(AddressIndex::New)
+                            .map_err(|e| {
+                                match e {
                         bdk::Error::ScriptDoesntHaveAddressForm => Error::Unknown(
                             "ScriptDoesntHaveAddressForm: Invalid script retrieved from database"
                                 .to_owned(),
                         ),
                         _ => DatabaseError::Generic(e.to_string()).into(),
-                    })?
-            }
+                    }
+                            })?,
+                    )
+                }
+            };
+        let address = WalletAddress {
+            origin: (
+                fingerprint,
+                keychain_dp.into_child(bdk::bitcoin::bip32::ChildNumber::Normal { index }),
+            ),
+            address,
         };
         log::debug!("HeritageWallet::internal_get_new_address - address={address:?}");
         Ok(address)
@@ -2002,10 +2029,7 @@ mod tests {
         ];
 
         assert_eq!(
-            results
-                .iter()
-                .map(|wa| wa.address().to_string())
-                .collect::<Vec<_>>(),
+            results.iter().map(ToString::to_string).collect::<Vec<_>>(),
             expected_addresses
         );
 
@@ -2241,7 +2265,7 @@ mod tests {
         assert!(wallet.get_new_address().is_ok_and(|addr| addr.to_string()
             == get_default_test_subwallet_config_expected_address(
                 TestHeritageConfig::BackupWifeY2,
-                0
+                0,
             )));
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))

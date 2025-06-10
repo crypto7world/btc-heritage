@@ -265,7 +265,10 @@ mod tests {
             .to_string();
         assert_eq!(
             addr1,
-            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY2, 0)
+            get_default_test_subwallet_config_expected_address_without_origin(
+                TestHeritageConfig::BackupWifeY2,
+                0
+            )
         );
 
         wallet
@@ -288,14 +291,20 @@ mod tests {
                 .get_address(AddressIndex::Peek(0))
                 .unwrap()
                 .to_string(),
-            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY2, 0)
+            get_default_test_subwallet_config_expected_address_without_origin(
+                TestHeritageConfig::BackupWifeY2,
+                0
+            )
         );
         assert_eq!(
             wallet
                 .get_address(AddressIndex::Peek(1))
                 .unwrap()
                 .to_string(),
-            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY2, 1)
+            get_default_test_subwallet_config_expected_address_without_origin(
+                TestHeritageConfig::BackupWifeY2,
+                1
+            )
         );
 
         let wallet_config = get_default_test_subwallet_config(TestHeritageConfig::BackupWifeY1);
@@ -313,14 +322,20 @@ mod tests {
                 .get_address(AddressIndex::Peek(0))
                 .unwrap()
                 .to_string(),
-            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY1, 0)
+            get_default_test_subwallet_config_expected_address_without_origin(
+                TestHeritageConfig::BackupWifeY1,
+                0
+            )
         );
         assert_eq!(
             wallet
                 .get_address(AddressIndex::Peek(1))
                 .unwrap()
                 .to_string(),
-            get_default_test_subwallet_config_expected_address(TestHeritageConfig::BackupWifeY1, 1)
+            get_default_test_subwallet_config_expected_address_without_origin(
+                TestHeritageConfig::BackupWifeY1,
+                1
+            )
         );
 
         let wallet_config = get_default_test_subwallet_config(TestHeritageConfig::BackupWifeBro);
@@ -338,7 +353,7 @@ mod tests {
                 .get_address(AddressIndex::Peek(0))
                 .unwrap()
                 .to_string(),
-            get_default_test_subwallet_config_expected_address(
+            get_default_test_subwallet_config_expected_address_without_origin(
                 TestHeritageConfig::BackupWifeBro,
                 0
             )
@@ -348,7 +363,7 @@ mod tests {
                 .get_address(AddressIndex::Peek(1))
                 .unwrap()
                 .to_string(),
-            get_default_test_subwallet_config_expected_address(
+            get_default_test_subwallet_config_expected_address_without_origin(
                 TestHeritageConfig::BackupWifeBro,
                 1
             )

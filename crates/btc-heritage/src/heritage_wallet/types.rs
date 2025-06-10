@@ -465,6 +465,15 @@ impl From<WalletAddress> for String {
 }
 impl Display for WalletAddress {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "[{}/{}]{}", self.origin.0, self.origin.1, self.address)
+        let origin_str = self.origin.1.to_string();
+        // origin_str = m/[...]
+        // origin_str[2..] strips the m/
+        write!(
+            f,
+            "[{}/{}]{}",
+            self.origin.0,
+            &origin_str[2..],
+            self.address
+        )
     }
 }

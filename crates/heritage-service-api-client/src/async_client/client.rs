@@ -239,9 +239,9 @@ impl HeritageServiceClient {
         Ok(serde_json::from_value(self.api_call_get(&path).await?)?)
     }
 
-    pub async fn post_wallet_create_address(&self, wallet_id: &str) -> Result<String> {
+    pub async fn post_wallet_create_address(&self, wallet_id: &str) -> Result<WalletAddress> {
         let path = format!("wallets/{wallet_id}/create-address");
-        let mut ret: HashMap<String, String> =
+        let mut ret: HashMap<String, WalletAddress> =
             serde_json::from_value(self.api_call::<()>(Method::POST, &path, None).await?)?;
         Ok(ret.remove("address").expect("trusting the api for now"))
     }
