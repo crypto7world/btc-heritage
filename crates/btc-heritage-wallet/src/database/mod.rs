@@ -13,7 +13,7 @@ use redb::{ReadOnlyTable, ReadableTable, Table, TableDefinition};
 use serde::{de::DeserializeOwned, Serialize};
 use utils::prepare_data_dir;
 
-pub use dbitem::DatabaseItem;
+pub use dbitem::{DatabaseItem, DatabaseSingleItem};
 pub use heritage_db::HeritageWalletDatabase;
 
 const DEFAULT_TABLE_NAME: &'static str = "heritage";

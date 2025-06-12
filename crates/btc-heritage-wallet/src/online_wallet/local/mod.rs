@@ -1,17 +1,18 @@
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, path::PathBuf, sync::Arc};
 
 use crate::{
-    database::HeritageWalletDatabase,
+    database::{dbitem::impl_db_single_item, HeritageWalletDatabase},
     errors::{Error, Result},
     BoundFingerprint, Broadcaster, Database,
 };
 use btc_heritage::{
-    bdk_types::{ElectrumBlockchain, RpcBlockchainFactory},
+    bdk_types::{Auth, ElectrumBlockchain, RpcBlockchainFactory},
     bitcoin::{bip32::Fingerprint, secp256k1::rand, Txid},
     bitcoincore_rpc::{Client, RpcApi},
     database::HeritageDatabase,
-    electrum_client::ElectrumApi,
+    electrum_client::{self, ElectrumApi},
     heritage_wallet::{CreatePsbtOptions, SubwalletConfigId, TransactionSummary, WalletAddress},
+    utils::bitcoin_network_from_env,
     AccountXPub, Amount, BlockInclusionObjective, HeritageConfig, HeritageWallet,
     HeritageWalletBackup, PartiallySignedTransaction, SpendingConfig,
 };
@@ -23,6 +24,28 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use super::OnlineWallet;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum BlockchainProviderConfig {
+    BitcoinCore { url: String, auth: Auth },
+    Electrum { url: String },
+}
+
+impl Default for BlockchainProviderConfig {
+    fn default() -> Self {
+        let mut file: PathBuf = dirs_next::home_dir().unwrap_or_default();
+        file.push(".bitcoin/.cookie");
+        Self::BitcoinCore {
+            url: "http://localhost:8332".to_owned(),
+            auth: Auth::Cookie { file },
+        }
+    }
+}
+
+impl_db_single_item!(
+    BlockchainProviderConfig,
+    "blockchain_provider_configuration"
+);
 
 #[derive(Clone)]
 pub enum AnyBlockchainFactory {
@@ -39,6 +62,35 @@ impl Debug for AnyBlockchainFactory {
                 Self::Electrum(_) => "Electrum(Arc<ElectrumBlockchain>)",
             }
         )
+    }
+}
+
+impl TryFrom<BlockchainProviderConfig> for AnyBlockchainFactory {
+    type Error = Error;
+
+    fn try_from(bcpc: BlockchainProviderConfig) -> Result<Self> {
+        let network = *bitcoin_network_from_env();
+        Ok(match bcpc {
+            BlockchainProviderConfig::BitcoinCore { url, auth } => {
+                AnyBlockchainFactory::Bitcoin(RpcBlockchainFactory {
+                    url,
+                    auth,
+                    network,
+                    wallet_name_prefix: None,
+                    default_skip_blocks: 0,
+                    sync_params: None,
+                })
+            }
+            BlockchainProviderConfig::Electrum { url } => {
+                let config = electrum_client::ConfigBuilder::new()
+                    .retry(3)
+                    .timeout(Some(60))
+                    .build();
+                let client = electrum_client::Client::from_config(&url, config)
+                    .map_err(|e| Error::ElectrumBlockchainFactoryCreationFailed(e.to_string()))?;
+                AnyBlockchainFactory::Electrum(Arc::new(ElectrumBlockchain::from(client)))
+            }
+        })
     }
 }
 

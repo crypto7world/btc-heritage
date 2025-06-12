@@ -17,7 +17,7 @@ pub mod ledger {
 
 pub use heritage_provider::{AnyHeritageProvider, Heritage};
 pub use key_provider::{
-    ledger_hww::{policy::LedgerPolicy, LedgerKey},
+    ledger_hww::{ledger_client, policy::LedgerPolicy, LedgerKey},
     local_key::LocalKey,
     AnyKeyProvider, HeirConfigType,
 };
@@ -30,7 +30,7 @@ pub use wallet::Wallet;
 pub use bip39::{Language, Mnemonic};
 pub use btc_heritage::bitcoin;
 pub use btc_heritage::miniscript;
-pub use database::{Database, DatabaseItem};
+pub use database::{Database, DatabaseItem, DatabaseSingleItem};
 pub use heritage_service_api_client;
 pub use psbt_summary::PsbtSummary;
 pub use traits::*;

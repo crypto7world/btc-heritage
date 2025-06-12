@@ -6,6 +6,7 @@ use std::{
 };
 
 use crate::{
+    database::dbitem::impl_db_single_item,
     errors::{Error, Result},
     BoundFingerprint, Broadcaster,
 };
@@ -16,12 +17,14 @@ use btc_heritage::{
     PartiallySignedTransaction,
 };
 use heritage_service_api_client::{
-    AccountXPubWithStatus, HeritageServiceClient, HeritageUtxo, HeritageWalletMeta,
-    HeritageWalletMetaCreate, NewTx, SubwalletConfigMeta, SynchronizationStatus,
-    TransactionSummary,
+    AccountXPubWithStatus, HeritageServiceClient, HeritageServiceConfig, HeritageUtxo,
+    HeritageWalletMeta, HeritageWalletMetaCreate, NewTx, SubwalletConfigMeta,
+    SynchronizationStatus, TransactionSummary,
 };
 
 use serde::{Deserialize, Serialize};
+
+impl_db_single_item!(HeritageServiceConfig, "heritage_service_configuration");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceBinding {

@@ -69,6 +69,8 @@ pub enum Error {
     UninitializedHeritageWallet,
     #[error("The retrieved wallet fingerprint is not the one stored in the local database. Wrong password.")]
     IncoherentLocalKeyFingerprint,
+    #[error("Error while creating the Electrum client for the factory: {0}")]
+    ElectrumBlockchainFactoryCreationFailed(String),
     #[error("Heritage error: {source}")]
     HeritageError {
         #[from]

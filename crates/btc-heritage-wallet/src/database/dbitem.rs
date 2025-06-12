@@ -3,6 +3,8 @@ use serde::{de::DeserializeOwned, Serialize};
 use super::errors::{DbError, Result};
 use super::Database;
 
+/// For types that have a name and can have multiple instances in the database
+/// Such as wallets, heirs and heirwallets
 pub trait DatabaseItem: Serialize + DeserializeOwned {
     fn item_key_prefix() -> &'static str;
     fn item_default_name_key_prefix() -> &'static str;
@@ -160,3 +162,56 @@ macro_rules! impl_db_item {
     };
 }
 pub(crate) use impl_db_item;
+
+/// For types that are stored in only one single key in the database
+/// Such as configuration objects
+pub trait DatabaseSingleItem: Serialize + DeserializeOwned {
+    fn item_key() -> &'static str;
+
+    // Blanket implementations
+    fn create(&self, db: &mut Database) -> impl std::future::Future<Output = Result<()>> + Send
+    where
+        Self: Sync,
+    {
+        async move {
+            db.put_item(Self::item_key(), self).await?;
+            Ok(())
+        }
+    }
+
+    fn delete(&self, db: &mut Database) -> impl std::future::Future<Output = Result<()>> + Send {
+        async move {
+            db.delete_item::<Self>(Self::item_key()).await?;
+            Ok(())
+        }
+    }
+
+    fn save(&self, db: &mut Database) -> impl std::future::Future<Output = Result<()>> + Send
+    where
+        Self: Sync,
+    {
+        async move {
+            db.update_item(Self::item_key(), self).await?;
+            Ok(())
+        }
+    }
+
+    fn load(db: &Database) -> impl std::future::Future<Output = Result<Self>> + Send {
+        async move {
+            db.get_item(Self::item_key())
+                .await?
+                .ok_or_else(|| DbError::KeyDoesNotExists(Self::item_key().to_owned()))
+        }
+    }
+}
+macro_rules! impl_db_single_item {
+    ($name:ident, $key:literal $($code:tt)* ) => {
+        impl crate::database::dbitem::DatabaseSingleItem for $name {
+            fn item_key() -> &'static str {
+                $key
+            }
+            $($code)*
+        }
+    };
+}
+pub(crate) use impl_db_single_item;
