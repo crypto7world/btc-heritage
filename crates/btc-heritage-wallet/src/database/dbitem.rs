@@ -179,7 +179,7 @@ pub trait DatabaseSingleItem: Serialize + DeserializeOwned {
         }
     }
 
-    fn delete(&self, db: &mut Database) -> impl std::future::Future<Output = Result<()>> + Send {
+    fn delete(db: &mut Database) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
             db.delete_item::<Self>(Self::item_key()).await?;
             Ok(())

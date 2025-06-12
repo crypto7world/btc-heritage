@@ -25,7 +25,7 @@ use tokio::sync::Mutex;
 
 use super::OnlineWallet;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BlockchainProviderConfig {
     BitcoinCore { url: String, auth: Auth },
     Electrum { url: String },

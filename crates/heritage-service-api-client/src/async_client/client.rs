@@ -25,7 +25,7 @@ use std::{
 use tokio::sync::RwLock;
 
 /// Heritage service configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HeritageServiceConfig {
     /// Service API URL
     pub service_api_url: Arc<str>,
