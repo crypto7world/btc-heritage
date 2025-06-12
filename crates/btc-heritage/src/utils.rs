@@ -23,7 +23,7 @@ pub fn bytes_to_hex_string<B: AsRef<[u8]>>(bytes: B) -> String {
     let bytes = bytes.as_ref();
     let mut s = String::with_capacity(2 * bytes.len());
     for byte in bytes {
-        write!(s, "{:02x}", byte).expect("pulling hex repr of a byte should never fail");
+        write!(s, "{:02x}", byte).expect("writing in a String should never fails");
     }
     s
 }
