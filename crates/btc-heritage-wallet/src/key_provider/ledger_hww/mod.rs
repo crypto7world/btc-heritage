@@ -56,7 +56,7 @@ static LEDGER_CLIENT: Mutex<Option<LedgerClient>> = Mutex::new(None);
 ///     // Handle missing or invalid Ledger device
 /// }
 /// ```
-async fn ledger_client() -> Option<(LedgerClient, Fingerprint)> {
+pub async fn ledger_client() -> Option<(LedgerClient, Fingerprint)> {
     let opt_ledger_client = { LEDGER_CLIENT.lock().unwrap().clone() };
     match opt_ledger_client {
         Some(lc) => match lc.fingerprint().await {
