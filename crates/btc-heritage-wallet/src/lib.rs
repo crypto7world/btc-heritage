@@ -17,7 +17,7 @@ pub mod ledger {
 
 pub use heritage_provider::{AnyHeritageProvider, Heritage};
 pub use key_provider::{
-    ledger_hww::{ledger_client, policy::LedgerPolicy, LedgerKey},
+    ledger_hww::{ledger_client, policy::LedgerPolicy, LedgerClient, LedgerKey},
     local_key::LocalKey,
     AnyKeyProvider, HeirConfigType,
 };
