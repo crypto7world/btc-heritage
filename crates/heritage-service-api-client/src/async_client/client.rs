@@ -1,5 +1,7 @@
 pub use super::auth::Tokens;
+use super::{DeviceAuthorizationResponse, TokenCache};
 use crate::{
+    auth::{DeviceFlowError, TokenResponse},
     errors::{Error, Result},
     types::{AccountXPubWithStatus, HeritageWalletMeta, NewTx},
     Heir, HeirContact, HeirCreate, HeirUpdate, Heritage, HeritageWalletMetaCreate, NewTxDrainTo,
@@ -8,26 +10,57 @@ use crate::{
 use btc_heritage::{
     bitcoin::{psbt::Psbt, Txid},
     heritage_wallet::{HeritageUtxo, TransactionSummary, WalletAddress},
+    utils::timestamp_now,
     BlockInclusionObjective, HeritageConfig, HeritageWalletBackup,
 };
 
 use reqwest::{Client, Method};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::{BTreeSet, HashMap},
+    future::Future,
     sync::Arc,
 };
 use tokio::sync::RwLock;
 
+/// Heritage service configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HeritageServiceConfig {
+    /// Service API URL
+    pub service_api_url: Arc<str>,
+    /// Authentication URL
+    pub auth_url: Arc<str>,
+    /// Authentication client ID
+    pub auth_client_id: Arc<str>,
+}
+impl Default for HeritageServiceConfig {
+    fn default() -> Self {
+        Self {
+            service_api_url: Arc::from("https://api.btcherit.com/v1"),
+            auth_url: Arc::from("https://device.crypto7.world/token"),
+            auth_client_id: Arc::from("cda6031ca00d09d66c2b632448eb8fef"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct HeritageServiceClient {
     client: Client,
-    service_api_url: Arc<str>,
+    config: HeritageServiceConfig,
     tokens: Arc<RwLock<Option<Tokens>>>,
 }
+impl From<HeritageServiceConfig> for HeritageServiceClient {
+    fn from(config: HeritageServiceConfig) -> Self {
+        Self {
+            client: Client::new(),
+            config,
+            tokens: Arc::new(RwLock::new(None)),
+        }
+    }
+}
 
-pub(super) async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<String> {
+async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<String> {
     log::debug!("req={req:?}");
     let res = req.send().await?;
     log::debug!("res={res:?}");
@@ -63,12 +96,88 @@ pub(super) async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<
 }
 
 impl HeritageServiceClient {
-    pub fn new(service_api_url: String, tokens: Option<Tokens>) -> Self {
-        Self {
-            client: Client::new(),
-            service_api_url: service_api_url.into(),
-            tokens: Arc::new(RwLock::new(tokens)),
+    pub async fn login<F, Fut>(&mut self, callback: F) -> Result<()>
+    where
+        F: FnOnce(DeviceAuthorizationResponse) -> Fut,
+        Fut: Future<Output = Result<()>>,
+    {
+        log::debug!("HeritageServiceClient::login");
+
+        log::debug!("Initiating Device Authentication flow");
+        let req: reqwest::RequestBuilder = self.client.post(self.config.auth_url.as_ref()).form(&[
+            ("client_id", self.config.auth_client_id.as_ref()),
+            ("scope", "openid profile email"),
+        ]);
+        let body = req_builder_to_body(req).await?;
+
+        let device_auth_response: DeviceAuthorizationResponse = serde_json::from_str(&body)?;
+        let auth_expiration_ts = timestamp_now() + device_auth_response.expires_in as u64;
+        let device_code = device_auth_response.device_code.clone();
+        let sleep_interval = device_auth_response.interval as u64;
+
+        callback(device_auth_response).await?;
+
+        loop {
+            if timestamp_now() >= auth_expiration_ts {
+                return Err(Error::AuthenticationProcessExpired);
+            }
+            tokio::time::sleep(core::time::Duration::from_secs(sleep_interval)).await;
+
+            log::debug!("Trying to retrieve tokens");
+            let req = self.client.post(self.config.auth_url.as_ref()).form(&[
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                ("device_code", &device_code),
+                ("client_id", self.config.auth_client_id.as_ref()),
+            ]);
+
+            match req_builder_to_body(req).await {
+                Ok(body) => {
+                    log::debug!("Got a 2XX response from the device token API");
+                    if let Ok(token_resp) = serde_json::from_str::<TokenResponse>(&body) {
+                        log::debug!("Got tokens!");
+                        self.set_tokens(Some(Tokens::try_from(token_resp)?)).await;
+                        return Ok(());
+                    } else {
+                        log::error!("Invalid response from the device token API: {body}");
+                        return Err(Error::Generic(format!(
+                            "Invalid response from the device token API: {body}"
+                        )));
+                    }
+                }
+                Err(Error::ApiErrorResponse { code, message }) if code == 400 => {
+                    log::debug!("Got a 400 response from the device token API: {message}");
+                    match serde_json::from_str::<DeviceFlowError>(&message)? {
+                        DeviceFlowError::AccessDenied => return Err(Error::AuthenticationDenied),
+                        DeviceFlowError::ExpiredToken => {
+                            return Err(Error::AuthenticationProcessExpired)
+                        }
+                        DeviceFlowError::AuthorizationPending => {
+                            log::debug!("No tokens available yet. Retrying.")
+                        }
+                        DeviceFlowError::SlowDown => log::warn!(
+                            "Got a slow_down response from the token endpoint, it should not happen."
+                        ),
+                    }
+                }
+                Err(error) => return Err(error.into()),
+            }
         }
+    }
+
+    pub async fn persist_tokens_in_cache<T: TokenCache>(&self, cache: &mut T) -> Result<()> {
+        self.tokens
+            .read()
+            .await
+            .as_ref()
+            .ok_or(Error::Unauthenticated)?
+            .save(cache)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn load_tokens_from_cache<T: TokenCache>(&self, cache: &T) -> Result<()> {
+        self.set_tokens(Tokens::load(cache).await?).await;
+        Ok(())
     }
 
     pub async fn has_tokens(&self) -> bool {
@@ -83,9 +192,34 @@ impl HeritageServiceClient {
     /// them when calling an API so we can also allow changing the tokens with
     /// an immutable ref on self. It allows to continue using the HeritageServiceClient
     /// as a single allocated, cheaply clonable struct.
-    pub async fn set_tokens(&self, tokens: Option<Tokens>) {
+    async fn set_tokens(&self, tokens: Option<Tokens>) {
         let mut mutex_guard = self.tokens.write().await;
         *mutex_guard = tokens;
+    }
+
+    /// Refresh the Tokens.
+    ///
+    /// # Errors
+    /// Return an error if the tokens refresh failed
+    async fn refresh_tokens(&self) -> Result<()> {
+        log::debug!("HeritageServiceClient::refresh_tokens");
+
+        if let Some(tokens) = self.tokens.write().await.as_mut() {
+            if tokens.need_refresh() {
+                log::debug!("Initiating Token refresh flow");
+                let req = self.client.post(self.config.auth_url.as_ref()).form(&[
+                    ("client_id", self.config.auth_client_id.as_ref()),
+                    ("grant_type", "refresh_token"),
+                    ("refresh_token", tokens.refresh_token.as_ref()),
+                ]);
+                let body = req_builder_to_body(req).await?;
+                let token_resp = serde_json::from_str::<TokenResponse>(&body)?;
+
+                tokens.update_from_refresh_response(token_resp);
+            }
+        }
+
+        Ok(())
     }
 
     async fn api_call<T: Serialize>(
@@ -94,7 +228,7 @@ impl HeritageServiceClient {
         path: &str,
         body: Option<T>,
     ) -> Result<serde_json::Value> {
-        let api_endpoint = format!("{}/{path}", self.service_api_url);
+        let api_endpoint = format!("{}/{path}", self.config.service_api_url);
         log::debug!("Initiating {method} {api_endpoint}");
         let req = self.client.request(method, &api_endpoint);
 
@@ -104,12 +238,8 @@ impl HeritageServiceClient {
             if tokens.need_refresh() {
                 // Force drop the read guard
                 drop(read_guard);
-                let mut write_guard = self.tokens.write().await;
-                let tokens = write_guard.as_mut().ok_or(Error::Unauthenticated)?;
-                if tokens.need_refresh() {
-                    tokens.refresh().await?;
-                }
-                req.bearer_auth(&tokens.id_token.0)
+                self.refresh_tokens().await?;
+                req.bearer_auth(&self.tokens.read().await.as_ref().unwrap().id_token.0)
             } else {
                 req.bearer_auth(&tokens.id_token.0)
             }
