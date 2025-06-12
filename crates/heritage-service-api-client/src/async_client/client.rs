@@ -96,7 +96,7 @@ async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<String> {
 }
 
 impl HeritageServiceClient {
-    pub async fn login<F, Fut>(&mut self, callback: F) -> Result<()>
+    pub async fn login<F, Fut>(&self, callback: F) -> Result<()>
     where
         F: FnOnce(DeviceAuthorizationResponse) -> Fut,
         Fut: Future<Output = Result<()>>,
@@ -162,6 +162,10 @@ impl HeritageServiceClient {
                 Err(error) => return Err(error.into()),
             }
         }
+    }
+
+    pub async fn logout(&self) {
+        self.set_tokens(None).await;
     }
 
     pub async fn persist_tokens_in_cache<T: TokenCache>(&self, cache: &mut T) -> Result<()> {
