@@ -24,20 +24,50 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use super::OnlineWallet;
+/// Authentication configuration for Bitcoin Core
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AuthConfig {
+    /// Cookie file authentication
+    Cookie {
+        /// Path to the cookie file
+        file: Arc<str>,
+    },
+    /// Username/password authentication
+    UserPass {
+        /// Username
+        username: Arc<str>,
+        /// Password
+        password: Arc<str>,
+    },
+}
+impl From<AuthConfig> for Auth {
+    fn from(auth_config: AuthConfig) -> Self {
+        match auth_config {
+            AuthConfig::Cookie { file } => Auth::Cookie {
+                file: PathBuf::from(file.as_ref()),
+            },
+            AuthConfig::UserPass { username, password } => Auth::UserPass {
+                username: username.as_ref().to_owned(),
+                password: password.as_ref().to_owned(),
+            },
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BlockchainProviderConfig {
-    BitcoinCore { url: String, auth: Auth },
-    Electrum { url: String },
+    BitcoinCore { url: Arc<str>, auth: AuthConfig },
+    Electrum { url: Arc<str> },
 }
 
 impl Default for BlockchainProviderConfig {
     fn default() -> Self {
         let mut file: PathBuf = dirs_next::home_dir().unwrap_or_default();
         file.push(".bitcoin/.cookie");
+        let file = file.to_str().expect("utf8 path").into();
         Self::BitcoinCore {
-            url: "http://localhost:8332".to_owned(),
-            auth: Auth::Cookie { file },
+            url: "http://localhost:8332".into(),
+            auth: AuthConfig::Cookie { file },
         }
     }
 }
@@ -73,8 +103,8 @@ impl TryFrom<BlockchainProviderConfig> for AnyBlockchainFactory {
         Ok(match bcpc {
             BlockchainProviderConfig::BitcoinCore { url, auth } => {
                 AnyBlockchainFactory::Bitcoin(RpcBlockchainFactory {
-                    url,
-                    auth,
+                    url: url.as_ref().to_owned(),
+                    auth: Auth::from(auth),
                     network,
                     wallet_name_prefix: None,
                     default_skip_blocks: 0,
