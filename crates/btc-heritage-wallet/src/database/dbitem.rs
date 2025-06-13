@@ -169,15 +169,6 @@ pub trait DatabaseSingleItem: Serialize + DeserializeOwned {
     fn item_key() -> &'static str;
 
     // Blanket implementations
-    fn create(&self, db: &mut Database) -> impl std::future::Future<Output = Result<()>> + Send
-    where
-        Self: Sync,
-    {
-        async move {
-            db.put_item(Self::item_key(), self).await?;
-            Ok(())
-        }
-    }
 
     fn delete(db: &mut Database) -> impl std::future::Future<Output = Result<()>> + Send {
         async move {
