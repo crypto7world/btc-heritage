@@ -17,7 +17,7 @@ use heritage_service_api_client::{
     AccountXPubWithStatus, HeritageUtxo, HeritageWalletMeta, NewTx, SubwalletConfigMeta,
     TransactionSummary,
 };
-pub use local::{AnyBlockchainFactory, BlockchainProviderConfig, LocalHeritageWallet};
+pub use local::{AnyBlockchainFactory, AuthConfig, BlockchainProviderConfig, LocalHeritageWallet};
 use serde::{Deserialize, Serialize};
 pub use service::ServiceBinding;
 
