@@ -40,6 +40,15 @@ pub enum AuthConfig {
         password: Arc<str>,
     },
 }
+impl Default for AuthConfig {
+    fn default() -> Self {
+        let mut file: PathBuf = dirs_next::home_dir().unwrap_or_default();
+        file.push(".bitcoin/.cookie");
+        let file = file.to_str().expect("utf8 path").into();
+        Self::Cookie { file }
+    }
+}
+
 impl From<AuthConfig> for Auth {
     fn from(auth_config: AuthConfig) -> Self {
         match auth_config {
@@ -62,12 +71,9 @@ pub enum BlockchainProviderConfig {
 
 impl Default for BlockchainProviderConfig {
     fn default() -> Self {
-        let mut file: PathBuf = dirs_next::home_dir().unwrap_or_default();
-        file.push(".bitcoin/.cookie");
-        let file = file.to_str().expect("utf8 path").into();
         Self::BitcoinCore {
             url: "http://localhost:8332".into(),
-            auth: AuthConfig::Cookie { file },
+            auth: AuthConfig::default(),
         }
     }
 }
