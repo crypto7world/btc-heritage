@@ -1,18 +1,12 @@
 use core::{cmp::Ordering, fmt::Write, str::FromStr};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
-    bitcoin::{
-        psbt::PartiallySignedTransaction, secp256k1::Secp256k1, Address, Network, Transaction,
-    },
+    bitcoin::{psbt::PartiallySignedTransaction, secp256k1::Secp256k1, Address, Transaction, Txid},
     errors::Error,
     miniscript::psbt::PsbtExt,
 };
 
-use bdk::bitcoin::Txid;
 use serde_json::json;
 
 /// The average time, in second, to produce a block
@@ -27,10 +21,59 @@ pub fn bytes_to_hex_string<B: AsRef<[u8]>>(bytes: B) -> String {
     }
     s
 }
+/// Bitcoin network configuration module
+///
+/// This module provides thread-safe access to the current Bitcoin network configuration.
+/// The network can be set once and then accessed from anywhere in the application.
+/// If no network is explicitly set, it will be initialized based on the `BITCOIN_NETWORK` environment variable.
+pub mod bitcoin_network {
+    use crate::bitcoin::{network::Magic, Network};
+    use core::sync::atomic::{AtomicU32, Ordering};
 
-pub fn bitcoin_network_from_env() -> &'static Network {
-    static BITCOIN_NETWORK: OnceLock<Network> = OnceLock::new();
-    BITCOIN_NETWORK.get_or_init(|| {
+    /// Global atomic storage for the Bitcoin network magic bytes
+    static BITCOIN_NETWORK: AtomicU32 = AtomicU32::new(0); //Uninitialized
+
+    /// Gets the current Bitcoin network
+    ///
+    /// Returns the currently configured Bitcoin network. If no network has been
+    /// explicitly set, this will initialize the network based on the
+    /// `BITCOIN_NETWORK`environment variable.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage::utils::bitcoin_network;
+    /// let network = bitcoin_network::get();
+    /// println!("Current network: {:?}", network);
+    /// ```
+    pub fn get() -> Network {
+        match Network::from_magic(magic_from_atomic()) {
+            Some(network) => network,
+            None => init(),
+        }
+    }
+
+    /// Sets the Bitcoin network globally
+    ///
+    /// This function stores the network configuration globally so it can be
+    /// accessed from anywhere in the application via [`get()`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage::utils::bitcoin_network;
+    /// # use btc_heritage::bitcoin;
+    /// use bitcoin::Network;
+    /// bitcoin_network::set(Network::Testnet);
+    /// ```
+    pub fn set(network: Network) {
+        let magic_u8 = network.magic().to_bytes();
+        // SAFETY: u32 and [u8; 4] have the same size and alignment
+        BITCOIN_NETWORK.store(unsafe { core::mem::transmute(magic_u8) }, Ordering::Relaxed);
+    }
+
+    /// Initializes the Bitcoin network from environment or feature flags
+    fn init() -> Network {
         #[cfg(not(any(test, feature = "database-tests", feature = "psbt-tests")))]
         let bitcoin_network = match std::env::var("BITCOIN_NETWORK") {
             Ok(bitcoin_network) => match bitcoin_network.as_str() {
@@ -57,18 +100,27 @@ pub fn bitcoin_network_from_env() -> &'static Network {
         let bitcoin_network = Network::Regtest;
 
         log::info!("BITCOIN_NETWORK={bitcoin_network:?}");
+        set(bitcoin_network);
         bitcoin_network
-    })
+    }
+
+    /// Converts the atomic u32 value back to Magic bytes
+    fn magic_from_atomic() -> Magic {
+        let magic_u32 = BITCOIN_NETWORK.load(Ordering::Relaxed);
+        // SAFETY: u32 and [u8; 4] have the same size and alignment
+        Magic::from_bytes(unsafe { core::mem::transmute(magic_u32) })
+    }
 }
 
 pub fn string_to_address(s: &str) -> Result<Address, Error> {
+    let network = bitcoin_network::get();
     Ok(Address::from_str(s)
         .map_err(|e| {
             log::error!("Could not parse {s}: {e:#}");
-            Error::InvalidAddressString(s.to_owned(), *bitcoin_network_from_env())
+            Error::InvalidAddressString(s.to_owned(), network)
         })?
-        .require_network(*bitcoin_network_from_env())
-        .map_err(|_| Error::InvalidAddressString(s.to_owned(), *bitcoin_network_from_env()))?)
+        .require_network(network)
+        .map_err(|_| Error::InvalidAddressString(s.to_owned(), network))?)
 }
 
 /// Returns the current timestamp, as the number of seconds since UNIX_EPOCH

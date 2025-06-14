@@ -12,8 +12,7 @@ use btc_heritage::{
     database::HeritageDatabase,
     electrum_client::{self, ElectrumApi},
     heritage_wallet::{CreatePsbtOptions, SubwalletConfigId, TransactionSummary, WalletAddress},
-    utils::bitcoin_network_from_env,
-    AccountXPub, Amount, BlockInclusionObjective, HeritageConfig, HeritageWallet,
+    utils, AccountXPub, Amount, BlockInclusionObjective, HeritageConfig, HeritageWallet,
     HeritageWalletBackup, PartiallySignedTransaction, SpendingConfig,
 };
 use heritage_service_api_client::{
@@ -105,7 +104,7 @@ impl TryFrom<BlockchainProviderConfig> for AnyBlockchainFactory {
     type Error = Error;
 
     fn try_from(bcpc: BlockchainProviderConfig) -> Result<Self> {
-        let network = *bitcoin_network_from_env();
+        let network = utils::bitcoin_network::get();
         Ok(match bcpc {
             BlockchainProviderConfig::BitcoinCore { url, auth } => {
                 AnyBlockchainFactory::Bitcoin(RpcBlockchainFactory {

@@ -56,7 +56,7 @@ impl TryFrom<DescriptorPublicKey> for SingleHeirPubkey {
         };
 
         // If the derivation path is not m/86'/[0,1]'/i'/*, bail
-        let cointype_path_segment = match utils::bitcoin_network_from_env() {
+        let cointype_path_segment = match utils::bitcoin_network::get() {
             Network::Bitcoin => 0,
             _ => 1,
         };

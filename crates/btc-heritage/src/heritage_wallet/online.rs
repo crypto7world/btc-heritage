@@ -228,7 +228,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                         confirmation_time: block_time,
                         address: crate::bitcoin::Address::from_script(
                             subwallet_utxo.txout.script_pubkey.as_script(),
-                            *crate::utils::bitcoin_network_from_env(),
+                            crate::utils::bitcoin_network::get(),
                         )
                         .expect("script should always be valid")
                         .into(),

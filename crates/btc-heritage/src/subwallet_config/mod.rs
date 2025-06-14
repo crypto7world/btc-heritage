@@ -119,7 +119,7 @@ impl SubwalletConfig {
         Wallet::new(
             self.ext_descriptor.clone(),
             Some(self.change_descriptor.clone()),
-            *utils::bitcoin_network_from_env(),
+            utils::bitcoin_network::get(),
             subdatabase,
         )
         .expect("failed because descriptors checksums are inconsistent with previous DB values")

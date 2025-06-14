@@ -24,7 +24,6 @@ use crate::{
     heritage_config::{HeritageConfig, HeritageExplorer, HeritageExplorerTrait},
     miniscript::{Miniscript, Tap},
     subwallet_config::SubwalletConfig,
-    utils::bitcoin_network_from_env,
     HeirConfig,
 };
 
@@ -243,7 +242,7 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                                 origin: (fingerprint, dp),
                                 address: Address::from_script(
                                     sb.as_script(),
-                                    *bitcoin_network_from_env(),
+                                    crate::utils::bitcoin_network::get(),
                                 )
                                 .expect(
                                     "script should always be valid from the \

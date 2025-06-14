@@ -231,7 +231,7 @@ impl TryFrom<&Script> for CheckedAddress {
     type Error = Error;
     fn try_from(value: &Script) -> Result<Self, Error> {
         Ok(Self::from(
-            Address::from_script(value, *crate::utils::bitcoin_network_from_env())
+            Address::from_script(value, crate::utils::bitcoin_network::get())
                 .map_err(|e| Error::Unknown(format!("Invalid script: {e}")))?,
         ))
     }
