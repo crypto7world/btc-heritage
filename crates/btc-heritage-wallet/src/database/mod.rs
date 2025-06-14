@@ -98,14 +98,16 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new(data_dir: &Path, network: Network) -> Result<Self> {
-        tokio::task::block_in_place(|| prepare_data_dir(data_dir))?;
-
-        // We will maintain different DBs for each network
+    pub fn database_path(data_dir: &Path, network: Network) -> std::path::PathBuf {
         let database_name = network.to_string().to_lowercase();
         let mut database_path = data_dir.to_path_buf();
         database_path.push(format!("{database_name}.redb"));
+        database_path
+    }
+    pub async fn new(data_dir: &Path, network: Network) -> Result<Self> {
+        tokio::task::block_in_place(|| prepare_data_dir(data_dir))?;
 
+        let database_path = Self::database_path(data_dir, network);
         let db = tokio::task::block_in_place(|| redb::Database::create(database_path.as_path()))
             .map_err(|e| {
                 DbError::Generic(format!(
