@@ -31,7 +31,7 @@ pub mod bdk_types {
     pub use bdk::blockchain::{
         electrum::ElectrumBlockchain,
         rpc::{Auth, RpcBlockchainFactory},
-        BlockchainFactory,
+        Blockchain, BlockchainFactory, GetBlockHash, GetHeight, GetTx, WalletSync,
     };
 }
 

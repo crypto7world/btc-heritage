@@ -21,6 +21,7 @@ pub fn bytes_to_hex_string<B: AsRef<[u8]>>(bytes: B) -> String {
     }
     s
 }
+
 /// Bitcoin network configuration module
 ///
 /// This module provides thread-safe access to the current Bitcoin network configuration.
