@@ -259,7 +259,7 @@ impl super::OnlineWallet for ServiceBinding {
         loop {
             match sync.status {
                 SynchronizationStatus::Queued | SynchronizationStatus::InProgress => {
-                    thread::sleep(Duration::from_secs(5));
+                    tokio::time::sleep(Duration::from_secs(5)).await;
                     print!(".");
                     let _ = stdout().flush();
                 }
