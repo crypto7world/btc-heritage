@@ -825,7 +825,12 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         // Process the utxo_selection option
         match options.utxo_selection {
             UtxoSelection::IncludePrevious => (),
-            UtxoSelection::Include(include) => {
+            UtxoSelection::Include(mut include) => {
+                // Filter out UTXO from older subwallets:
+                //  1/ they were already included previously as foreign UTXO
+                //  2/ they will cause errors as they don't exist from the current subwallet pov
+                // Use the seq_index constructed earlier for efficient search
+                include.retain(|outpoint| !seq_index.contains_key(outpoint));
                 tx_builder.add_utxos(&include).map_err(|e| match e {
                     bdk::Error::UnknownUtxo => Error::UnknownUtxoSelectionInclude(include),
                     _ => Error::DatabaseError(DatabaseError::Generic(e.to_string())),
@@ -834,7 +839,15 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             UtxoSelection::Exclude(exclude) => {
                 tx_builder.unspendable(exclude.into_iter().collect());
             }
-            UtxoSelection::IncludeExclude { include, exclude } => {
+            UtxoSelection::IncludeExclude {
+                mut include,
+                exclude,
+            } => {
+                // Filter out UTXO from older subwallets:
+                //  1/ they were already included previously as foreign UTXO
+                //  2/ they will cause errors as they don't exist from the current subwallet pov
+                // Use the seq_index constructed earlier for efficient search
+                include.retain(|outpoint| !seq_index.contains_key(outpoint));
                 tx_builder.add_utxos(&include).map_err(|e| match e {
                     bdk::Error::UnknownUtxo => Error::UnknownUtxoSelectionInclude(include),
                     _ => Error::DatabaseError(DatabaseError::Generic(e.to_string())),
@@ -842,7 +855,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                 tx_builder.unspendable(exclude.into_iter().collect());
             }
             UtxoSelection::UseOnly(include) => {
-                let include = include.into_iter().collect::<Vec<_>>();
+                // Filter out UTXO from older subwallets:
+                //  1/ they were already included previously as foreign UTXO
+                //  2/ they will cause errors as they don't exist from the current subwallet pov
+                // Use the seq_index constructed earlier for efficient search
+                let include = include
+                    .into_iter()
+                    .filter(|outpoint| !seq_index.contains_key(outpoint))
+                    .collect::<Vec<_>>();
                 tx_builder.add_utxos(&include).map_err(|e| match e {
                     bdk::Error::UnknownUtxo => Error::UnknownUtxoSelectionInclude(include),
                     _ => Error::DatabaseError(DatabaseError::Generic(e.to_string())),

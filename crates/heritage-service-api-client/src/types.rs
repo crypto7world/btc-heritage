@@ -96,7 +96,9 @@ pub enum NewTxSpendingConfig {
 #[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum NewTxFeePolicy {
+    /// Amount in sat
     Absolute { amount: u64 },
+    /// Rate in sat/vB
     Rate { rate: f32 },
 }
 impl From<NewTxFeePolicy> for FeePolicy {
