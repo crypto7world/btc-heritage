@@ -1,4 +1,4 @@
-use core::{fmt::Display, str::FromStr};
+use core::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
@@ -150,11 +150,11 @@ impl TryFrom<DescriptorPublicKey> for AccountXPub {
     }
 }
 
-impl TryFrom<&str> for AccountXPub {
-    type Error = Error;
+impl core::str::FromStr for AccountXPub {
+    type Err = Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let descriptor = DescriptorPublicKey::from_str(value).map_err(|e| {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let descriptor = s.parse::<DescriptorPublicKey>().map_err(|e| {
             log::error!("Error parsing DescriptorPublicKey string: {e:#}");
             Error::InvalidDescriptorPublicKey("Parse error")
         })?;
@@ -162,11 +162,19 @@ impl TryFrom<&str> for AccountXPub {
     }
 }
 
+impl TryFrom<&str> for AccountXPub {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
 impl TryFrom<String> for AccountXPub {
     type Error = Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        AccountXPub::try_from(value.as_str())
+        value.parse()
     }
 }
 
