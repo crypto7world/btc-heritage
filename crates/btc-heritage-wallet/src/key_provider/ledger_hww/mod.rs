@@ -77,7 +77,7 @@ pub async fn ledger_client() -> Option<(LedgerClient, Fingerprint)> {
                 }
             }
             Err(e) => {
-                log::error!("{e}");
+                log::debug!("{e}");
                 None
             }
         },
