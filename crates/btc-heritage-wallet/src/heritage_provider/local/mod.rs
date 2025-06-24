@@ -73,7 +73,7 @@ impl super::HeritageProvider for LocalWallet {
                             .estimate_heir_spending_timestamp(hc)
                             .expect("cannot return none as heir_config is present");
                         // And break out of the loop
-                        break Some((heir_spending_timestamp, heirs_count));
+                        break Some((hc.clone(), heir_spending_timestamp, heirs_count));
                     }
                 } else {
                     // We reached the end of the iterator without matching our fingerprint
@@ -84,7 +84,7 @@ impl super::HeritageProvider for LocalWallet {
 
             // If we are able to spend (maturity is some)
             // Then we can push a new Heritage in the results
-            if let Some((maturity, heir_position)) = spend_info {
+            if let Some((heir_config, maturity, heir_position)) = spend_info {
                 // Finish counting
                 while let Some(_) = heir_config_iter.next() {
                     // Increment the heirs counter
@@ -98,6 +98,7 @@ impl super::HeritageProvider for LocalWallet {
                 result.push(super::Heritage {
                     // For a local wallet, this is irrelevant, just put the fingerprint
                     heritage_id: self.fingerprint.to_string(),
+                    heir_config,
                     value: Some(utxo.amount),
                     maturity: Some(maturity),
                     next_heir_maturity: Some(next_heir_maturity),

@@ -5,7 +5,7 @@ use crate::{
 use btc_heritage::{
     bitcoin::{amount, bip32::Fingerprint, Address, Txid},
     heritage_wallet::TransactionSummary,
-    Amount, PartiallySignedTransaction,
+    Amount, HeirConfig, PartiallySignedTransaction,
 };
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +20,8 @@ type Timestamp = u64;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Heritage {
     pub heritage_id: String,
+    /// The heir_config for which the following info are generated
+    pub heir_config: HeirConfig,
     /// The value (correspond to the underlying UTXO)
     #[serde(
         default,
