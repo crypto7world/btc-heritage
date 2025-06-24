@@ -20,12 +20,25 @@ type Timestamp = u64;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Heritage {
     pub heritage_id: String,
-    #[serde(with = "amount::serde::as_sat")]
-    pub value: Amount,
+    /// The value (correspond to the underlying UTXO)
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "amount::serde::as_sat::opt"
+    )]
+    pub value: Option<Amount>,
     /// The timestamp after which the Heir is able to spend
-    pub maturity: Timestamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maturity: Option<Timestamp>,
     /// The maturity of the next heir, if any
-    pub next_heir_maturity: Option<Timestamp>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_heir_maturity: Option<Option<Timestamp>>,
+    /// The position of the heir in the HeritageConfig
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heir_position: Option<u8>,
+    /// The number of heirs in the HeritageConfig
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heirs_count: Option<u8>,
 }
 
 /// This trait regroup the functions of an Heritage wallet that does not need

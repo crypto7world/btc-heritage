@@ -58,10 +58,14 @@ impl super::HeritageProvider for LocalWallet {
         for utxo in utxos.into_iter() {
             let mut heir_config_iter = utxo.heritage_config.iter_heir_configs();
 
+            let mut heirs_count = 0;
+
             // The `heir_maturity` will be None if we cannot spend this UTXO, else it will contain our maturity
-            let heir_maturity = loop {
+            let spend_info = loop {
                 // As long as there are still HeirConfig to explore
                 if let Some(hc) = heir_config_iter.next() {
+                    // Increment the heirs counter
+                    heirs_count += 1;
                     // Verify if the HC match our fingerprint
                     if hc.fingerprint() == self.fingerprint {
                         // If yes, then the UTXO is spendable by us, we retrieve the estimated maturity
@@ -69,7 +73,7 @@ impl super::HeritageProvider for LocalWallet {
                             .estimate_heir_spending_timestamp(hc)
                             .expect("cannot return none as heir_config is present");
                         // And break out of the loop
-                        break Some(heir_spending_timestamp);
+                        break Some((heir_spending_timestamp, heirs_count));
                     }
                 } else {
                     // We reached the end of the iterator without matching our fingerprint
@@ -80,7 +84,13 @@ impl super::HeritageProvider for LocalWallet {
 
             // If we are able to spend (maturity is some)
             // Then we can push a new Heritage in the results
-            if let Some(maturity) = heir_maturity {
+            if let Some((maturity, heir_position)) = spend_info {
+                // Finish counting
+                while let Some(_) = heir_config_iter.next() {
+                    // Increment the heirs counter
+                    heirs_count += 1;
+                }
+
                 let next_heir_maturity = heir_config_iter.next().map(|hc| {
                     utxo.estimate_heir_spending_timestamp(hc)
                         .expect("cannot return none as heir_config is present")
@@ -88,9 +98,11 @@ impl super::HeritageProvider for LocalWallet {
                 result.push(super::Heritage {
                     // For a local wallet, this is irrelevant, just put the fingerprint
                     heritage_id: self.fingerprint.to_string(),
-                    value: utxo.amount,
-                    maturity,
-                    next_heir_maturity,
+                    value: Some(utxo.amount),
+                    maturity: Some(maturity),
+                    next_heir_maturity: Some(next_heir_maturity),
+                    heir_position: Some(heir_position),
+                    heirs_count: Some(heirs_count),
                 });
             }
         }

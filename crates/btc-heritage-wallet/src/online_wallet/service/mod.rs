@@ -1,7 +1,6 @@
 use std::{
     io::{stdout, Write},
     sync::Arc,
-    thread,
     time::Duration,
 };
 

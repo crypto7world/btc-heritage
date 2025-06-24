@@ -48,15 +48,14 @@ impl super::HeritageProvider for ServiceBinding {
                 if api_h
                     .heir_config
                     .is_some_and(|hc| hc.fingerprint() == self.fingerprint)
-                    && api_h.value.is_some()
-                    && api_h.maturity.is_some()
-                    && api_h.next_heir_maturity.is_some()
                 {
                     Some(Heritage {
                         heritage_id: api_h.heritage_id,
-                        value: Amount::from_sat(api_h.value.unwrap()),
-                        maturity: api_h.maturity.unwrap(),
-                        next_heir_maturity: api_h.next_heir_maturity.unwrap(),
+                        value: api_h.value.map(Amount::from_sat),
+                        maturity: api_h.maturity,
+                        next_heir_maturity: api_h.next_heir_maturity,
+                        heir_position: api_h.heir_position,
+                        heirs_count: api_h.heirs_count,
                     })
                 } else {
                     None
