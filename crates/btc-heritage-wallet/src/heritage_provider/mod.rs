@@ -43,6 +43,22 @@ pub struct Heritage {
     pub heirs_count: Option<u8>,
 }
 
+impl From<heritage_service_api_client::Heritage> for Heritage {
+    fn from(api_h: heritage_service_api_client::Heritage) -> Self {
+        Self {
+            heritage_id: api_h.heritage_id,
+            heir_config: api_h
+                .heir_config
+                .expect("it is currently impossible to receive None in this field"),
+            value: api_h.value.map(Amount::from_sat),
+            maturity: api_h.maturity,
+            next_heir_maturity: api_h.next_heir_maturity,
+            heir_position: api_h.heir_position,
+            heirs_count: api_h.heirs_count,
+        }
+    }
+}
+
 /// This trait regroup the functions of an Heritage wallet that does not need
 /// access to the private keys and can be safely operated in an online environment.
 pub trait HeritageProvider: Broadcaster + BoundFingerprint {

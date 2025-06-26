@@ -45,23 +45,11 @@ impl super::HeritageProvider for ServiceBinding {
         Ok(heritages
             .into_iter()
             .filter_map(|api_h| {
-                if api_h
+                api_h
                     .heir_config
                     .as_ref()
                     .is_some_and(|hc| hc.fingerprint() == self.fingerprint)
-                {
-                    Some(Heritage {
-                        heritage_id: api_h.heritage_id,
-                        heir_config: api_h.heir_config.unwrap(),
-                        value: api_h.value.map(Amount::from_sat),
-                        maturity: api_h.maturity,
-                        next_heir_maturity: api_h.next_heir_maturity,
-                        heir_position: api_h.heir_position,
-                        heirs_count: api_h.heirs_count,
-                    })
-                } else {
-                    None
-                }
+                    .then(|| Heritage::from(api_h))
             })
             .collect())
     }
