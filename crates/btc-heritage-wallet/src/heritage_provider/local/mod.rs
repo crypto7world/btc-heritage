@@ -85,16 +85,21 @@ impl super::HeritageProvider for LocalWallet {
             // If we are able to spend (maturity is some)
             // Then we can push a new Heritage in the results
             if let Some((heir_config, maturity, heir_position)) = spend_info {
-                // Finish counting
-                while let Some(_) = heir_config_iter.next() {
-                    // Increment the heirs counter
-                    heirs_count += 1;
-                }
-
                 let next_heir_maturity = heir_config_iter.next().map(|hc| {
                     utxo.estimate_heir_spending_timestamp(hc)
                         .expect("cannot return none as heir_config is present")
                 });
+
+                if let Some(_) = next_heir_maturity {
+                    // Count the "next_heir"
+                    heirs_count += 1;
+                    // Finish counting
+                    while let Some(_) = heir_config_iter.next() {
+                        // Increment the heirs counter
+                        heirs_count += 1;
+                    }
+                }
+
                 result.push(super::Heritage {
                     // For a local wallet, this is irrelevant, just put the fingerprint
                     heritage_id: self.fingerprint.to_string(),
