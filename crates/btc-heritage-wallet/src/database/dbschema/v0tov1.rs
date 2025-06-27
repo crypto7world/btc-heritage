@@ -91,6 +91,10 @@ impl super::MigrationPlan for MigrationV0toV1 {
                     .map_err(|e| DbError::serde(db_version_key, e))?
                     .as_slice(),
             )?;
+            log::info!(
+                "Commiting Database upgrade: new version is {:?}",
+                SchemaVersion(1)
+            );
             drop(table);
             txn.commit()?;
         } else {
