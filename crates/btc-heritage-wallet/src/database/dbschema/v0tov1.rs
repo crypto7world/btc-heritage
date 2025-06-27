@@ -56,11 +56,12 @@ impl super::MigrationPlan for MigrationV0toV1 {
 
         // Cleanup the keys
         fn delete_key(key: &str) -> bool {
-            // Delete all keys that end with:
-            // - #utxo
-            // - #txsum
-            // - #heritages
-            key.ends_with("#utxo") || key.ends_with("#txsum") || key.ends_with("#heritages")
+            // Delete all:
+            // - HeritageUtxo (contains #h#)
+            // - TxSummary (contains #y#)
+            // - WalletBalance (contains #b#)
+            // - FeeRate (contains #f#)
+            key.contains("#h#") || key.contains("#y#") || key.contains("#b#") || key.contains("#f#")
         }
         for table_name in table_names {
             log::debug!("Processing table: {table_name}");
