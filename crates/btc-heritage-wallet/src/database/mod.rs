@@ -3,6 +3,7 @@ use std::{fmt::Debug, path::Path, sync::Arc, usize};
 use btc_heritage::bitcoin::Network;
 
 pub(crate) mod dbitem;
+mod dbschema;
 pub(crate) mod errors;
 mod heritage_db;
 mod utils;
@@ -119,10 +120,15 @@ impl Database {
 
         log::debug!("Main database opened successfully");
 
-        Ok(Database {
+        let mut database = Database {
             internal_db: Arc::new(db),
             table_name: None,
-        })
+        };
+
+        // Perform automatic schema migration
+        dbschema::migrate_database_if_needed(&mut database).await?;
+
+        Ok(database)
     }
 
     fn _begin_transac(&self) -> DatabaseTransaction {

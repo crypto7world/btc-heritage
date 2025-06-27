@@ -28,6 +28,18 @@ pub enum DbError {
     SerDeError { key: String, error: String },
     #[error("Prefix must not be empty")]
     EmptyPrefix,
+    #[error("Database {database_version:?} is newer than application expected {application_version:?}. Please update the application.")]
+    SchemaVersionTooNew {
+        database_version: super::dbschema::SchemaVersion,
+        application_version: super::dbschema::SchemaVersion,
+    },
+    #[error("Migration plan expected {expected:?} but found {real:?}")]
+    IncorrectSchemaVersion {
+        expected: super::dbschema::SchemaVersion,
+        real: super::dbschema::SchemaVersion,
+    },
+    #[error("Migration plan not found for schema version {0:?}")]
+    MigrationPlanNotFound(super::dbschema::SchemaVersion),
     #[error("RedbError: {0}")]
     RedbError(redb::Error),
     #[error("Generic DbError: {0}")]

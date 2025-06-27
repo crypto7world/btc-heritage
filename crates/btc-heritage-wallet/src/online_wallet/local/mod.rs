@@ -131,7 +131,7 @@ impl TryFrom<BlockchainProviderConfig> for AnyBlockchainFactory {
 
 #[derive(Serialize, Deserialize)]
 pub struct LocalHeritageWallet {
-    heritage_wallet_id: String,
+    pub(crate) heritage_wallet_id: String,
     fingerprint: Option<Fingerprint>,
     #[serde(skip, default)]
     heritage_wallet: Option<Mutex<HeritageWallet<HeritageWalletDatabase>>>,
