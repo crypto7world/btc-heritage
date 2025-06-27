@@ -18,6 +18,87 @@ use crate::{
     utils::sort_transactions_with_parents,
 };
 
+pub mod electrum_blockchain_wrapper {
+    use std::{cell::RefCell, collections::HashSet, ops::Deref};
+
+    use bdk::{
+        bitcoin::{BlockHash, Transaction, Txid},
+        blockchain::{
+            Blockchain, Capability, ConfigurableBlockchain,
+            ElectrumBlockchain as BdkElectrumBlockchain, ElectrumBlockchainConfig, GetBlockHash,
+            GetHeight, GetTx, Progress, StatelessBlockchain, WalletSync,
+        },
+        database::BatchDatabase,
+        electrum_client::{Client, ElectrumApi},
+        Error,
+    };
+
+    // This is to overwrite the implementation of estimate_fee in BDK 0.29
+    // It fails with a panic! (thank you guys) when the BlockChain cannot estimate the fee, which is quite current on testnet.
+    // Every other necessary traits are just implemented as passthrough to ElectrumBlockchain
+    pub struct ElectrumBlockchain(BdkElectrumBlockchain);
+    impl Deref for ElectrumBlockchain {
+        type Target = BdkElectrumBlockchain;
+
+        fn deref(&self) -> &Self::Target {
+            &self.0
+        }
+    }
+    impl ConfigurableBlockchain for ElectrumBlockchain {
+        type Config = ElectrumBlockchainConfig;
+
+        fn from_config(config: &Self::Config) -> Result<Self, Error> {
+            Ok(Self(BdkElectrumBlockchain::from_config(config)?))
+        }
+    }
+    impl From<Client> for ElectrumBlockchain {
+        fn from(client: Client) -> Self {
+            Self(BdkElectrumBlockchain::from(client))
+        }
+    }
+    impl StatelessBlockchain for ElectrumBlockchain {}
+    impl Blockchain for ElectrumBlockchain {
+        fn get_capabilities(&self) -> HashSet<Capability> {
+            self.0.get_capabilities()
+        }
+        fn broadcast(&self, tx: &Transaction) -> Result<(), bdk::Error> {
+            self.0.broadcast(tx)
+        }
+        fn estimate_fee(&self, target: usize) -> Result<bdk::FeeRate, bdk::Error> {
+            let fee_rate = bdk::electrum_client::Client::estimate_fee(&self.0, target)?;
+            Ok(bdk::FeeRate::from_btc_per_kvb(if fee_rate <= 0.0 {
+                log::warn!("Estimated fee rate ({fee_rate}) is less than or equal to zero, using 0.00001 BTC/kvB instead");
+                0.00001
+            } else {
+                fee_rate as f32
+            }))
+        }
+    }
+    impl GetHeight for ElectrumBlockchain {
+        fn get_height(&self) -> Result<u32, bdk::Error> {
+            self.0.get_height()
+        }
+    }
+    impl GetTx for ElectrumBlockchain {
+        fn get_tx(&self, txid: &Txid) -> Result<Option<Transaction>, bdk::Error> {
+            self.0.get_tx(txid)
+        }
+    }
+    impl GetBlockHash for ElectrumBlockchain {
+        fn get_block_hash(&self, height: u64) -> Result<BlockHash, bdk::Error> {
+            self.0.get_block_hash(height)
+        }
+    }
+    impl WalletSync for ElectrumBlockchain {
+        fn wallet_setup<D: BatchDatabase>(
+            &self,
+            database: &RefCell<D>,
+            progress_update: Box<dyn Progress>,
+        ) -> Result<(), bdk::Error> {
+            self.0.wallet_setup(database, progress_update)
+        }
+    }
+}
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn sync<T: BlockchainFactory>(&self, blockchain_factory: &T) -> Result<()> {
         log::debug!("HeritageWallet::sync");

@@ -28,10 +28,12 @@ pub mod bdk_types {
     };
 
     #[cfg(feature = "online")]
+    pub use crate::heritage_wallet::online::electrum_blockchain_wrapper::ElectrumBlockchain;
+    #[cfg(feature = "online")]
     pub use bdk::blockchain::{
-        electrum::ElectrumBlockchain,
         rpc::{Auth, RpcBlockchainFactory},
-        Blockchain, BlockchainFactory, GetBlockHash, GetHeight, GetTx, WalletSync,
+        Blockchain, BlockchainFactory, ConfigurableBlockchain, ElectrumBlockchainConfig,
+        GetBlockHash, GetHeight, GetTx, WalletSync,
     };
 }
 

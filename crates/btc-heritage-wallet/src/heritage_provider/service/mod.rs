@@ -1,4 +1,4 @@
-use btc_heritage::{Amount, PartiallySignedTransaction};
+use btc_heritage::PartiallySignedTransaction;
 
 use heritage_service_api_client::{
     Fingerprint, HeritageServiceClient, NewTxDrainTo, TransactionSummary,
