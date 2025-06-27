@@ -211,12 +211,8 @@ impl LocalHeritageWallet {
             .await)
     }
 
-    pub fn init_blockchain_factory(
-        &mut self,
-        blockchain_factory: AnyBlockchainFactory,
-    ) -> Result<()> {
+    pub fn init_blockchain_factory(&mut self, blockchain_factory: AnyBlockchainFactory) {
         self.blockchain_factory = Some(blockchain_factory);
-        Ok(())
     }
     fn blockchain_factory(&self) -> Result<&AnyBlockchainFactory> {
         self.blockchain_factory
