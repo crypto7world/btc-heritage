@@ -1,4 +1,8 @@
-use std::{fmt::Debug, path::PathBuf, sync::Arc};
+use std::{
+    fmt::Debug,
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 
 use crate::{
     database::{dbitem::impl_db_single_item, HeritageWalletDatabase},
@@ -20,7 +24,6 @@ use heritage_service_api_client::{
 };
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 
 use super::OnlineWallet;
 /// Authentication configuration for Bitcoin Core
@@ -134,7 +137,7 @@ pub struct LocalHeritageWallet {
     pub(crate) heritage_wallet_id: String,
     fingerprint: Option<Fingerprint>,
     #[serde(skip, default)]
-    heritage_wallet: Option<Mutex<HeritageWallet<HeritageWalletDatabase>>>,
+    heritage_wallet: Option<Arc<Mutex<HeritageWallet<HeritageWalletDatabase>>>>,
     #[serde(skip, default)]
     blockchain_factory: Option<AnyBlockchainFactory>,
 }
@@ -172,7 +175,7 @@ impl LocalHeritageWallet {
         }
 
         let fingerprint = tokio::task::block_in_place(|| heritage_wallet.fingerprint())?;
-        let heritage_wallet = Some(Mutex::new(heritage_wallet));
+        let heritage_wallet = Some(Arc::new(Mutex::new(heritage_wallet)));
         let mut local_heritage_wallet = LocalHeritageWallet {
             heritage_wallet_id,
             fingerprint,
@@ -194,13 +197,13 @@ impl LocalHeritageWallet {
     }
 
     pub async fn init_heritage_wallet(&mut self, db: &Database) -> Result<()> {
-        self.heritage_wallet = Some(Mutex::new(HeritageWallet::new(
+        self.heritage_wallet = Some(Arc::new(Mutex::new(HeritageWallet::new(
             HeritageWalletDatabase::get(self.heritage_wallet_id.clone(), db).await?,
-        )));
+        ))));
         Ok(())
     }
 
-    pub(crate) async fn heritage_wallet(
+    pub(crate) fn heritage_wallet(
         &self,
     ) -> Result<impl core::ops::Deref<Target = HeritageWallet<HeritageWalletDatabase>> + '_> {
         Ok(self
@@ -208,7 +211,7 @@ impl LocalHeritageWallet {
             .as_ref()
             .ok_or(Error::UninitializedHeritageWallet)?
             .lock()
-            .await)
+            .unwrap())
     }
 
     pub fn init_blockchain_factory(&mut self, blockchain_factory: AnyBlockchainFactory) {
@@ -223,31 +226,31 @@ impl LocalHeritageWallet {
 
 impl super::OnlineWallet for LocalHeritageWallet {
     async fn backup_descriptors(&self) -> Result<HeritageWalletBackup> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         Ok(tokio::task::block_in_place(|| wallet.generate_backup())?)
     }
 
     async fn get_address(&self) -> Result<WalletAddress> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         Ok(tokio::task::block_in_place(|| wallet.get_new_address())?)
     }
 
     async fn list_addresses(&self) -> Result<Vec<WalletAddress>> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         Ok(tokio::task::block_in_place(|| {
             wallet.list_wallet_addresses()
         })?)
     }
 
     async fn list_transactions(&self) -> Result<Vec<TransactionSummary>> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         Ok(tokio::task::block_in_place(|| {
             wallet.database().list_transaction_summaries()
         })?)
     }
 
     async fn list_heritage_utxos(&self) -> Result<Vec<heritage_service_api_client::HeritageUtxo>> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         Ok(tokio::task::block_in_place(|| {
             wallet.database().list_utxos()
         })?)
@@ -255,7 +258,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
 
     async fn list_account_xpubs(&self) -> Result<Vec<AccountXPubWithStatus>> {
         let (used_account_xpubs, unused_account_xpubs) = {
-            let wallet = self.heritage_wallet().await?;
+            let wallet = self.heritage_wallet()?;
             let (used_account_xpubs, unused_account_xpubs) = tokio::task::block_in_place(|| {
                 (
                     wallet.list_used_account_xpubs(),
@@ -277,7 +280,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
 
     async fn feed_account_xpubs(&mut self, account_xpubs: Vec<AccountXPub>) -> Result<()> {
         let fingerprint = {
-            let wallet = self.heritage_wallet().await?;
+            let wallet = self.heritage_wallet()?;
             tokio::task::block_in_place(|| wallet.append_account_xpubs(account_xpubs))?;
             wallet.fingerprint()?
         };
@@ -288,7 +291,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
     }
 
     async fn list_subwallet_configs(&self) -> Result<Vec<SubwalletConfigMeta>> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         let mut obsolete_subwallet_configs =
             tokio::task::block_in_place(|| wallet.database().list_obsolete_subwallet_configs())?;
         if let Some(swc) = tokio::task::block_in_place(|| {
@@ -306,7 +309,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
     }
 
     async fn list_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         let mut obsolete_heritage_configs =
             tokio::task::block_in_place(|| wallet.list_obsolete_heritage_configs())?;
         if let Some(hc) = tokio::task::block_in_place(|| wallet.get_current_heritage_config())? {
@@ -317,14 +320,14 @@ impl super::OnlineWallet for LocalHeritageWallet {
     }
 
     async fn set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         tokio::task::block_in_place(|| wallet.update_heritage_config(new_hc.clone()))?;
         Ok(new_hc)
     }
 
     async fn set_block_inclusion_objective(&mut self, bio: u16) -> Result<super::WalletStatus> {
         {
-            let wallet = self.heritage_wallet().await?;
+            let wallet = self.heritage_wallet()?;
             tokio::task::block_in_place(|| {
                 wallet.set_block_inclusion_objective(BlockInclusionObjective::from(bio))
             })?;
@@ -333,17 +336,27 @@ impl super::OnlineWallet for LocalHeritageWallet {
     }
 
     async fn sync(&mut self) -> Result<()> {
-        let wallet = self.heritage_wallet().await?;
-        let bcf = self.blockchain_factory()?;
-        tokio::task::block_in_place(|| match bcf {
-            AnyBlockchainFactory::Bitcoin(bcf) => wallet.sync(bcf),
-            AnyBlockchainFactory::Electrum(bcf) => wallet.sync(bcf),
-        })?;
+        let arc_wallet = self
+            .heritage_wallet
+            .as_ref()
+            .ok_or(Error::UninitializedHeritageWallet)?
+            .clone();
+        let bcf = self.blockchain_factory()?.clone();
+        tokio::task::spawn_blocking(move || {
+            let wallet = arc_wallet.lock().unwrap();
+            match bcf {
+                AnyBlockchainFactory::Bitcoin(bcf) => wallet.sync(&bcf),
+                AnyBlockchainFactory::Electrum(bcf) => wallet.sync(&bcf),
+            }
+        })
+        .await
+        .unwrap()?;
+
         Ok(())
     }
 
     async fn get_wallet_status(&self) -> Result<super::WalletStatus> {
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         let last_fee_rate = tokio::task::block_in_place(|| wallet.database().get_fee_rate())?;
         Ok(super::WalletStatus {
             fingerprint: wallet.fingerprint()?,
@@ -387,7 +400,7 @@ impl super::OnlineWallet for LocalHeritageWallet {
             disable_rbf: disable_rbf.unwrap_or_default(),
             ..Default::default()
         };
-        let wallet = self.heritage_wallet().await?;
+        let wallet = self.heritage_wallet()?;
         Ok(tokio::task::block_in_place(|| {
             wallet.create_owner_psbt(spending_config, create_psbt_options)
         })?)

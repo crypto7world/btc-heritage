@@ -40,7 +40,7 @@ impl LocalWallet {
     }
 
     async fn heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
-        let wallet = self.local_heritage_wallet.heritage_wallet().await?;
+        let wallet = self.local_heritage_wallet.heritage_wallet()?;
         Ok(tokio::task::block_in_place(|| {
             wallet.database().list_utxos()
         })?)
@@ -51,7 +51,7 @@ impl super::HeritageProvider for LocalWallet {
     async fn list_heritages(&self) -> Result<Vec<super::Heritage>> {
         //let utxos = self.heritage_utxos().await?;
         let utxos = {
-            let wallet = self.local_heritage_wallet.heritage_wallet().await?;
+            let wallet = self.local_heritage_wallet.heritage_wallet()?;
             tokio::task::block_in_place(|| wallet.database().list_utxos())?
         };
         let mut result = vec![];
@@ -153,7 +153,7 @@ impl super::HeritageProvider for LocalWallet {
             .next()
             .ok_or(Error::Generic("Nothing to spend".to_owned()))?;
 
-        let wallet = self.local_heritage_wallet.heritage_wallet().await?;
+        let wallet = self.local_heritage_wallet.heritage_wallet()?;
         // Then create a PSBT for each one
         Ok(tokio::task::block_in_place(|| {
             wallet.create_heir_psbt(
