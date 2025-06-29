@@ -52,7 +52,7 @@ pub trait MigrationPlan: Send + Sync {
 
     fn control_version(&self, db: &Database) -> Result<(), DbError> {
         let db_version_key = SchemaVersion::item_key();
-        let db_version = db._get_item(db_version_key)?.unwrap_or_default();
+        let db_version = db.get_item(db_version_key)?.unwrap_or_default();
         if db_version == self.expected_version() {
             Ok(())
         } else {
@@ -119,18 +119,12 @@ fn migration_plans(
 /// - The database schema version is newer than what this application supports
 /// - A required migration plan is not found
 /// - Any migration plan fails to execute
-pub async fn migrate_database_if_needed(db: &mut Database) -> Result<(), DbError> {
+pub fn migrate_database_if_needed(db: &mut Database) -> Result<(), DbError> {
     let current_version = SchemaVersion::current();
 
     // Get the stored schema version, defaulting to SchemaVersion(0) if not found
-    let stored_version = match SchemaVersion::load(db).await {
-        Ok(stored) => stored,
-        Err(DbError::KeyDoesNotExists(_)) => {
-            // Database doesn't have a schema version yet, return default (V0)
-            SchemaVersion::default()
-        }
-        Err(e) => return Err(e),
-    };
+    let db_version_key = SchemaVersion::item_key();
+    let stored_version = db.get_item(db_version_key)?.unwrap_or_default();
 
     // Check if database version is compatible
     if stored_version > current_version {

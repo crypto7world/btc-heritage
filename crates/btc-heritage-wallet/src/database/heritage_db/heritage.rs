@@ -86,7 +86,7 @@ impl TransacHeritageOperation for HeritageWalletDatabase {
         log::debug!("HeritageWalletDatabase::put_subwallet_config - index={index:?} subwallet_config={subwallet_config:?}");
         let key = self.key(&KeyMapper::SubwalletConfig(Some(index)));
         self.db
-            ._put_item(&key, subwallet_config)
+            .put_item(&key, subwallet_config)
             .map_err(|e| match e {
                 crate::database::errors::DbError::KeyAlreadyExists(_) => {
                     DatabaseError::SubwalletConfigAlreadyExist(index)
@@ -106,7 +106,7 @@ impl TransacHeritageOperation for HeritageWalletDatabase {
             SubwalletConfigId::Current,
         )));
         self.db
-            ._compare_and_swap(&key, old_subwallet_config, Some(new_subwallet_config))
+            .compare_and_swap(&key, old_subwallet_config, Some(new_subwallet_config))
             .map_err(|e| match e {
                 crate::database::errors::DbError::CompareAndSwapError(_) => {
                     DatabaseError::UnexpectedCurrentSubwalletConfig
@@ -125,7 +125,7 @@ impl TransacHeritageOperation for HeritageWalletDatabase {
         )));
 
         self.db
-            ._compare_and_swap(&key, Some(account_xpub), None)
+            .compare_and_swap(&key, Some(account_xpub), None)
             .map_err(|e| match e {
                 crate::database::errors::DbError::CompareAndSwapError(_) => {
                     DatabaseError::AccountXPubInexistant(account_xpub.descriptor_id())
@@ -141,7 +141,7 @@ impl TransacHeritageDatabase for HeritageWalletDatabase {
 
     fn begin_transac(&self) -> Self::Transac {
         HeritageWalletDatabaseTransaction {
-            inner: self.db._begin_transac(),
+            inner: self.db.begin_transac(),
             errors_if_fail: vec![],
             prefix: self.prefix.clone(),
         }
@@ -153,7 +153,7 @@ impl TransacHeritageDatabase for HeritageWalletDatabase {
             mut errors_if_fail,
             ..
         } = transac;
-        self.db._commit_transac(transac).map_err(|e| match &e {
+        self.db.commit_transac(transac).map_err(|e| match &e {
             crate::database::errors::DbError::TransactionFailed { idx, .. } => {
                 log::error!("{e}");
                 errors_if_fail.remove(*idx)
@@ -167,31 +167,31 @@ impl HeritageDatabase for HeritageWalletDatabase {
     fn get_subwallet_config(&self, index: SubwalletConfigId) -> Result<Option<SubwalletConfig>> {
         log::debug!("HeritageWalletDatabase::get_subwallet_config - index={index:?}");
         let key = self.key(&KeyMapper::SubwalletConfig(Some(index)));
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn list_obsolete_subwallet_configs(&self) -> Result<Vec<SubwalletConfig>> {
         log::debug!("HeritageWalletDatabase::list_obsolete_subwallet_configs");
         let prefix = self.key(&KeyMapper::SubwalletConfig(None)) + "a";
-        Ok(self.db._query(&prefix)?)
+        Ok(self.db.query(&prefix)?)
     }
 
     fn get_unused_account_xpub(&self) -> Result<Option<AccountXPub>> {
         log::debug!("HeritageWalletDatabase::get_unused_account_xpub");
         let prefix = self.key(&KeyMapper::UnusedAccountXPub(None));
-        Ok(self.db._query(&prefix)?.into_iter().next())
+        Ok(self.db.query(&prefix)?.into_iter().next())
     }
 
     fn list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWalletDatabase::list_unused_account_xpubs");
         let prefix = self.key(&KeyMapper::UnusedAccountXPub(None));
-        Ok(self.db._query(&prefix)?)
+        Ok(self.db.query(&prefix)?)
     }
 
     fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWalletDatabase::list_used_account_xpubs");
         let prefix = self.key(&KeyMapper::SubwalletConfig(None));
-        let swcs: Vec<SubwalletConfig> = self.db._query(&prefix)?;
+        let swcs: Vec<SubwalletConfig> = self.db.query(&prefix)?;
         Ok(swcs.into_iter().map(|swc| swc.into_parts().0).collect())
     }
 
@@ -221,7 +221,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
             })
             .collect::<Vec<_>>();
         if descriptors_to_add.len() > 0 {
-            let mut txn = self.db._begin_transac();
+            let mut txn = self.db.begin_transac();
 
             for descriptor in descriptors_to_add {
                 txn.update_item(
@@ -231,7 +231,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
                     descriptor,
                 )?;
             }
-            self.db._commit_transac(txn)?;
+            self.db.commit_transac(txn)?;
         }
         Ok(())
     }
@@ -239,7 +239,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
     fn add_utxos(&mut self, utxos: &Vec<HeritageUtxo>) -> Result<()> {
         log::debug!("HeritageWalletDatabase::add_utxos - utxos={utxos:?}");
         if utxos.len() > 0 {
-            let mut txn = self.db._begin_transac();
+            let mut txn = self.db.begin_transac();
 
             for utxo in utxos {
                 txn.update_item(
@@ -247,7 +247,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
                     utxo,
                 )?;
             }
-            self.db._commit_transac(txn)?;
+            self.db.commit_transac(txn)?;
         }
         Ok(())
     }
@@ -255,12 +255,12 @@ impl HeritageDatabase for HeritageWalletDatabase {
     fn delete_utxos(&mut self, outpoints: &Vec<OutPoint>) -> Result<()> {
         log::debug!("HeritageWalletDatabase::delete_utxos - outpoints={outpoints:?}");
         if outpoints.len() > 0 {
-            let mut txn = self.db._begin_transac();
+            let mut txn = self.db.begin_transac();
 
             for outpoint in outpoints {
                 txn.delete_item(&self.key(&KeyMapper::HeritageUtxo(Some(outpoint))));
             }
-            self.db._commit_transac(txn)?;
+            self.db.commit_transac(txn)?;
         }
         Ok(())
     }
@@ -268,7 +268,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
     fn list_utxos(&self) -> Result<Vec<HeritageUtxo>> {
         log::debug!("HeritageWalletDatabase::list_utxos");
         let prefix = self.key(&KeyMapper::HeritageUtxo(None));
-        Ok(self.db._query(&prefix)?)
+        Ok(self.db.query(&prefix)?)
     }
 
     fn paginate_utxos(
@@ -281,7 +281,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
 
         let (page, next_key) =
             self.db
-                ._query_page(&prefix, page_size, continuation_token.map(|ct| ct.0))?;
+                .query_page(&prefix, page_size, continuation_token.map(|ct| ct.0))?;
         let continuation_token = next_key.map(|s| ContinuationToken(s));
         let page = Paginated {
             page,
@@ -296,7 +296,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
     ) -> Result<()> {
         log::debug!("HeritageWalletDatabase::add_transaction_summaries - transaction_summaries={transaction_summaries:?}");
         if transaction_summaries.len() > 0 {
-            let mut txn = self.db._begin_transac();
+            let mut txn = self.db.begin_transac();
 
             for transaction_summary in transaction_summaries {
                 txn.update_item(
@@ -307,7 +307,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
                     transaction_summary,
                 )?;
             }
-            self.db._commit_transac(txn)?;
+            self.db.commit_transac(txn)?;
         }
         Ok(())
     }
@@ -318,7 +318,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
     ) -> Result<()> {
         log::debug!("HeritageWalletDatabase::delete_transaction_summaries - key_to_delete={key_to_delete:?}");
         if key_to_delete.len() > 0 {
-            let mut txn = self.db._begin_transac();
+            let mut txn = self.db.begin_transac();
 
             for (txid, confirmation_time) in key_to_delete {
                 txn.delete_item(&self.key(&KeyMapper::TxSummary(Some((
@@ -326,7 +326,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
                     confirmation_time.as_ref(),
                 )))));
             }
-            self.db._commit_transac(txn)?;
+            self.db.commit_transac(txn)?;
         }
         Ok(())
     }
@@ -334,7 +334,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
     fn list_transaction_summaries(&self) -> Result<Vec<TransactionSummary>> {
         log::debug!("HeritageWalletDatabase::list_transaction_summaries");
         let prefix = self.key(&KeyMapper::TxSummary(None));
-        Ok(self.db._query_rev(&prefix)?)
+        Ok(self.db.query_rev(&prefix)?)
     }
 
     fn paginate_transaction_summaries(
@@ -346,7 +346,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
         let prefix = self.key(&KeyMapper::TxSummary(None));
         let (page, next_key) =
             self.db
-                ._query_page_rev(&prefix, page_size, continuation_token.map(|ct| ct.0))?;
+                .query_page_rev(&prefix, page_size, continuation_token.map(|ct| ct.0))?;
         let continuation_token = next_key.map(|s| ContinuationToken(s));
         let page = Paginated {
             page,
@@ -358,33 +358,33 @@ impl HeritageDatabase for HeritageWalletDatabase {
     fn get_balance(&self) -> Result<Option<HeritageWalletBalance>> {
         log::debug!("HeritageWalletDatabase::get_balance");
         let key = self.key(&KeyMapper::WalletBalance);
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn set_balance(&mut self, new_balance: &HeritageWalletBalance) -> Result<()> {
         log::debug!("HeritageWalletDatabase::get_balance");
         let key = self.key(&KeyMapper::WalletBalance);
-        self.db._update_item(&key, new_balance)?;
+        self.db.update_item(&key, new_balance)?;
         Ok(())
     }
 
     fn get_fee_rate(&self) -> Result<Option<FeeRate>> {
         log::debug!("HeritageWalletDatabase::get_fee_rate");
         let key = self.key(&KeyMapper::FeeRate);
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn set_fee_rate(&mut self, new_fee_rate: &FeeRate) -> Result<()> {
         log::debug!("HeritageWalletDatabase::set_fee_rate - new_fee_rate={new_fee_rate:?}");
         let key = self.key(&KeyMapper::FeeRate);
-        self.db._update_item(&key, new_fee_rate)?;
+        self.db.update_item(&key, new_fee_rate)?;
         Ok(())
     }
 
     fn get_block_inclusion_objective(&self) -> Result<Option<BlockInclusionObjective>> {
         log::debug!("HeritageWalletDatabase::get_block_inclusion_objective");
         let key = self.key(&KeyMapper::BlockInclusionObjective);
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn set_block_inclusion_objective(
@@ -393,7 +393,7 @@ impl HeritageDatabase for HeritageWalletDatabase {
     ) -> Result<()> {
         log::debug!("HeritageWalletDatabase::set_block_inclusion_objective - new_objective={new_objective:?}");
         let key = self.key(&KeyMapper::BlockInclusionObjective);
-        self.db._update_item(&key, &new_objective)?;
+        self.db.update_item(&key, &new_objective)?;
         Ok(())
     }
 }

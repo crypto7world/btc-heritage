@@ -113,15 +113,15 @@ impl HeritageWalletDatabase {
     ///
     /// # Errors
     /// Return an error if there is already a database corresponding to `wallet_id`
-    pub async fn create(wallet_id: String, db: &Database) -> Result<Self, super::errors::DbError> {
-        if db.table_exists(&wallet_id).await? {
+    pub fn create(wallet_id: &str, db: Database) -> Result<Self, super::errors::DbError> {
+        if db.table_exists(&wallet_id)? {
             Err(super::errors::DbError::TableAlreadyExists(
                 wallet_id.to_owned(),
             ))
         } else {
             let mut hdb = Self::new(wallet_id, db);
             // To ensure the table is effectively created we write something
-            hdb.db.put_item("marker_key", &"marker_data").await?;
+            hdb.db.put_item("marker_key", &"marker_data")?;
             Ok(hdb)
         }
     }
@@ -134,8 +134,8 @@ impl HeritageWalletDatabase {
     /// # Panics
     /// `wallet_id` cannot have the same value as [DEFAULT_TABLE_NAME](super::DEFAULT_TABLE_NAME)
     /// and the function will panic if it is the case
-    pub async fn get(wallet_id: String, db: &Database) -> Result<Self, super::errors::DbError> {
-        if db.table_exists(&wallet_id).await? {
+    pub fn get(wallet_id: &str, db: Database) -> Result<Self, super::errors::DbError> {
+        if db.table_exists(&wallet_id)? {
             Ok(Self::new(wallet_id, db))
         } else {
             Err(super::errors::DbError::TableDoesNotExists(
@@ -144,7 +144,7 @@ impl HeritageWalletDatabase {
         }
     }
 
-    fn new(wallet_id: String, db: &Database) -> Self {
+    fn new(wallet_id: &str, mut db: Database) -> Self {
         // We don't want to risk conflict with the default table name
         // We will just panic if wallet_id has the same value
         assert_ne!(
@@ -153,11 +153,9 @@ impl HeritageWalletDatabase {
             "wallet_id cannot be \"{}\"",
             super::DEFAULT_TABLE_NAME
         );
+        db.table_name = Some(Arc::from(wallet_id));
         HeritageWalletDatabase {
-            db: Database {
-                internal_db: Arc::clone(&db.internal_db),
-                table_name: Some(wallet_id),
-            },
+            db,
             prefix: String::new(),
         }
     }
@@ -208,17 +206,7 @@ mod tests {
     // Utilitary function that create a temp database that will be removed at the end
     fn setup_test_env() -> TestEnv {
         let tmpdir = tempfile::tempdir().unwrap();
-        let db = tokio::runtime::Builder::new_multi_thread()
-            .max_blocking_threads(4)
-            .worker_threads(4)
-            .enable_all()
-            .build()
-            .unwrap()
-            .block_on(async {
-                Database::new(tmpdir.path(), Network::Regtest)
-                    .await
-                    .unwrap()
-            });
+        let db = Database::new(tmpdir.path(), Network::Regtest).unwrap();
         TestEnv {
             db,
             _tmpdir: tmpdir,
@@ -231,8 +219,8 @@ mod tests {
             fn $tn() {
                 let te = setup_test_env();
                 btc_heritage::database::tests::$tn(HeritageWalletDatabase::new(
-                    "wallet".to_owned(),
-                    &te,
+                    "wallet",
+                    te.clone(),
                 ))
             }
         };
@@ -255,7 +243,7 @@ mod tests {
             #[test]
             fn $tn() {
                 let te = setup_test_env();
-                let heritage_db = HeritageWalletDatabase::new("wallet".to_owned(), &te);
+                let heritage_db = HeritageWalletDatabase::new("wallet", te.clone());
                 let subdb_index = SubdatabaseId::from("sub".to_owned());
                 btc_heritage::database::bdk_tests::$tn(
                     heritage_db.get_subdatabase(subdb_index).unwrap(),

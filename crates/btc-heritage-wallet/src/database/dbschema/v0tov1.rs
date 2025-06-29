@@ -15,9 +15,9 @@ impl super::MigrationPlan for MigrationV0toV1 {
     fn migrate(&self, db: &mut crate::Database) -> Result<(), crate::errors::DbError> {
         log::debug!("Migrating from SchemaVersion(0) to SchemaVersion(1)");
         // List all LocalWallets tables
-        let wallets = db._query::<Wallet>(Wallet::item_key_prefix())?;
+        let wallets = db.query::<Wallet>(Wallet::item_key_prefix())?;
         log::debug!("Found {} wallets", wallets.len());
-        let heirwallets = db._query::<HeirWallet>(HeirWallet::item_key_prefix())?;
+        let heirwallets = db.query::<HeirWallet>(HeirWallet::item_key_prefix())?;
         log::debug!("Found {} heirwallets", heirwallets.len());
         let table_names = wallets
             .iter()

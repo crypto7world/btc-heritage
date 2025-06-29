@@ -138,12 +138,16 @@ impl LedgerClient {
         )))))
     }
     pub async fn fingerprint(&self) -> Result<Fingerprint> {
+        let ledger_client = self.clone();
         Ok(
-            tokio::task::block_in_place(|| self.get_master_fingerprint()).map(|fg| {
-                // Because for now we are bound to the rust-bitcoin version of BDK
-                // which is different than the one used by ledger_bitcoin_client
-                Fingerprint::from(fg.as_bytes())
-            })?,
+            tokio::task::spawn_blocking(move || ledger_client.get_master_fingerprint())
+                .await
+                .unwrap()
+                .map(|fg| {
+                    // Because for now we are bound to the rust-bitcoin version of BDK
+                    // which is different than the one used by ledger_bitcoin_client
+                    Fingerprint::from(fg.as_bytes())
+                })?,
         )
     }
 }
@@ -173,16 +177,39 @@ impl LedgerKey {
         })
     }
 
-    async fn ledger_client(&self) -> Result<LedgerClient> {
+    // async fn ledger_client(&self) -> Result<LedgerClient> {
+    //     let (client, fingerprint) = ledger_client().await.ok_or(Error::NoLedgerDevice)?;
+    //     if fingerprint != self.fingerprint {
+    //         return Err(Error::IncoherentLedgerWalletFingerprint);
+    //     }
+    //     Ok(client)
+    // }
+
+    pub(crate) async fn ledger_call<
+        R: Send + 'static,
+        F: FnOnce(
+                LedgerClient,
+            ) -> core::result::Result<
+                R,
+                ledger_bitcoin_client::error::BitcoinClientError<crate::errors::Error>,
+            > + Send
+            + 'static,
+    >(
+        &self,
+        f: F,
+    ) -> Result<R> {
         let (client, fingerprint) = ledger_client().await.ok_or(Error::NoLedgerDevice)?;
         if fingerprint != self.fingerprint {
             return Err(Error::IncoherentLedgerWalletFingerprint);
         }
-        Ok(client)
+
+        Ok(tokio::task::spawn_blocking(move || f(client))
+            .await
+            .unwrap()?)
     }
 
     pub async fn ledger_connected_and_ready(&self) -> bool {
-        match self.ledger_client().await {
+        match self.ledger_call(|_| Ok(())).await {
             Ok(_) => true,
             Err(e) => {
                 log::warn!("Ledger not ready: {e}");
@@ -198,26 +225,25 @@ impl LedgerKey {
     where
         P: Fn(&WalletPolicy),
     {
-        let client = self.ledger_client().await?;
-        let register_results = policies
-            .iter()
-            .map(|policy| {
-                let account_id = policy.get_account_id();
-                let wallet_policy: WalletPolicy = policy.into();
-                // Call the callback progress function so that the caller may display something
-                progress(&wallet_policy);
-                let (id, hmac) =
-                    tokio::task::block_in_place(|| client.register_wallet(&wallet_policy))?;
-                Ok::<_, Error>((
-                    account_id,
-                    (
-                        policy.clone(),
-                        LedgerPolicyId::from(id),
-                        LedgerPolicyHMAC::from(hmac),
-                    ),
-                ))
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut register_results = Vec::with_capacity(policies.len());
+        for policy in policies {
+            let account_id = policy.get_account_id();
+            let wallet_policy: WalletPolicy = policy.into();
+            // Call the callback progress function so that the caller may display something
+            progress(&wallet_policy);
+            let (id, hmac) = self
+                .ledger_call(move |client| client.register_wallet(&wallet_policy))
+                .await?;
+            register_results.push((
+                account_id,
+                (
+                    policy.clone(),
+                    LedgerPolicyId::from(id),
+                    LedgerPolicyHMAC::from(hmac),
+                ),
+            ));
+        }
+
         let before = self.registered_policies.len();
         self.registered_policies
             .extend(register_results.into_iter());
@@ -283,16 +309,20 @@ impl super::KeyProvider for LedgerKey {
 
         let mut signed_inputs = 0;
 
-        let client = self.ledger_client().await?;
         for account_id in account_ids_present {
             let (pol, _, hmac) = self
                 .registered_policies
                 .get(&account_id)
                 .expect("we ensured every ids are in the Hashtable");
 
-            let ret = tokio::task::block_in_place(|| {
-                client.sign_psbt(&psbt_v_ledger, &pol.into(), Some(hmac.into()))
-            })?;
+            let psbt_v_ledger_clone = psbt_v_ledger.clone();
+            let ledger_pol = pol.into();
+            let ledger_hmac = Some((*hmac).into());
+            let ret = self
+                .ledger_call(move |client| {
+                    client.sign_psbt(&psbt_v_ledger_clone, &ledger_pol, ledger_hmac.as_ref())
+                })
+                .await?;
             for (index, sig) in ret {
                 signed_inputs += 1;
                 match sig {
@@ -349,35 +379,33 @@ impl super::KeyProvider for LedgerKey {
         ];
         let base_derivation_path = DerivationPath::from(base_derivation_path);
 
-        let client = self.ledger_client().await?;
-        let xpubs = range
-            .into_iter()
-            .map(|i| {
-                let derivation_path = base_derivation_path
-                    .extend([ChildNumber::from_hardened_idx(i)
-                        .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
+        let mut xpubs = Vec::with_capacity(range.len());
+        for i in range {
+            let derivation_path = base_derivation_path.extend([ChildNumber::from_hardened_idx(i)
+                .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
 
-                // Because for now we are bound to the rust-bitcoin version of BDK
-                // which is different than the one used by ledger_bitcoin_client
-                let ledger_derivation_path =
-                    &bitcoin::bip32::DerivationPath::from_str(&derivation_path.to_string())
-                        .map_err(Error::generic)?;
-                let xpub: bitcoin::bip32::Xpub = tokio::task::block_in_place(|| {
-                    client.get_extended_pubkey(ledger_derivation_path, false)
-                })?;
-                let derivation_path_str = derivation_path.to_string();
+            // Because for now we are bound to the rust-bitcoin version of BDK
+            // which is different than the one used by ledger_bitcoin_client
+            let ledger_derivation_path =
+                bitcoin::bip32::DerivationPath::from_str(&derivation_path.to_string())
+                    .map_err(Error::generic)?;
+            let xpub: bitcoin::bip32::Xpub = self
+                .ledger_call(move |client| {
+                    client.get_extended_pubkey(&ledger_derivation_path, false)
+                })
+                .await?;
+            let derivation_path_str = derivation_path.to_string();
 
-                let desc_pub_key = format!(
-                    "[{}/{}]{}/*",
-                    self.fingerprint,
-                    &derivation_path_str[2..],
-                    xpub
-                );
-                log::debug!("{derivation_path_str} from Ledger: {desc_pub_key}");
-                Ok(AccountXPub::try_from(desc_pub_key.as_str())?)
-            })
-            .collect();
-        xpubs
+            let desc_pub_key = format!(
+                "[{}/{}]{}/*",
+                self.fingerprint,
+                &derivation_path_str[2..],
+                xpub
+            );
+            log::debug!("{derivation_path_str} from Ledger: {desc_pub_key}");
+            xpubs.push(AccountXPub::try_from(desc_pub_key.as_str())?)
+        }
+        Ok(xpubs)
     }
 
     async fn derive_heir_config(

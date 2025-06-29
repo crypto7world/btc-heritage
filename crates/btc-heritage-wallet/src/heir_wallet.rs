@@ -42,11 +42,11 @@ crate::database::dbitem::impl_db_item!(
     HeirWallet,
     "heirwallet#",
     "default_heirwallet_name"
-    async fn delete(&self, db: &mut crate::Database) -> crate::database::errors::Result<()> {
+    fn delete(&self, db: &mut crate::Database) -> crate::database::errors::Result<()> {
         if let AnyHeritageProvider::LocalWallet(lw) = &self.heritage_provider {
-            lw.local_heritage_wallet().delete(db).await?;
+            lw.local_heritage_wallet().delete(db)?;
         }
-        db.delete_item::<Self>(&Self::name_to_key(self.name())).await?;
+        db.delete_item::<Self>(&Self::name_to_key(self.name()))?;
         Ok(())
     }
 );
