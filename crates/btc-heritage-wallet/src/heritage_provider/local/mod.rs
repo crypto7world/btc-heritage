@@ -21,14 +21,14 @@ pub struct LocalWallet {
 }
 
 impl LocalWallet {
-    pub async fn create(
+    pub fn create(
         fingerprint: Fingerprint,
         db: &Database,
         backup: HeritageWalletBackup,
     ) -> Result<Self> {
         Ok(Self {
             fingerprint,
-            local_heritage_wallet: LocalHeritageWallet::create(db, Some(backup), 6).await?,
+            local_heritage_wallet: LocalHeritageWallet::create(db, Some(backup), 6)?,
         })
     }
 
@@ -40,20 +40,18 @@ impl LocalWallet {
     }
 
     async fn heritage_utxos(&self) -> Result<Vec<HeritageUtxo>> {
-        let wallet = self.local_heritage_wallet.heritage_wallet()?;
-        Ok(tokio::task::block_in_place(|| {
-            wallet.database().list_utxos()
-        })?)
+        self.local_heritage_wallet
+            .wallet_call(|wallet| Ok(wallet.database().list_utxos()?))
+            .await
     }
 }
 
 impl super::HeritageProvider for LocalWallet {
     async fn list_heritages(&self) -> Result<Vec<super::Heritage>> {
-        //let utxos = self.heritage_utxos().await?;
-        let utxos = {
-            let wallet = self.local_heritage_wallet.heritage_wallet()?;
-            tokio::task::block_in_place(|| wallet.database().list_utxos())?
-        };
+        let utxos = self
+            .local_heritage_wallet
+            .wallet_call(|wallet| Ok(wallet.database().list_utxos()?))
+            .await?;
         let mut result = vec![];
         for utxo in utxos.into_iter() {
             let mut heir_config_iter = utxo.heritage_config.iter_heir_configs();
@@ -153,15 +151,15 @@ impl super::HeritageProvider for LocalWallet {
             .next()
             .ok_or(Error::Generic("Nothing to spend".to_owned()))?;
 
-        let wallet = self.local_heritage_wallet.heritage_wallet()?;
-        // Then create a PSBT for each one
-        Ok(tokio::task::block_in_place(|| {
-            wallet.create_heir_psbt(
-                heir_config,
-                SpendingConfig::DrainTo(drain_to),
-                CreatePsbtOptions::default(),
-            )
-        })?)
+        self.local_heritage_wallet
+            .wallet_call(|wallet| {
+                wallet.create_heir_psbt(
+                    heir_config,
+                    SpendingConfig::DrainTo(drain_to),
+                    CreatePsbtOptions::default(),
+                )
+            })
+            .await
     }
 }
 

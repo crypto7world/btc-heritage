@@ -167,7 +167,7 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
     ) -> Result<(), bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::set_script_pubkey - script={script} keychain={keychain:?} child={child}");
 
-        let mut transac = self.db._begin_transac();
+        let mut transac = self.db.begin_transac();
 
         let key = self.key(&KeyMapper::Script(Some(script)));
         transac.update_item(&key, &(keychain, child))?;
@@ -175,21 +175,21 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
         let key = self.key(&KeyMapper::Path((Some(keychain), Some(child))));
         transac.update_item(&key, &script.to_bytes())?;
 
-        self.db._commit_transac(transac)?;
+        self.db.commit_transac(transac)?;
         Ok(())
     }
 
     fn set_utxo(&mut self, utxo: &bdk_types::LocalUtxo) -> Result<(), bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::set_utxo - utxo={utxo:?}");
         let key = self.key(&KeyMapper::Utxo(Some(&utxo.outpoint)));
-        self.db._update_item(&key, utxo)?;
+        self.db.update_item(&key, utxo)?;
         Ok(())
     }
 
     fn set_raw_tx(&mut self, transaction: &Transaction) -> Result<(), bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::set_raw_tx - transaction={transaction:?}");
         let key = self.key(&KeyMapper::RawTx(Some(&transaction.txid())));
-        self.db._update_item(&key, transaction)?;
+        self.db.update_item(&key, transaction)?;
         Ok(())
     }
 
@@ -208,7 +208,7 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
         // remove the raw tx from the serialized version
         let mut transaction = transaction.clone();
         transaction.transaction = None;
-        self.db._update_item(&key, &transaction)?;
+        self.db.update_item(&key, &transaction)?;
         Ok(())
     }
 
@@ -219,14 +219,14 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
     ) -> Result<(), bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::set_last_index - keychain={keychain:?} value={value}");
         let key = self.key(&KeyMapper::LastIndex(keychain));
-        self.db._update_item(&key, &value)?;
+        self.db.update_item(&key, &value)?;
         Ok(())
     }
 
     fn set_sync_time(&mut self, sync_time: bdk_types::SyncTime) -> Result<(), bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::set_sync_time - sync_time={sync_time:?}");
         let key = self.key(&KeyMapper::SyncTime);
-        self.db._update_item(&key, &sync_time)?;
+        self.db.update_item(&key, &sync_time)?;
         Ok(())
     }
 
@@ -237,7 +237,7 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
     ) -> Result<Option<ScriptBuf>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::del_script_pubkey_from_path - keychain={keychain:?} child={child}");
         let key = self.key(&KeyMapper::Path((Some(keychain), Some(child))));
-        let bytes: Option<Vec<u8>> = self.db._delete_item(&key)?;
+        let bytes: Option<Vec<u8>> = self.db.delete_item(&key)?;
         Ok(bytes.map(|b| ScriptBuf::from(b)))
     }
 
@@ -247,7 +247,7 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
     ) -> Result<Option<(bdk_types::KeychainKind, u32)>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::del_path_from_script_pubkey - script={script}");
         let key = self.key(&KeyMapper::Script(Some(script)));
-        Ok(self.db._delete_item(&key)?)
+        Ok(self.db.delete_item(&key)?)
     }
 
     fn del_utxo(
@@ -256,13 +256,13 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
     ) -> Result<Option<bdk_types::LocalUtxo>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::del_utxo - outpoint={outpoint:?}");
         let key = self.key(&KeyMapper::Utxo(Some(outpoint)));
-        Ok(self.db._delete_item(&key)?)
+        Ok(self.db.delete_item(&key)?)
     }
 
     fn del_raw_tx(&mut self, txid: &Txid) -> Result<Option<Transaction>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::del_raw_tx - txid={txid:?}");
         let key = self.key(&KeyMapper::RawTx(Some(txid)));
-        Ok(self.db._delete_item(&key)?)
+        Ok(self.db.delete_item(&key)?)
     }
 
     fn del_tx(
@@ -279,7 +279,7 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
         };
         Ok(self
             .db
-            ._delete_item(&key)?
+            .delete_item(&key)?
             .map(|mut tx: TransactionDetails| {
                 tx.transaction = raw_tx;
                 tx
@@ -292,13 +292,13 @@ impl bdk_types::BatchOperations for HeritageWalletDatabase {
     ) -> Result<Option<u32>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::del_last_index - keychain={keychain:?}");
         let key = self.key(&KeyMapper::LastIndex(keychain));
-        Ok(self.db._delete_item(&key)?)
+        Ok(self.db.delete_item(&key)?)
     }
 
     fn del_sync_time(&mut self) -> Result<Option<bdk_types::SyncTime>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::del_sync_time");
         let key = self.key(&KeyMapper::SyncTime);
-        Ok(self.db._delete_item(&key)?)
+        Ok(self.db.delete_item(&key)?)
     }
 }
 
@@ -314,7 +314,7 @@ impl bdk_types::Database for HeritageWalletDatabase {
             "HeritageWalletDatabase::check_descriptor_checksum - keychain={keychain:?} bytes={bytes_str}",
         );
         let key = self.key(&KeyMapper::DescriptorChecksum(keychain));
-        let recorded_checksum: Option<Vec<u8>> = self.db._get_item(&key)?;
+        let recorded_checksum: Option<Vec<u8>> = self.db.get_item(&key)?;
         if let Some(recorded_checksum) = recorded_checksum {
             if current_checksum != recorded_checksum {
                 log::warn!(
@@ -325,7 +325,7 @@ impl bdk_types::Database for HeritageWalletDatabase {
                 return Err(bdk_types::Error::ChecksumMismatch);
             }
         } else {
-            self.db._put_item(&key, &current_checksum)?;
+            self.db.put_item(&key, &current_checksum)?;
         }
         Ok(())
     }
@@ -336,20 +336,20 @@ impl bdk_types::Database for HeritageWalletDatabase {
     ) -> Result<Vec<ScriptBuf>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::iter_script_pubkeys - keychain={keychain:?}");
         let prefix = self.key(&KeyMapper::Path((keychain, None)));
-        let bytes: Vec<Vec<u8>> = self.db._query(&prefix)?;
+        let bytes: Vec<Vec<u8>> = self.db.query(&prefix)?;
         Ok(bytes.into_iter().map(|b| ScriptBuf::from(b)).collect())
     }
 
     fn iter_utxos(&self) -> Result<Vec<bdk_types::LocalUtxo>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::iter_utxos");
         let prefix = self.key(&KeyMapper::Utxo(None));
-        Ok(self.db._query(&prefix)?)
+        Ok(self.db.query(&prefix)?)
     }
 
     fn iter_raw_txs(&self) -> Result<Vec<Transaction>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::iter_raw_txs");
         let prefix = self.key(&KeyMapper::RawTx(None));
-        Ok(self.db._query(&prefix)?)
+        Ok(self.db.query(&prefix)?)
     }
 
     fn iter_txs(
@@ -366,7 +366,7 @@ impl bdk_types::Database for HeritageWalletDatabase {
         } else {
             Default::default()
         };
-        let mut result: Vec<TransactionDetails> = self.db._query(&prefix)?;
+        let mut result: Vec<TransactionDetails> = self.db.query(&prefix)?;
         if include_raw {
             for tx in result.iter_mut() {
                 tx.transaction = raw_txs.remove(&tx.txid)
@@ -383,7 +383,7 @@ impl bdk_types::Database for HeritageWalletDatabase {
     ) -> Result<Option<ScriptBuf>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::get_script_pubkey_from_path - keychain={keychain:?} child={child}");
         let key = self.key(&KeyMapper::Path((Some(keychain), Some(child))));
-        let bytes: Option<Vec<u8>> = self.db._get_item(&key)?;
+        let bytes: Option<Vec<u8>> = self.db.get_item(&key)?;
         Ok(bytes.map(|b| ScriptBuf::from(b)))
     }
 
@@ -393,7 +393,7 @@ impl bdk_types::Database for HeritageWalletDatabase {
     ) -> Result<Option<(bdk_types::KeychainKind, u32)>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::get_path_from_script_pubkey - script={script}");
         let key = self.key(&KeyMapper::Script(Some(script)));
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn get_utxo(
@@ -402,13 +402,13 @@ impl bdk_types::Database for HeritageWalletDatabase {
     ) -> Result<Option<bdk_types::LocalUtxo>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::get_utxo - outpoint={outpoint:?}");
         let key = self.key(&KeyMapper::Utxo(Some(outpoint)));
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn get_raw_tx(&self, txid: &Txid) -> Result<Option<Transaction>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::get_raw_tx - txid={txid:?}");
         let key = self.key(&KeyMapper::RawTx(Some(txid)));
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn get_tx(
@@ -423,7 +423,7 @@ impl bdk_types::Database for HeritageWalletDatabase {
         } else {
             None
         };
-        let tx = self.db._get_item(&key)?;
+        let tx = self.db.get_item(&key)?;
         Ok(tx.map(|mut tx: bdk_types::TransactionDetails| {
             tx.transaction = raw_tx;
             tx
@@ -436,13 +436,13 @@ impl bdk_types::Database for HeritageWalletDatabase {
     ) -> Result<Option<u32>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::get_last_index - keychain={keychain:?}");
         let key = self.key(&KeyMapper::LastIndex(keychain));
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn get_sync_time(&self) -> Result<Option<bdk_types::SyncTime>, bdk_types::Error> {
         log::debug!("HeritageWalletDatabase::get_sync_time");
         let key = self.key(&KeyMapper::SyncTime);
-        Ok(self.db._get_item(&key)?)
+        Ok(self.db.get_item(&key)?)
     }
 
     fn increment_last_index(
@@ -492,13 +492,13 @@ impl bdk_types::BatchDatabase for HeritageWalletDatabase {
 
     fn begin_batch(&self) -> Self::Batch {
         Self::Batch {
-            inner: self.db._begin_transac(),
+            inner: self.db.begin_transac(),
             prefix: self.prefix.clone(),
         }
     }
 
     fn commit_batch(&mut self, batch: Self::Batch) -> Result<(), bdk_types::Error> {
-        self.db._commit_transac(batch.inner)?;
+        self.db.commit_transac(batch.inner)?;
         Ok(())
     }
 }

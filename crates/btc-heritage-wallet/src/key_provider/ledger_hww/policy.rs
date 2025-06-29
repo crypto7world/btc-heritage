@@ -32,7 +32,7 @@ fn re_account_xpub() -> &'static regex::Regex {
 
 macro_rules! new_byte_type {
     ($struct_name:ident) => {
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
         #[serde(into = "String", try_from = "String")]
         pub struct $struct_name([u8; 32]);
         impl core::fmt::Display for $struct_name {
@@ -53,11 +53,6 @@ macro_rules! new_byte_type {
         impl From<$struct_name> for [u8; 32] {
             fn from(value: $struct_name) -> Self {
                 value.0
-            }
-        }
-        impl<'a> From<&'a $struct_name> for &'a [u8; 32] {
-            fn from(value: &'a $struct_name) -> Self {
-                &value.0
             }
         }
         impl TryFrom<&str> for $struct_name {

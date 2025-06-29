@@ -385,18 +385,17 @@ impl super::KeyProvider for LocalKey {
         &self,
         range: core::ops::Range<u32>,
     ) -> crate::errors::Result<Vec<AccountXPub>> {
-        let xprv = self.xprv();
-        let base_derivation_path = self.base_derivation_path();
-
         let might_block_too_long = range.len() > 1000;
 
-        let derive = || {
+        let derive = |local_key: &LocalKey| {
+            let xprv = local_key.xprv();
+            let base_derivation_path = local_key.base_derivation_path();
             range
                 .map(|i| {
                     let derivation_path = base_derivation_path
                         .extend([ChildNumber::from_hardened_idx(i)
                             .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
-                    let dxpub = self.derive_xpub(Some(xprv), derivation_path);
+                    let dxpub = local_key.derive_xpub(Some(xprv), derivation_path);
                     let xpub = DescriptorPublicKey::XPub(dxpub);
                     Ok(AccountXPub::try_from(xpub).expect("we ensured validity"))
                 })
@@ -404,9 +403,12 @@ impl super::KeyProvider for LocalKey {
         };
 
         let xpubs = if might_block_too_long {
-            tokio::task::block_in_place(derive)
+            let lk = self.clone();
+            tokio::task::spawn_blocking(move || derive(&lk))
+                .await
+                .unwrap()
         } else {
-            derive()
+            derive(self)
         };
         xpubs
     }
