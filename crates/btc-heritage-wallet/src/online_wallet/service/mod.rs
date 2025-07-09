@@ -130,6 +130,7 @@ impl ServiceBinding {
             .await?
             .fingerprint
             != self.fingerprint
+            && self.fingerprint.is_some()
         {
             return Err(Error::IncoherentServiceWalletFingerprint);
         }
