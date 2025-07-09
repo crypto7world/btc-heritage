@@ -136,6 +136,33 @@ impl ServiceBinding {
         self.init_service_client_unchecked(service_client);
         Ok(())
     }
+    /// Synchronizes the local fingerprint with the remote wallet fingerprint
+    ///
+    /// Fetches the fingerprint from the remote service and updates the local
+    /// fingerprint if they differ.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the fingerprint was updated, `false` if it was already
+    /// in sync.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the service client is not initialized or if the
+    /// remote wallet cannot be retrieved.
+    pub(crate) async fn sync_fingerprint(&mut self) -> Result<bool> {
+        let remote_fg = self
+            .unwrap_service_client()?
+            .get_wallet(&self.wallet_id)
+            .await?
+            .fingerprint;
+        if self.fingerprint != remote_fg {
+            self.fingerprint = remote_fg;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
     pub fn init_service_client_unchecked(&mut self, service_client: HeritageServiceClient) {
         self.service_client = Some(service_client);
     }

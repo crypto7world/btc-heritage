@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    database::{errors::DbError, DatabaseItem},
+    database::DatabaseItem,
     errors::{Error, Result},
     key_provider::{AnyKeyProvider, KeyProvider},
     online_wallet::{AnyOnlineWallet, OnlineWallet},
@@ -67,20 +67,62 @@ impl Wallet {
         }
         Ok(())
     }
+
+    pub fn fingerprints_controlled(&self) -> bool {
+        self.fingerprints_controlled
+    }
+
+    /// Attempts to retry fingerprint control if not already established
+    ///
+    /// This method will try to synchronize the online wallet's fingerprint if it's not present,
+    /// then attempt to control fingerprints by verifying they match between the key provider
+    /// and online wallet components.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if either the online wallet fingerprint was updated during synchronization
+    /// or if fingerprints control was successfully established. Returns `false` if fingerprints
+    /// were already controlled or if no updates were performed.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Synchronizing the online wallet fingerprint fails
+    /// - The fingerprint control process fails
+    /// - The fingerprints between components are incoherent
+    pub async fn retry_fingerprints_control(&mut self) -> Result<bool> {
+        if self.fingerprints_controlled {
+            return Ok(false);
+        }
+        // First attempt to synchronize Online Wallet fingerprints if needed
+        let online_wallet_fg_updated = if let Err(Error::OnlineWalletFingerprintNotPresent) =
+            self.online_wallet.fingerprint()
+        {
+            match &mut self.online_wallet {
+                AnyOnlineWallet::None => unreachable!(
+                    "OnlineWalletNone cannot return Error::OnlineWalletFingerprintNotPresent"
+                ),
+                AnyOnlineWallet::Service(service_binding) => {
+                    service_binding.sync_fingerprint().await?
+                }
+                AnyOnlineWallet::Local(local_heritage_wallet) => {
+                    local_heritage_wallet.sync_fingerprint().await?
+                }
+            }
+        } else {
+            false
+        };
+
+        self.control_fingerprints()?;
+
+        Ok(online_wallet_fg_updated || self.fingerprints_controlled)
+    }
 }
 
 crate::database::dbitem::impl_db_item!(
     Wallet,
     "wallet#",
     "default_wallet_name"
-    fn load(db: &crate::Database, name: &str) -> crate::database::errors::Result<Self> {
-        let key = Self::name_to_key(name);
-        let mut wallet = db
-            .get_item::<Self>(&key)?
-            .ok_or(crate::database::errors::DbError::KeyDoesNotExists(key))?;
-        wallet.control_fingerprints().map_err(|e|DbError::generic(e))?;
-        Ok(wallet)
-    }
     fn delete(&self, db: &mut crate::Database) -> crate::database::errors::Result<()> {
         if let AnyOnlineWallet::Local(lw) = &self.online_wallet{
             lw.delete(db)?;

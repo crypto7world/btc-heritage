@@ -227,7 +227,29 @@ impl LocalHeritageWallet {
         .await
         .unwrap()?)
     }
-
+    /// Synchronizes the cached fingerprint with the heritage wallet's fingerprint
+    ///
+    /// This method retrieves the current fingerprint from the heritage wallet and
+    /// updates the cached fingerprint if they differ.
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the fingerprint was updated, `false` if it was already
+    /// synchronized.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the heritage wallet is not initialized or if there's
+    /// an issue retrieving the fingerprint from the wallet.
+    pub(crate) async fn sync_fingerprint(&mut self) -> Result<bool> {
+        let wallet_fg = self.wallet_call(|hw| hw.fingerprint()).await?;
+        if self.fingerprint != wallet_fg {
+            self.fingerprint = wallet_fg;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
     pub fn init_blockchain_factory(&mut self, blockchain_factory: AnyBlockchainFactory) {
         self.blockchain_factory = Some(blockchain_factory);
     }
