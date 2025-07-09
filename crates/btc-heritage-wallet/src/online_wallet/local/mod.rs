@@ -162,7 +162,7 @@ impl LocalHeritageWallet {
     pub fn create(
         db: &Database,
         backup: Option<HeritageWalletBackup>,
-        block_inclusion_objective: u16,
+        block_inclusion_objective: BlockInclusionObjective,
     ) -> Result<Self> {
         let heritage_wallet_id = format!("{:032x}", rand::random::<u128>());
         let heritage_wallet = {
@@ -175,9 +175,7 @@ impl LocalHeritageWallet {
         }
         let fingerprint = heritage_wallet.fingerprint()?;
 
-        heritage_wallet.set_block_inclusion_objective(BlockInclusionObjective::from(
-            block_inclusion_objective,
-        ))?;
+        heritage_wallet.set_block_inclusion_objective(block_inclusion_objective)?;
 
         let heritage_wallet = Some(Arc::new(Mutex::new(heritage_wallet)));
         let local_heritage_wallet = LocalHeritageWallet {

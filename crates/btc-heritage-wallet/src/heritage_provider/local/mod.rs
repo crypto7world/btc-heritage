@@ -1,7 +1,7 @@
 use btc_heritage::{
     database::HeritageDatabase, heritage_config::HeritageExplorerTrait,
-    heritage_wallet::CreatePsbtOptions, HeritageWalletBackup, PartiallySignedTransaction,
-    SpendingConfig,
+    heritage_wallet::CreatePsbtOptions, BlockInclusionObjective, HeritageWalletBackup,
+    PartiallySignedTransaction, SpendingConfig,
 };
 
 use heritage_service_api_client::{Fingerprint, HeritageUtxo, TransactionSummary};
@@ -28,7 +28,11 @@ impl LocalWallet {
     ) -> Result<Self> {
         Ok(Self {
             fingerprint,
-            local_heritage_wallet: LocalHeritageWallet::create(db, Some(backup), 6)?,
+            local_heritage_wallet: LocalHeritageWallet::create(
+                db,
+                Some(backup),
+                BlockInclusionObjective::default(),
+            )?,
         })
     }
 
