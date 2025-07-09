@@ -37,16 +37,14 @@ impl ServiceBinding {
     pub async fn create(
         wallet_name: &str,
         backup: Option<HeritageWalletBackup>,
-        block_inclusion_objective: u16,
+        block_inclusion_objective: BlockInclusionObjective,
         service_client: HeritageServiceClient,
         network: Network,
     ) -> Result<Self> {
         let create = HeritageWalletMetaCreate {
             name: wallet_name.to_owned(),
             backup,
-            block_inclusion_objective: Some(BlockInclusionObjective::from(
-                block_inclusion_objective,
-            )),
+            block_inclusion_objective: Some(block_inclusion_objective),
         };
         let wallet_meta = service_client.post_wallets(create).await?;
         let wallet_id = wallet_meta.id;
