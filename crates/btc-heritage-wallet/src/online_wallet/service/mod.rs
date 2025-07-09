@@ -235,14 +235,13 @@ impl super::OnlineWallet for ServiceBinding {
             .await?)
     }
 
-    async fn set_block_inclusion_objective(&mut self, bio: u16) -> Result<super::WalletStatus> {
+    async fn set_block_inclusion_objective(
+        &mut self,
+        bio: BlockInclusionObjective,
+    ) -> Result<super::WalletStatus> {
         Ok(self
             .unwrap_service_client()?
-            .patch_wallet(
-                &self.wallet_id,
-                None,
-                Some(BlockInclusionObjective::from(bio)),
-            )
+            .patch_wallet(&self.wallet_id, None, Some(bio))
             .await?
             .into())
     }

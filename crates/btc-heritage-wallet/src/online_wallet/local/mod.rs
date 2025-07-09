@@ -338,11 +338,12 @@ impl super::OnlineWallet for LocalHeritageWallet {
         .await
     }
 
-    async fn set_block_inclusion_objective(&mut self, bio: u16) -> Result<super::WalletStatus> {
-        self.wallet_call(move |wallet| {
-            wallet.set_block_inclusion_objective(BlockInclusionObjective::from(bio))
-        })
-        .await?;
+    async fn set_block_inclusion_objective(
+        &mut self,
+        bio: BlockInclusionObjective,
+    ) -> Result<super::WalletStatus> {
+        self.wallet_call(move |wallet| wallet.set_block_inclusion_objective(bio))
+            .await?;
         self.get_wallet_status().await
     }
 

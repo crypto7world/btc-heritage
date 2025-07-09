@@ -81,7 +81,7 @@ pub trait OnlineWallet: Broadcaster + BoundFingerprint {
     fn get_wallet_status(&self) -> impl std::future::Future<Output = Result<WalletStatus>> + Send;
     fn set_block_inclusion_objective(
         &mut self,
-        bio: u16,
+        bio: BlockInclusionObjective,
     ) -> impl std::future::Future<Output = Result<WalletStatus>> + Send;
     fn create_psbt(
         &self,
@@ -142,7 +142,7 @@ impl OnlineWallet for AnyOnlineWallet {
     impl_online_wallet_fn!(set_heritage_config(&mut self, new_hc: HeritageConfig) -> Result<HeritageConfig>);
     impl_online_wallet_fn!(sync(&mut self) -> Result<()>);
     impl_online_wallet_fn!(get_wallet_status(&self) -> Result<WalletStatus>);
-    impl_online_wallet_fn!(set_block_inclusion_objective(&mut self, bio: u16) -> Result<WalletStatus>);
+    impl_online_wallet_fn!(set_block_inclusion_objective(&mut self, bio: BlockInclusionObjective) -> Result<WalletStatus>);
     impl_online_wallet_fn!(create_psbt(&self, spending_config: NewTx) -> Result<(PartiallySignedTransaction, TransactionSummary)>);
 }
 impl Broadcaster for AnyOnlineWallet {
@@ -196,7 +196,7 @@ macro_rules! impl_online_wallet {
             crate::online_wallet::impl_online_wallet!(set_heritage_config(&mut self, new_hc: btc_heritage::HeritageConfig) -> Result<btc_heritage::HeritageConfig>);
             crate::online_wallet::impl_online_wallet!(sync(&mut self) -> Result<()>);
             crate::online_wallet::impl_online_wallet!(get_wallet_status(&self) -> Result<crate::online_wallet::WalletStatus>);
-            crate::online_wallet::impl_online_wallet!(set_block_inclusion_objective(&mut self, bio: u16) -> Result<crate::online_wallet::WalletStatus>);
+            crate::online_wallet::impl_online_wallet!(set_block_inclusion_objective(&mut self, bio: btc_heritage::BlockInclusionObjective) -> Result<crate::online_wallet::WalletStatus>);
             crate::online_wallet::impl_online_wallet!(create_psbt(&self, new_tx: heritage_service_api_client::NewTx) -> Result<(btc_heritage::PartiallySignedTransaction, btc_heritage::heritage_wallet::TransactionSummary)>);
         }
         impl crate::Broadcaster for $name {

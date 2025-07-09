@@ -13,7 +13,7 @@ use crate::{
         bip32::{DerivationPath, Fingerprint},
         Address, Amount, OutPoint, Txid,
     },
-    errors::Error,
+    errors::{Error, ParseBlockInclusionObjectiveError},
     heritage_config::HeritageExplorerTrait,
     subwallet_config::SubwalletId,
     utils::string_to_address,
@@ -165,10 +165,13 @@ pub struct CreatePsbtOptions {
 /// from BitcoinCore RPC. It represents the number of blocks we are willing to wait before a
 /// transaction is included in the blockchain. Per https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
 /// it must be between 1 and 1008.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct BlockInclusionObjective(pub(crate) u16);
+impl BlockInclusionObjective {
+    pub const MIN: Self = BlockInclusionObjective(1);
+    pub const MAX: Self = BlockInclusionObjective(1008);
+}
 impl Default for BlockInclusionObjective {
     /// We arbitrarly choose to make the default value `6 blocks` (1 hour)
     fn default() -> Self {
@@ -176,13 +179,13 @@ impl Default for BlockInclusionObjective {
     }
 }
 impl From<u16> for BlockInclusionObjective {
-    /// Create a [BlockInclusionObjective] from a value that can be converted into a [u16]
+    /// Create a [BlockInclusionObjective] from a [u16]
     ///
     /// # Panics
-    /// Panics if the resulting internal [u16] is less than 1 or more than 1008
+    /// Panics if the [u16] is less than 1 or more than 1008
     fn from(value: u16) -> Self {
         let bio: u16 = value.into();
-        assert!(1 <= bio && bio <= 1008);
+        assert!(Self::MIN.0 <= bio && bio <= Self::MAX.0);
         Self(bio)
     }
 }
@@ -194,6 +197,49 @@ impl From<BlockInclusionObjective> for u16 {
 impl Display for BlockInclusionObjective {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
+    }
+}
+impl FromStr for BlockInclusionObjective {
+    type Err = ParseBlockInclusionObjectiveError;
+
+    /// Creates a [BlockInclusionObjective] from a string representation
+    ///
+    /// Attempts to parse the string as a [u16] and validates it's within the valid range
+    /// (1-1008 blocks).
+    ///
+    /// # Errors
+    ///
+    /// Returns [ParseBlockInclusionObjectiveError::InvalidInt] if the string cannot be parsed as a u16.
+    /// Returns [ParseBlockInclusionObjectiveError::ValueTooLow] if the value is less than 1.
+    /// Returns [ParseBlockInclusionObjectiveError::ValueTooHigh] if the value is greater than 1008.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::str::FromStr;
+    /// # use btc_heritage::BlockInclusionObjective;
+    ///
+    /// let bio = BlockInclusionObjective::from_str("10").unwrap();
+    /// assert_eq!(u16::from(bio), 10);
+    ///
+    /// // Values outside valid range return errors
+    /// assert!(BlockInclusionObjective::from_str("2000").is_err());
+    /// assert!(BlockInclusionObjective::from_str("0").is_err());
+    ///
+    /// // Invalid strings return errors
+    /// assert!(BlockInclusionObjective::from_str("invalid").is_err());
+    /// ```
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let u_val = s
+            .parse::<u16>()
+            .map_err(|_| ParseBlockInclusionObjectiveError::InvalidInt)?;
+        if u_val < Self::MIN.0 {
+            Err(ParseBlockInclusionObjectiveError::ValueTooLow)
+        } else if u_val > Self::MAX.0 {
+            Err(ParseBlockInclusionObjectiveError::ValueTooHigh)
+        } else {
+            Ok(Self(u_val))
+        }
     }
 }
 

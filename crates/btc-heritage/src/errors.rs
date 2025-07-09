@@ -4,6 +4,7 @@ use crate::{
     account_xpub::AccountXPubId,
     bitcoin::{psbt::Psbt, Network},
     heritage_wallet::SubwalletConfigId,
+    BlockInclusionObjective,
 };
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -70,4 +71,14 @@ pub enum DatabaseError {
     AccountXPubInexistant(AccountXPubId),
     #[error("Generic database error: {0}")]
     Generic(String),
+}
+
+#[derive(Debug, Error)]
+pub enum ParseBlockInclusionObjectiveError {
+    #[error("Value could not be parsed as an 16-bits unsigned integer")]
+    InvalidInt,
+    #[error("Value is less than {}", BlockInclusionObjective::MIN)]
+    ValueTooLow,
+    #[error("Value is more than {}", BlockInclusionObjective::MAX)]
+    ValueTooHigh,
 }
