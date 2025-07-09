@@ -16,6 +16,7 @@ use utils::prepare_data_dir;
 
 pub use dbitem::{DatabaseItem, DatabaseSingleItem};
 pub use heritage_db::HeritageWalletDatabase;
+pub use utils::blocking_db_operation;
 
 const DEFAULT_TABLE_NAME: &'static str = "heritage";
 const DEFAULT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new(DEFAULT_TABLE_NAME);

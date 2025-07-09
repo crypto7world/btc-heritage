@@ -1,6 +1,8 @@
 use crate::database::errors::{DbError, Result};
 use std::path::Path;
 
+use super::Database;
+
 /// Prepare the database directory
 /// Takes a [Path] and ensure it has been created if needed
 pub(super) fn prepare_data_dir(data_dir_path: &Path) -> Result<()> {
@@ -17,4 +19,12 @@ pub(super) fn prepare_data_dir(data_dir_path: &Path) -> Result<()> {
         })?;
     }
     Ok(())
+}
+
+pub async fn blocking_db_operation<R: Send + 'static, F: FnOnce(Database) -> R + Send + 'static>(
+    db: &Database,
+    f: F,
+) -> R {
+    let db = db.clone();
+    tokio::task::spawn_blocking(move || f(db)).await.unwrap()
 }
