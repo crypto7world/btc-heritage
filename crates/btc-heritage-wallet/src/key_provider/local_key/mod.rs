@@ -68,9 +68,8 @@ impl LocalKey {
                 .replace(password.ok_or(Error::LocalKeyMissingPassword)?);
         }
 
-        if self.xprv().fingerprint(&Secp256k1::signing_only()) != self.fingerprint {
-            return Err(Error::IncoherentLocalKeyFingerprint);
-        }
+        // Will control the fingerprint
+        self.xprv()?;
 
         Ok(())
     }
@@ -84,12 +83,22 @@ impl LocalKey {
             .expect("I really don't see how it could fail")
     }
 
-    fn xprv(&self) -> ExtendedPrivKey {
-        LocalKey::_xprv(
-            &self.mnemonic,
-            self.cached_password.as_ref().map(|s| s.as_str()),
-            self.network,
-        )
+    fn xprv(&self) -> Result<ExtendedPrivKey> {
+        let password = self
+            .with_password
+            .then(|| {
+                self.cached_password
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .ok_or(Error::LocalKeyMissingPassword)
+            })
+            .transpose()?;
+        let xprv = LocalKey::_xprv(&self.mnemonic, password, self.network);
+
+        if xprv.fingerprint(&Secp256k1::signing_only()) != self.fingerprint {
+            return Err(Error::IncoherentLocalKeyFingerprint);
+        }
+        Ok(xprv)
     }
 }
 
@@ -110,8 +119,12 @@ impl LocalKey {
         &self,
         master_xprv: Option<ExtendedPrivKey>,
         path: DerivationPath,
-    ) -> DescriptorXKey<ExtendedPubKey> {
-        let xprv = master_xprv.unwrap_or_else(|| self.xprv());
+    ) -> Result<DescriptorXKey<ExtendedPubKey>> {
+        let xprv = if let Some(xprv) = master_xprv {
+            xprv
+        } else {
+            self.xprv()?
+        };
         // Just to be clear, this is the master private key
         // This assertion should never fail
         assert!(
@@ -133,12 +146,12 @@ impl LocalKey {
             .derive_priv(&secp, &path)
             .expect("I really don't see how it could fail");
         let origin: KeySource = (self.fingerprint, path);
-        DescriptorXKey {
+        Ok(DescriptorXKey {
             origin: Some(origin),
             xkey: ExtendedPubKey::from_priv(&secp, derived_xprv),
             derivation_path: DerivationPath::default(),
             wildcard: Wildcard::Unhardened,
-        }
+        })
     }
 }
 
@@ -146,8 +159,8 @@ impl super::KeyProvider for LocalKey {
     async fn sign_psbt(
         &self,
         psbt: &mut btc_heritage::PartiallySignedTransaction,
-    ) -> crate::errors::Result<usize> {
-        let xprv = self.xprv();
+    ) -> Result<usize> {
+        let xprv = self.xprv()?;
         // Just to be clear, this is the master private key
         // This assertion should never fail
         assert!(
@@ -384,18 +397,18 @@ impl super::KeyProvider for LocalKey {
     async fn derive_accounts_xpubs(
         &self,
         range: core::ops::Range<u32>,
-    ) -> crate::errors::Result<Vec<AccountXPub>> {
+    ) -> Result<Vec<AccountXPub>> {
         let might_block_too_long = range.len() > 1000;
 
         let derive = |local_key: &LocalKey| {
-            let xprv = local_key.xprv();
+            let xprv = local_key.xprv()?;
             let base_derivation_path = local_key.base_derivation_path();
             range
                 .map(|i| {
                     let derivation_path = base_derivation_path
                         .extend([ChildNumber::from_hardened_idx(i)
                             .map_err(|_| Error::AccountDerivationIndexOutOfBound(i))?]);
-                    let dxpub = local_key.derive_xpub(Some(xprv), derivation_path);
+                    let dxpub = local_key.derive_xpub(Some(xprv), derivation_path)?;
                     let xpub = DescriptorPublicKey::XPub(dxpub);
                     Ok(AccountXPub::try_from(xpub).expect("we ensured validity"))
                 })
@@ -420,7 +433,7 @@ impl super::KeyProvider for LocalKey {
         let base_derivation_path = self.base_derivation_path();
         let heir_derivation_path = base_derivation_path
             .extend([ChildNumber::from_hardened_idx(u32::from_be_bytes(*b"heir")).unwrap()]);
-        let heir_xpub = self.derive_xpub(None, heir_derivation_path);
+        let heir_xpub = self.derive_xpub(None, heir_derivation_path)?;
 
         match heir_config_type {
             HeirConfigType::SingleHeirPubkey => {
@@ -862,6 +875,7 @@ mod tests {
             let key = bytes_to_hex_string(mnemo.to_seed(password));
             let xpriv = LocalKey::restore(mnemo, Some(password.to_owned()), Network::Bitcoin)
                 .xprv()
+                .unwrap()
                 .to_string();
             assert_eq!(mnemostr, v_mnemostr);
             assert_eq!(key, v_key);
