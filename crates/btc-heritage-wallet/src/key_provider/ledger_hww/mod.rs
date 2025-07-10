@@ -208,15 +208,49 @@ impl LedgerClient {
     /// cannot be retrieved
     pub async fn fingerprint(&self) -> Result<Fingerprint> {
         let ledger_client = self.clone();
-        Ok(
+
+        let fingerprint =
             tokio::task::spawn_blocking(move || ledger_client.get_master_fingerprint())
                 .await
                 .unwrap()
                 .map(|fg| {
                     // Convert between different rust-bitcoin versions used by BDK and ledger_bitcoin_client
                     Fingerprint::from(fg.as_bytes())
-                })?,
-        )
+                })?;
+        log::debug!("LedgerClient::fingerprint => {fingerprint}");
+        Ok(fingerprint)
+    }
+    /// Retrieves the Bitcoin network information from the Ledger device.
+    ///
+    /// This method queries the Ledger device to determine which Bitcoin application
+    /// is currently running and maps it to the corresponding network type. The operation
+    /// is executed in a blocking task to avoid blocking the async runtime.
+    ///
+    /// # Returns
+    ///
+    /// The Bitcoin network type (mainnet, testnet, etc.) based on the application
+    /// running on the Ledger device
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Device communication fails
+    /// - An unsupported or unknown Bitcoin application is running
+    /// - The device is not available
+    pub async fn network(&self) -> Result<Network> {
+        let ledger_client = self.clone();
+        let (name, version, flags) =
+            tokio::task::spawn_blocking(move || ledger_client.get_version())
+                .await
+                .unwrap()?;
+        log::debug!(
+            "LedgerClient::get_version => name: {name}, version: {version}, flags: {flags:?}"
+        );
+        match name.as_str() {
+            "Bitcoin" => Ok(Network::Bitcoin),
+            "Bitcoin Test" => Ok(Network::Testnet),
+            _ => Err(Error::WrongLedgerApplication),
+        }
     }
 }
 
@@ -321,23 +355,6 @@ impl LedgerKey {
             .unwrap()?)
     }
 
-    /// Checks if the Ledger device is connected and ready for operations.
-    ///
-    /// This method performs a simple connectivity test to verify that the device
-    /// is available and responds to commands.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the device is ready, `false` otherwise
-    pub async fn ledger_connected_and_ready(&self) -> bool {
-        match self.ledger_call(|_| Ok(())).await {
-            Ok(_) => true,
-            Err(e) => {
-                log::warn!("Ledger not ready: {e}");
-                false
-            }
-        }
-    }
     /// Registers a list of wallet policies with the Ledger device.
     ///
     /// This method takes a list of heritage wallet policies and registers them

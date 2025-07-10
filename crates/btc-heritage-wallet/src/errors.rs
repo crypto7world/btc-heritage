@@ -67,6 +67,8 @@ pub enum Error {
     UninitializedServiceClient,
     #[error("No Ledger device can be reached")]
     NoLedgerDevice,
+    #[error("The Ledger device is not open on the Bitcoin app")]
+    WrongLedgerApplication,
     #[error("No BlockChain factory has been provided to perform this operation")]
     UninitializedBlockchainFactory,
     #[error("No HeritageWallet has been provided to perform this operation")]
