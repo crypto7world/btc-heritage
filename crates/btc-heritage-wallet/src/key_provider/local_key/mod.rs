@@ -96,7 +96,7 @@ impl LocalKey {
             mnemonic: mnemo,
             network,
             fingerprint,
-            with_password: password.is_some(),
+            with_password: password.as_ref().is_some_and(|p| !p.is_empty()),
             cached_password: password,
         }
     }
