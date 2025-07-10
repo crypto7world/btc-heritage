@@ -25,15 +25,47 @@ use serde::{Deserialize, Serialize};
 
 impl_db_single_item!(HeritageServiceConfig, "heritage_service_configuration");
 
+/// A binding to a remote heritage service wallet
+///
+/// This struct represents a connection to a heritage wallet managed by a remote service.
+/// It maintains the wallet ID, cached fingerprint, and network configuration needed to
+/// interact with the remote wallet through the heritage service API.
+///
+/// The service client is not serialized and must be reinitialized after deserialization.
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceBinding {
+    /// Unique identifier for the wallet on the remote service
     wallet_id: Arc<str>,
+    /// Cached BIP32 master key fingerprint for performance
     fingerprint: Option<Fingerprint>,
+    /// Bitcoin network this wallet operates on
     network: Network,
+    /// Service client for API communication (not serialized)
     #[serde(skip, default)]
     service_client: Option<HeritageServiceClient>,
 }
 impl ServiceBinding {
+    /// Creates a new wallet on the remote service
+    ///
+    /// This method creates a new heritage wallet on the remote service with the given
+    /// parameters. If a backup is provided, it will be used to restore the wallet state.
+    ///
+    /// # Arguments
+    ///
+    /// * `wallet_name` - Name for the new wallet
+    /// * `backup` - Optional wallet backup to restore from
+    /// * `block_inclusion_objective` - Target number of blocks for transaction confirmation
+    /// * `service_client` - Authenticated service client for API communication
+    /// * `network` - Bitcoin network for the wallet
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `ServiceBinding` instance connected to the created wallet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the wallet creation request fails.
     pub async fn create(
         wallet_name: &str,
         backup: Option<HeritageWalletBackup>,
@@ -56,6 +88,20 @@ impl ServiceBinding {
             service_client: Some(service_client),
         })
     }
+    /// Creates a service binding from existing wallet metadata
+    ///
+    /// This is a private helper method that creates a ServiceBinding from
+    /// wallet metadata retrieved from the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `wallet` - Wallet metadata from the service
+    /// * `service_client` - Authenticated service client
+    /// * `network` - Bitcoin network for the wallet
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `ServiceBinding` instance.
     fn bind(
         wallet: HeritageWalletMeta,
         service_client: HeritageServiceClient,
@@ -68,6 +114,27 @@ impl ServiceBinding {
             service_client: Some(service_client),
         })
     }
+    /// Binds to an existing wallet on the service by name
+    ///
+    /// This method searches for an existing wallet with the given name and
+    /// creates a binding to it. The wallet name must be unique on the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `existing_wallet_name` - Name of the existing wallet to bind to
+    /// * `service_client` - Authenticated service client for API communication
+    /// * `network` - Bitcoin network for the wallet
+    ///
+    /// # Returns
+    ///
+    /// Returns a `ServiceBinding` instance connected to the existing wallet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No wallet with the given name is found
+    /// - Multiple wallets with the same name are found
+    /// - The service request fails
     pub async fn bind_by_name(
         existing_wallet_name: &str,
         service_client: HeritageServiceClient,
@@ -86,6 +153,26 @@ impl ServiceBinding {
         }
         ServiceBinding::bind(wallets.pop().unwrap(), service_client, network)
     }
+    /// Binds to an existing wallet on the service by ID
+    ///
+    /// This method connects to an existing wallet using its unique ID.
+    /// This is the most direct way to bind to a specific wallet.
+    ///
+    /// # Arguments
+    ///
+    /// * `existing_wallet_id` - Unique ID of the existing wallet
+    /// * `service_client` - Authenticated service client for API communication
+    /// * `network` - Bitcoin network for the wallet
+    ///
+    /// # Returns
+    ///
+    /// Returns a `ServiceBinding` instance connected to the existing wallet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No wallet with the given ID is found
+    /// - The service request fails
     pub async fn bind_by_id(
         existing_wallet_id: &str,
         service_client: HeritageServiceClient,
@@ -100,6 +187,28 @@ impl ServiceBinding {
             })?;
         ServiceBinding::bind(wallet, service_client, network)
     }
+    /// Binds to an existing wallet on the service by fingerprint
+    ///
+    /// This method searches for an existing wallet with the given BIP32 master
+    /// key fingerprint and creates a binding to it. The fingerprint must be
+    /// unique on the service.
+    ///
+    /// # Arguments
+    ///
+    /// * `existing_wallet_fingerprint` - BIP32 fingerprint of the existing wallet
+    /// * `service_client` - Authenticated service client for API communication
+    /// * `network` - Bitcoin network for the wallet
+    ///
+    /// # Returns
+    ///
+    /// Returns a `ServiceBinding` instance connected to the existing wallet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No wallet with the given fingerprint is found
+    /// - Multiple wallets with the same fingerprint are found
+    /// - The service request fails
     pub async fn bind_by_fingerprint(
         existing_wallet_fingerprint: Fingerprint,
         service_client: HeritageServiceClient,
@@ -121,6 +230,21 @@ impl ServiceBinding {
         }
         ServiceBinding::bind(wallets.pop().unwrap(), service_client, network)
     }
+    /// Initializes the service client with fingerprint validation
+    ///
+    /// This method sets up the service client and validates that the remote
+    /// wallet's fingerprint matches the locally cached one (if available).
+    /// This helps ensure we're connecting to the correct wallet.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_client` - Authenticated service client for API communication
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The remote wallet's fingerprint doesn't match the local cache
+    /// - The service request fails
     pub async fn init_service_client(
         &mut self,
         service_client: HeritageServiceClient,
@@ -134,7 +258,9 @@ impl ServiceBinding {
         {
             return Err(Error::IncoherentServiceWalletFingerprint);
         }
-        self.init_service_client_unchecked(service_client);
+        unsafe {
+            self.init_service_client_unchecked(service_client);
+        }
         Ok(())
     }
     /// Synchronizes the local fingerprint with the remote wallet fingerprint
@@ -164,20 +290,65 @@ impl ServiceBinding {
             Ok(false)
         }
     }
-    pub fn init_service_client_unchecked(&mut self, service_client: HeritageServiceClient) {
+    /// Initializes the service client without validation
+    ///
+    /// This method sets up the service client without performing any
+    /// fingerprint validation. This bypasses the security check that ensures
+    /// the remote wallet matches the expected fingerprint.
+    ///
+    /// # Arguments
+    ///
+    /// * `service_client` - Service client for API communication
+    ///
+    /// # Safety
+    ///
+    /// This function is marked as unsafe because it bypasses the fingerprint
+    /// validation that ensures the service client connects to the correct wallet.
+    /// The caller must ensure that:
+    ///
+    /// - The service client is authenticated to the correct account
+    /// - The wallet in the service is the expected one
+    ///
+    /// Using this function incorrectly could result in connecting to the wrong
+    /// wallet or performing operations on unintended accounts.
+    pub unsafe fn init_service_client_unchecked(&mut self, service_client: HeritageServiceClient) {
         self.service_client = Some(service_client);
     }
+    /// Checks if a service client is initialized
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if a service client is available, `false` otherwise.
     pub fn has_service_client(&self) -> bool {
         self.service_client.is_some()
     }
+    /// Gets a reference to the service client
+    ///
+    /// # Returns
+    ///
+    /// Returns an optional reference to the service client.
     pub fn service_client(&self) -> Option<&HeritageServiceClient> {
         self.service_client.as_ref()
     }
+    /// Gets a reference to the service client or returns an error
+    ///
+    /// # Returns
+    ///
+    /// Returns a reference to the service client.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if no service client is initialized.
     fn unwrap_service_client(&self) -> Result<&HeritageServiceClient> {
         self.service_client
             .as_ref()
             .ok_or(Error::UninitializedServiceClient)
     }
+    /// Gets the wallet ID
+    ///
+    /// # Returns
+    ///
+    /// Returns the unique identifier of the wallet on the remote service.
     pub fn wallet_id(&self) -> &str {
         &self.wallet_id
     }
@@ -325,6 +496,24 @@ impl super::OnlineWallet for ServiceBinding {
 }
 
 impl Broadcaster for ServiceBinding {
+    /// Broadcasts a signed transaction through the remote service
+    ///
+    /// This method sends the signed PSBT to the remote service for broadcasting
+    /// to the Bitcoin network.
+    ///
+    /// # Arguments
+    ///
+    /// * `psbt` - The signed partial transaction to broadcast
+    ///
+    /// # Returns
+    ///
+    /// Returns the transaction ID of the broadcasted transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The service client is not initialized
+    /// - The broadcast request fails
     async fn broadcast(&self, psbt: PartiallySignedTransaction) -> Result<Txid> {
         Ok(self
             .unwrap_service_client()?
@@ -334,6 +523,15 @@ impl Broadcaster for ServiceBinding {
 }
 
 impl BoundFingerprint for ServiceBinding {
+    /// Returns the BIP32 master key fingerprint
+    ///
+    /// # Returns
+    ///
+    /// Returns the cached fingerprint of the wallet's master key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the fingerprint is not available.
     fn fingerprint(&self) -> Result<Fingerprint> {
         Ok(self
             .fingerprint

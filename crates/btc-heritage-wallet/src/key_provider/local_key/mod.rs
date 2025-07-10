@@ -37,7 +37,26 @@ pub struct LocalKey {
 impl LocalKey {
     /// Generate a new LocalKey with a random Mnemonic
     ///
+    /// Creates a new LocalKey instance with a randomly generated mnemonic seed.
+    /// The mnemonic is generated using secure random entropy and can optionally
+    /// be protected with a password.
+    ///
+    /// # Parameters
+    ///
+    /// * `word_count` - Number of words for the mnemonic (must be 12, 18, or 24)
+    /// * `password` - Optional password to protect the mnemonic
+    /// * `network` - Bitcoin network to use for key derivation
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage_wallet::LocalKey;
+    /// # use btc_heritage::bitcoin::Network;
+    /// let local_key = LocalKey::generate(12, None, Network::Bitcoin);
+    /// ```
+    ///
     /// # Panics
+    ///
     /// Panics if the word_count is not 12, 18 or 24
     pub fn generate(word_count: usize, password: Option<String>, network: Network) -> Self {
         let entropy = match word_count {
@@ -50,6 +69,26 @@ impl LocalKey {
         Self::restore(mnemo, password, network)
     }
 
+    /// Restore a LocalKey from an existing mnemonic
+    ///
+    /// Creates a LocalKey instance from a pre-existing mnemonic seed. This is used
+    /// to restore a wallet from a backup mnemonic phrase.
+    ///
+    /// # Parameters
+    ///
+    /// * `mnemo` - The mnemonic phrase to restore from
+    /// * `password` - Optional password that was used to protect the mnemonic
+    /// * `network` - Bitcoin network to use for key derivation
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage_wallet::LocalKey;
+    /// # use btc_heritage::bitcoin::Network;
+    /// # use bip39::Mnemonic;
+    /// let mnemonic = Mnemonic::parse("abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about").unwrap();
+    /// let local_key = LocalKey::restore(mnemonic, None, Network::Bitcoin);
+    /// ```
     pub fn restore(mnemo: Mnemonic, password: Option<String>, network: Network) -> Self {
         let fingerprint = LocalKey::_xprv(&mnemo, password.as_ref().map(|s| s.as_str()), network)
             .fingerprint(&Secp256k1::signing_only());
@@ -62,6 +101,28 @@ impl LocalKey {
         }
     }
 
+    /// Initialize the LocalKey with a password
+    ///
+    /// Sets up the LocalKey for use by providing the password if one is required.
+    /// This must be called before using the LocalKey if it was created with a password.
+    ///
+    /// # Parameters
+    ///
+    /// * `password` - The password to unlock the LocalKey, required if the key was created with a password
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage_wallet::LocalKey;
+    /// # use btc_heritage::bitcoin::Network;
+    /// let mut local_key = LocalKey::generate(12, Some("password".to_string()), Network::Bitcoin);
+    /// local_key.init_local_key(Some("password".to_string())).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the LocalKey requires a password but none is provided,
+    /// or if the provided password is incorrect.
     pub fn init_local_key(&mut self, password: Option<String>) -> Result<()> {
         if self.with_password {
             self.cached_password
@@ -74,8 +135,39 @@ impl LocalKey {
         Ok(())
     }
 
+    /// Check if the LocalKey requires a password
+    ///
+    /// Returns true if the LocalKey was created with a password and requires
+    /// authentication before use.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage_wallet::LocalKey;
+    /// # use btc_heritage::bitcoin::Network;
+    /// let local_key = LocalKey::generate(12, Some("password".to_string()), Network::Bitcoin);
+    /// assert!(local_key.require_password());
+    /// ```
     pub fn require_password(&self) -> bool {
         self.with_password
+    }
+
+    /// Check if the LocalKey is ready for use
+    ///
+    /// Returns true if the LocalKey has been properly initialized and can be used
+    /// for cryptographic operations. For password-protected keys, this means the
+    /// correct password has been provided.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage_wallet::LocalKey;
+    /// # use btc_heritage::bitcoin::Network;
+    /// let local_key = LocalKey::generate(12, None, Network::Bitcoin);
+    /// assert!(local_key.is_ready());
+    /// ```
+    pub fn is_ready(&self) -> bool {
+        self.xprv().is_ok()
     }
 
     fn _xprv(mnemo: &Mnemonic, password: Option<&str>, network: Network) -> ExtendedPrivKey {
@@ -83,6 +175,18 @@ impl LocalKey {
             .expect("I really don't see how it could fail")
     }
 
+    /// Get the master extended private key
+    ///
+    /// Derives the master extended private key from the mnemonic and password.
+    /// This is used internally for key derivation operations. The function
+    /// validates that the derived key matches the expected fingerprint
+    /// which will it will NOT if a password is required and not set or wrong.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The LocalKey requires a password but none is cached
+    /// - The derived key fingerprint doesn't match the expected fingerprint
     fn xprv(&self) -> Result<ExtendedPrivKey> {
         let password = self
             .with_password
@@ -436,6 +540,7 @@ impl super::KeyProvider for LocalKey {
         let heir_xpub = self.derive_xpub(None, heir_derivation_path)?;
 
         match heir_config_type {
+            #[allow(deprecated)]
             HeirConfigType::SingleHeirPubkey => {
                 let derivation_path = [
                     ChildNumber::from_normal_idx(0).unwrap(),
@@ -665,6 +770,7 @@ mod tests {
 
     async fn heir_shp_generation(tw: TestKeyProvider) -> String {
         let local_key = get_test_key_provider(tw);
+        #[allow(deprecated)]
         let HeirConfig::SingleHeirPubkey(shp) = local_key
             .derive_heir_config(HeirConfigType::SingleHeirPubkey)
             .await

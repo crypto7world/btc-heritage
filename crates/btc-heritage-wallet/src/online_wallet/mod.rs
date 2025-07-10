@@ -21,12 +21,21 @@ pub use local::{AnyBlockchainFactory, AuthConfig, BlockchainProviderConfig, Loca
 use serde::{Deserialize, Serialize};
 pub use service::ServiceBinding;
 
+/// Status information for a heritage wallet
+///
+/// This struct contains comprehensive status information about a heritage wallet,
+/// including its identity, balance, synchronization state, and fee information.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletStatus {
+    /// BIP32 master key fingerprint identifying this wallet
     pub fingerprint: Option<Fingerprint>,
+    /// Current wallet balance breakdown
     pub balance: HeritageWalletBalance,
+    /// Timestamp of the last successful synchronization (Unix timestamp)
     pub last_sync_ts: u64,
+    /// Target number of blocks for transaction confirmation
     pub block_inclusion_objective: BlockInclusionObjective,
+    /// Most recently used fee rate for transactions
     #[serde(default)]
     pub last_fee_rate: Option<FeeRate>,
 }
@@ -43,8 +52,13 @@ impl From<HeritageWalletMeta> for WalletStatus {
     }
 }
 
-/// This trait regroup the functions of an Heritage wallet that does not need
+/// This trait regroups the functions of a Heritage wallet that do not need
 /// access to the private keys and can be safely operated in an online environment.
+///
+/// The `OnlineWallet` trait provides all wallet operations that require network
+/// connectivity but not private key access. This includes balance queries, address
+/// generation, transaction history, and PSBT creation. It extends both `Broadcaster`
+/// and `BoundFingerprint` traits to provide complete online wallet functionality.
 pub trait OnlineWallet: Broadcaster + BoundFingerprint {
     fn backup_descriptors(
         &self,
@@ -89,14 +103,27 @@ pub trait OnlineWallet: Broadcaster + BoundFingerprint {
     ) -> impl std::future::Future<Output = Result<(PartiallySignedTransaction, TransactionSummary)>> + Send;
 }
 
+/// Enumeration of all possible online wallet implementations
+///
+/// This enum provides a unified interface for different online wallet backends,
+/// allowing the application to work with local wallets, remote service wallets,
+/// or no wallet at all.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum AnyOnlineWallet {
+    /// No wallet is configured
     None,
+    /// Remote Heritage Service-based wallet implementation
     Service(ServiceBinding),
+    /// Local file-based wallet implementation
     Local(LocalHeritageWallet),
 }
 
 impl AnyOnlineWallet {
+    /// Checks if the wallet is in the `None` state
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if no wallet is configured, `false` otherwise.
     pub fn is_none(&self) -> bool {
         match self {
             AnyOnlineWallet::None => true,
@@ -105,6 +132,11 @@ impl AnyOnlineWallet {
     }
 }
 
+/// Macro to implement OnlineWallet trait methods for AnyOnlineWallet
+///
+/// This macro generates the boilerplate code needed to dispatch trait method calls
+/// to the appropriate underlying wallet implementation. It handles both mutable
+/// and immutable method signatures and automatically returns errors for the None variant.
 macro_rules! impl_online_wallet_fn {
     ($(#[$attrs:meta])? $fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
         $(#[$attrs])?
@@ -158,6 +190,11 @@ impl BoundFingerprint for AnyOnlineWallet {
     }
 }
 
+/// Macro to implement OnlineWallet trait for types that contain an AnyOnlineWallet
+///
+/// This macro generates a complete OnlineWallet implementation that delegates all
+/// calls to an inner `online_wallet` field of type `AnyOnlineWallet`. It also
+/// provides accessor methods for the online wallet field.
 macro_rules! impl_online_wallet {
     ($(#[$attrs:meta])? $fn_name:ident(&mut $self:ident $(,$a:ident : $t:ty)*) -> $ret:ty) => {
         $(#[$attrs])?

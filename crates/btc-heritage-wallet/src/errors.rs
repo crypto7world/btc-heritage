@@ -57,6 +57,10 @@ pub enum Error {
     MultipleServiceHeirsFound,
     #[error("The wallet fingerprint on the service is not the one stored in the local database")]
     IncoherentServiceWalletFingerprint,
+    #[error(
+        "The wallet fingerprint on the Local Wallet is not the one stored in the local database"
+    )]
+    IncoherentLocalWalletFingerprint,
     #[error("The wallet fingerprint on the connected Ledger is not the one stored in the local database")]
     IncoherentLedgerWalletFingerprint,
     #[error("No Service Client has been provided to perform this operation")]
