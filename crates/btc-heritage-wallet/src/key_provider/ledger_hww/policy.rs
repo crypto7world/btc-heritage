@@ -196,7 +196,7 @@ new_byte_type! {
 /// // Becomes Ledger policy:
 /// tr(@0/**,and_v(v:pk(@1/**),older(144)))
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(into = "String", try_from = "String")]
 pub struct LedgerPolicy(String);
 
@@ -422,7 +422,7 @@ impl From<LedgerPolicy> for WalletPolicy {
     }
 }
 
-impl TryFrom<SubwalletDescriptorBackup> for LedgerPolicy {
+impl TryFrom<&SubwalletDescriptorBackup> for LedgerPolicy {
     type Error = Error;
 
     /// Creates a Ledger policy from a subwallet descriptor backup
@@ -464,7 +464,7 @@ impl TryFrom<SubwalletDescriptorBackup> for LedgerPolicy {
     /// let policy = LedgerPolicy::try_from(backup).unwrap();
     /// // Results in: "tr(@0/**)"
     /// ```
-    fn try_from(value: SubwalletDescriptorBackup) -> Result<Self, Self::Error> {
+    fn try_from(value: &SubwalletDescriptorBackup) -> Result<Self, Self::Error> {
         let external_descriptor = value.external_descriptor.to_string();
         let change_descriptor = value.change_descriptor.to_string();
 
@@ -501,7 +501,7 @@ mod tests {
             "change_descriptor": "tr([9c7088e3/86'/1'/0']tpubDD2pKf3K2M2oukBVyGLVBKhqMV2MC5jQ3ABYNY17tFUgkq8Y2M65yBmeZHiz9gwrYfYkCZqipP9pL5NGwkSSsS2dijy7Nus1DLJLr6FQyWv/1/*,and_v(v:pk([f0d79bf6/86'/1'/1751476594']tpubDDFibSiSkFTfnLc4cG5X2wwkLjatiWbxb3T6PNbaCuv9uQpeq4i2sRrk7EKFgd56TTTHXpKDrW4JEDfsueAfLYC9CTPAung761RWMcWE3aP/1/*),and_v(v:older(12960),after(1731536000))))"
         }"#;
         let valid_backup: SubwalletDescriptorBackup = serde_json::from_str(valid_backup).unwrap();
-        assert!(LedgerPolicy::try_from(valid_backup).is_ok())
+        assert!(LedgerPolicy::try_from(&valid_backup).is_ok())
     }
 
     /// Test that validates rejection of incompatible subwallet backups
@@ -518,7 +518,7 @@ mod tests {
         let invalid_backup: SubwalletDescriptorBackup =
             serde_json::from_str(invalid_backup).unwrap();
         assert!(
-            LedgerPolicy::try_from(invalid_backup).is_err_and(|e| match e {
+            LedgerPolicy::try_from(&invalid_backup).is_err_and(|e| match e {
                 Error::LedgerIncompatibleDescriptor(msg) =>
                     msg == "external and change descriptor templates would be different",
                 _ => unreachable!("Only LedgerIncompatibleDescriptor errors can be raised"),

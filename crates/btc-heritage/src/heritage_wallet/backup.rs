@@ -53,6 +53,14 @@ impl IntoIterator for HeritageWalletBackup {
         self.0.into_iter()
     }
 }
+impl<'a> IntoIterator for &'a HeritageWalletBackup {
+    type Item = &'a SubwalletDescriptorBackup;
+    type IntoIter = <&'a Vec<SubwalletDescriptorBackup> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (&self.0).into_iter()
+    }
+}
 impl HeritageWalletBackup {
     /// Return the [Fingerprint] of this [HeritageWalletBackup]
     /// If there are not [SubwalletDescriptorBackup], return [Option::None]
@@ -70,5 +78,9 @@ impl HeritageWalletBackup {
             return Err(Error::InvalidBackup("multiple fingerprint in the backup"));
         }
         Ok(h_fingerprint.into_iter().next())
+    }
+
+    pub fn iter(&self) -> core::slice::Iter<'_, SubwalletDescriptorBackup> {
+        self.into_iter()
     }
 }
