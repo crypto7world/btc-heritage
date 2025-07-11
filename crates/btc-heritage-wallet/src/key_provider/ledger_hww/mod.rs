@@ -376,13 +376,14 @@ impl LedgerKey {
     /// Returns an error if the device communication fails or if policy registration fails
     pub async fn register_policies<P>(
         &mut self,
-        policies: &Vec<LedgerPolicy>,
-        progress: P,
+        policies: impl IntoIterator<Item = &LedgerPolicy>,
+        mut progress: P,
     ) -> Result<usize>
     where
-        P: Fn(&WalletPolicy),
+        P: FnMut(&WalletPolicy),
     {
-        let mut register_results = Vec::with_capacity(policies.len());
+        let policies = policies.into_iter();
+        let mut register_results = Vec::with_capacity(policies.size_hint().0);
 
         for policy in policies {
             let account_id = policy.get_account_id();
