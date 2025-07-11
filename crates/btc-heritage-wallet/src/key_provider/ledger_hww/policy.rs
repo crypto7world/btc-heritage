@@ -375,6 +375,7 @@ impl From<&LedgerPolicy> for WalletPolicy {
     /// Panics if the policy contains invalid xpub formats. This should never
     /// happen for a properly validated `LedgerPolicy`.
     fn from(value: &LedgerPolicy) -> Self {
+        let account_id = value.get_account_id();
         let descriptor = &value.0;
         log::debug!("descriptor={descriptor}");
         let mut descriptor_template = descriptor.clone();
@@ -407,7 +408,7 @@ impl From<&LedgerPolicy> for WalletPolicy {
 
         log::debug!("descriptor_template={descriptor_template}");
         Self {
-            name: "Heritage".to_owned(),
+            name: format!("Heritage #{account_id}"),
             version: ledger_bitcoin_client::wallet::Version::V2,
             descriptor_template,
             keys,
