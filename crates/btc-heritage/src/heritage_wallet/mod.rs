@@ -74,15 +74,24 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
                         .get_subwallet_config(SubwalletConfigId::Current)?,
                 )
                 .map(|swc| {
-                    let sw = self.get_subwallet(&swc)?;
-                    let last_external_index = sw
-                        .database()
-                        .get_last_index(KeychainKind::External)
-                        .map_err(|e| DatabaseError::Generic(e.to_string()))?;
-                    let last_change_index = sw
-                        .database()
-                        .get_last_index(KeychainKind::Internal)
-                        .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+                    // This is to avoid loading the subwallet uselessly
+                    // If the subwallet was never used, then it cannot have last_indexes
+                    // It prevents marking subwallet as "used" when it is in fact not
+                    let (last_external_index, last_change_index) =
+                        if swc.subwallet_firstuse_time().is_some() {
+                            let sw = self.get_subwallet(&swc)?;
+                            let last_external_index = sw
+                                .database()
+                                .get_last_index(KeychainKind::External)
+                                .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+                            let last_change_index = sw
+                                .database()
+                                .get_last_index(KeychainKind::Internal)
+                                .map_err(|e| DatabaseError::Generic(e.to_string()))?;
+                            (last_external_index, last_change_index)
+                        } else {
+                            (None, None)
+                        };
 
                     Ok(SubwalletDescriptorBackup {
                         external_descriptor: swc.ext_descriptor().clone(),
@@ -1346,6 +1355,23 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         subwalletconfig: &SubwalletConfig,
     ) -> Result<Wallet<<D as PartitionableDatabase>::SubDatabase>> {
         log::debug!("HeritageWallet::get_subwallet - Opening subwallet database");
+
+        // Verify if the subwallet_config has not already been used, just override it
+        if subwalletconfig.subwallet_firstuse_time().is_none() {
+            log::debug!("HeritageWallet::get_subwallet - current_subwallet_config was never used");
+            let mut new_subwallet_config = subwalletconfig.clone();
+            new_subwallet_config.mark_subwallet_firstuse()?;
+            log::info!(
+                "HeritageWallet::get_subwallet - Marking previously unused SubwalletConfig as used"
+            );
+            log::debug!(
+                "HeritageWallet::get_subwallet - new_subwallet_config={new_subwallet_config:?}"
+            );
+            self.database_mut().safe_update_current_subwallet_config(
+                &new_subwallet_config,
+                Some(&subwalletconfig),
+            )?;
+        }
         let subdatabase = self
             .database()
             .get_subdatabase(SubdatabaseId::from(subwalletconfig.subwallet_id()))?;
@@ -1362,22 +1388,6 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .ok_or(Error::MissingCurrentSubwalletConfig)?;
         log::debug!("HeritageWallet::internal_get_new_address - current_subwallet_config={current_subwallet_config:?}");
 
-        // Verify if the subwallet_config has not already been used, just override it
-        if current_subwallet_config.subwallet_firstuse_time().is_none() {
-            log::debug!(
-                "HeritageWallet::internal_get_new_address - current_subwallet_config was never used"
-            );
-            let mut new_current_subwallet_config = current_subwallet_config.clone();
-            new_current_subwallet_config.mark_subwallet_firstuse()?;
-            log::info!("HeritageWallet::internal_get_new_address - Marking previously unused SubwalletConfig as used");
-            log::debug!(
-                "HeritageWallet::internal_get_new_address - new_current_subwallet_config={new_current_subwallet_config:?}"
-            );
-            self.database_mut().safe_update_current_subwallet_config(
-                &new_current_subwallet_config,
-                Some(&current_subwallet_config),
-            )?;
-        }
         log::debug!("HeritageWallet::internal_get_new_address - get_subwallet");
         let subwallet = self.get_subwallet(&current_subwallet_config)?;
 
