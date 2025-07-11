@@ -591,15 +591,13 @@ impl TokenCache for Database {
                 log::error!("{e}");
                 heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
             })?;
-        let mut db = self.clone();
-        tokio::task::spawn_blocking(move || {
+        blocking_db_operation(self.clone(), move |mut db| {
             db._update_item(TOKEN_KEY, token_bytes).map_err(|e| {
                 log::error!("{e}");
                 heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
             })
         })
-        .await
-        .unwrap()?;
+        .await?;
         Ok(())
     }
 
@@ -609,29 +607,24 @@ impl TokenCache for Database {
         Option<heritage_service_api_client::Tokens>,
         heritage_service_api_client::Error,
     > {
-        let db = self.clone();
-        tokio::task::spawn_blocking(move || {
+        blocking_db_operation(self.clone(), move |db| {
             db.get_item(TOKEN_KEY).map_err(|e| {
                 log::error!("{e}");
                 heritage_service_api_client::Error::TokenCacheReadError(e.to_string())
             })
         })
         .await
-        .unwrap()
     }
 
     async fn clear(&mut self) -> core::result::Result<bool, heritage_service_api_client::Error> {
-        let mut db = self.clone();
-
-        Ok(tokio::task::spawn_blocking(move || {
+        Ok(blocking_db_operation(self.clone(), move |mut db| {
             db.delete_item::<heritage_service_api_client::Tokens>(TOKEN_KEY)
                 .map_err(|e| {
                     log::error!("{e}");
                     heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
                 })
         })
-        .await
-        .unwrap()?
+        .await?
         .is_some())
     }
 }
