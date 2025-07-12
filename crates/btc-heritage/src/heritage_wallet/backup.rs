@@ -6,8 +6,7 @@ use crate::miniscript::{Descriptor, DescriptorPublicKey};
 use crate::bitcoin::bip32::Fingerprint;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SubwalletDescriptorBackup {
     pub external_descriptor: Descriptor<DescriptorPublicKey>,
     pub change_descriptor: Descriptor<DescriptorPublicKey>,
@@ -41,9 +40,8 @@ impl SubwalletDescriptorBackup {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
-#[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
 pub struct HeritageWalletBackup(pub(super) Vec<SubwalletDescriptorBackup>);
 impl IntoIterator for HeritageWalletBackup {
     type Item = SubwalletDescriptorBackup;
