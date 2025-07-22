@@ -1,4 +1,4 @@
-use core::{ops::Deref, str::FromStr};
+use core::ops::Deref;
 use std::collections::BTreeSet;
 
 use btc_heritage::{
@@ -240,7 +240,7 @@ impl std::fmt::Display for EmailAddress {
 impl TryFrom<&str> for EmailAddress {
     type Error = String;
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        EmailAddress::try_from(value.to_owned())
+        value.parse()
     }
 }
 
@@ -253,10 +253,18 @@ fn re() -> &'static regex::Regex {
 impl TryFrom<String> for EmailAddress {
     type Error = String;
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if re().is_match(&value) {
-            Ok(Self(value))
+        value.parse()
+    }
+}
+
+impl core::str::FromStr for EmailAddress {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if re().is_match(s) {
+            Ok(Self(s.to_string()))
         } else {
-            Err(format!("{value} is not a valid Email address"))
+            Err(format!("{s} is not a valid Email address"))
         }
     }
 }
@@ -299,7 +307,7 @@ pub enum HeirPermission {
     FullDescriptor,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct HeirPermissions(BTreeSet<HeirPermission>);
 impl Deref for HeirPermissions {
@@ -369,10 +377,10 @@ pub struct HeirUpdate {
 #[serde(try_from = "String", into = "String")]
 struct StringPsbt(PartiallySignedTransaction);
 impl TryFrom<String> for StringPsbt {
-    type Error = <PartiallySignedTransaction as FromStr>::Err;
+    type Error = <PartiallySignedTransaction as core::str::FromStr>::Err;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        Ok(StringPsbt(PartiallySignedTransaction::from_str(&value)?))
+        Ok(StringPsbt(value.parse()?))
     }
 }
 impl From<StringPsbt> for String {

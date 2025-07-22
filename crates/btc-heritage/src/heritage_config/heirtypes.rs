@@ -1,4 +1,4 @@
-use core::{fmt::Display, hash::Hash, str::FromStr};
+use core::{fmt::Display, hash::Hash};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -80,12 +80,11 @@ impl TryFrom<DescriptorPublicKey> for SingleHeirPubkey {
         Ok(Self(descriptor))
     }
 }
+impl core::str::FromStr for SingleHeirPubkey {
+    type Err = Error;
 
-impl TryFrom<&str> for SingleHeirPubkey {
-    type Error = Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let descriptor = DescriptorPublicKey::from_str(value).map_err(|e| {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let descriptor = s.parse::<DescriptorPublicKey>().map_err(|e| {
             log::error!("Error parsing DescriptorPublicKey string: {e:#}");
             Error::InvalidDescriptorPublicKey("Parse error")
         })?;
@@ -93,11 +92,19 @@ impl TryFrom<&str> for SingleHeirPubkey {
     }
 }
 
+impl TryFrom<&str> for SingleHeirPubkey {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
 impl TryFrom<String> for SingleHeirPubkey {
     type Error = Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        SingleHeirPubkey::try_from(value.as_str())
+        value.parse()
     }
 }
 
