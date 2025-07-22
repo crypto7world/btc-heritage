@@ -1,5 +1,5 @@
 use core::ops::Deref;
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::DerefMut};
 
 use btc_heritage::{
     bitcoin::OutPoint,
@@ -286,8 +286,11 @@ pub enum HeirContact {
 /// reach the point in time when they can actually spend the funds.
 ///
 /// Note that in case an heritage goes to maturity for some reason, the heir will be
-/// notified using its contact informations and they will also have all view permissions
-/// on the specific HeritageConfig expect the ability to see who are the other heirs
+/// notified using its contact informations and they will also have at least the
+/// following permissions on the mature Heritage:
+/// - IsHeir
+/// - Amount
+/// - Maturity
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HeirPermission {
@@ -315,6 +318,11 @@ impl Deref for HeirPermissions {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+impl DerefMut for HeirPermissions {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 impl<T: IntoIterator<Item = HeirPermission>> From<T> for HeirPermissions {
