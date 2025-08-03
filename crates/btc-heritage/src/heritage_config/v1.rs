@@ -7,10 +7,8 @@ use crate::{
     bitcoin::{
         absolute::LOCK_TIME_THRESHOLD,
         bip32::{DerivationPath, Fingerprint},
-        Network,
     },
     errors::Error,
-    utils::bitcoin_network,
 };
 
 const SEC_IN_A_DAY: u64 = 24 * 60 * 60;
@@ -19,7 +17,7 @@ const SEC_IN_A_DAY: u64 = 24 * 60 * 60;
 // 24 hours in a day, 6 blocks per hour
 const BLOCKS_IN_A_DAY: u16 = 24 * 6;
 
-#[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct Days(u16);
 impl Default for Days {
@@ -123,71 +121,124 @@ impl Heritage {
     }
 }
 
-#[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct ReferenceTimestamp(u64);
-impl Default for ReferenceTimestamp {
-    fn default() -> Self {
-        // Compute the reference_timestamp by taking the current timestamp and rounding it to today at noon
-        // In effect, this is "Today at 12:00 (24H) UTC"
-        let current_time = crate::utils::timestamp_now();
-        let distance_from_midnight = current_time % SEC_IN_A_DAY;
-        let reference_timestamp = current_time - distance_from_midnight + SEC_IN_A_DAY / 2;
+mod reference_timestamp {
+    use std::marker::PhantomData;
 
-        Self(reference_timestamp)
-    }
-}
-impl ReferenceTimestamp {
-    pub fn as_u64(&self) -> u64 {
-        self.0
-    }
-}
+    use super::{Deserialize, Serialize, LOCK_TIME_THRESHOLD, SEC_IN_A_DAY};
 
-#[derive(Debug, Clone, Hash, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct MinimumLockTime(Days);
-impl Default for MinimumLockTime {
-    fn default() -> Self {
-        Self(Days(30))
-    }
-}
-impl From<Days> for MinimumLockTime {
-    fn from(value: Days) -> Self {
-        MinimumLockTime(value)
-    }
-}
-impl core::ops::Add<Self> for MinimumLockTime {
-    type Output = Self;
+    #[derive(Debug, Clone, Hash, Copy, Serialize, PartialEq, Eq)]
+    #[serde(transparent)]
+    pub struct ReferenceTimestamp(pub(super) u64, PhantomData<()>);
+    impl Default for ReferenceTimestamp {
+        fn default() -> Self {
+            // Compute the reference_timestamp by taking the current timestamp and rounding it to today at noon
+            // In effect, this is "Today at 12:00 (24H) UTC"
+            let current_time = crate::utils::timestamp_now();
+            let distance_from_midnight = current_time % SEC_IN_A_DAY;
+            let reference_timestamp = current_time - distance_from_midnight + SEC_IN_A_DAY / 2;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        MinimumLockTime(self.0 + rhs.0)
+            Self::new(reference_timestamp)
+        }
+    }
+    impl ReferenceTimestamp {
+        pub fn new(reference_time: u64) -> Self {
+            // No matter what, this should always be greater than LOCK_TIME_THRESHOLD (500_000_000)
+            assert!(reference_time > LOCK_TIME_THRESHOLD as u64, "reference_time cannot be less or equal to {LOCK_TIME_THRESHOLD} because it would change the meaning of absolute_lock_time");
+            Self(reference_time, PhantomData)
+        }
+        pub fn as_u64(&self) -> u64 {
+            self.0
+        }
+    }
+    impl<'de> Deserialize<'de> for ReferenceTimestamp {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            Ok(ReferenceTimestamp::new(u64::deserialize(deserializer)?))
+        }
     }
 }
-impl core::ops::Add<Days> for MinimumLockTime {
-    type Output = Self;
+pub use reference_timestamp::ReferenceTimestamp;
 
-    fn add(self, rhs: Days) -> Self::Output {
-        MinimumLockTime(Days(self.0 .0 + rhs.0))
-    }
-}
-impl<T> core::ops::Mul<T> for MinimumLockTime
-where
-    Days: core::ops::Mul<T, Output = Days>,
-{
-    type Output = Self;
-    fn mul(self, rhs: T) -> Self::Output {
-        Self(self.0 * rhs)
-    }
-}
-impl MinimumLockTime {
-    pub fn as_blocks(&self) -> u16 {
-        u16::try_from(self.0 .0 * BLOCKS_IN_A_DAY).unwrap_or(u16::MAX)
-    }
+mod minimum_lock_time {
+    use std::marker::PhantomData;
 
-    pub fn as_days(&self) -> &Days {
-        &self.0
+    use super::{Days, Deserialize, Serialize, BLOCKS_IN_A_DAY};
+    use crate::{bitcoin::Network, utils::bitcoin_network};
+
+    #[derive(Debug, Clone, Hash, Copy, Serialize, PartialEq, Eq)]
+    #[serde(transparent)]
+    pub struct MinimumLockTime(pub(super) Days, PhantomData<()>);
+    impl Default for MinimumLockTime {
+        fn default() -> Self {
+            Self::new(Days(30))
+        }
+    }
+    impl From<Days> for MinimumLockTime {
+        fn from(value: Days) -> Self {
+            MinimumLockTime::new(value)
+        }
+    }
+    impl core::ops::Add<Self> for MinimumLockTime {
+        type Output = Self;
+
+        fn add(self, rhs: Self) -> Self::Output {
+            MinimumLockTime::new(self.0 + rhs.0)
+        }
+    }
+    impl core::ops::Add<Days> for MinimumLockTime {
+        type Output = Self;
+
+        fn add(self, rhs: Days) -> Self::Output {
+            MinimumLockTime::new(Days(self.0 .0 + rhs.0))
+        }
+    }
+    impl<T> core::ops::Mul<T> for MinimumLockTime
+    where
+        Days: core::ops::Mul<T, Output = Days>,
+    {
+        type Output = Self;
+        fn mul(self, rhs: T) -> Self::Output {
+            Self::new(self.0 * rhs)
+        }
+    }
+    impl MinimumLockTime {
+        pub fn new(minimum_lock_time: Days) -> Self {
+            // No matter what, this should always be > 10 days in production
+            if bitcoin_network::get() == Network::Bitcoin {
+                assert!(
+                    minimum_lock_time >= Days(10),
+                    "minimum_lock_time cannot be less than 10 days as a safety mesure"
+                );
+            } else {
+                // Else simply ensure it is present, with a minimum of 1 day
+                assert!(
+                    minimum_lock_time >= Days(1),
+                    "minimum_lock_time cannot be less than 1 day as a safety mesure"
+                );
+            }
+            Self(minimum_lock_time, PhantomData)
+        }
+        pub fn as_blocks(&self) -> u16 {
+            u16::try_from(self.0 .0 * BLOCKS_IN_A_DAY).unwrap_or(u16::MAX)
+        }
+
+        pub fn as_days(&self) -> &Days {
+            &self.0
+        }
+    }
+    impl<'de> Deserialize<'de> for MinimumLockTime {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            Ok(MinimumLockTime::new(Days(u16::deserialize(deserializer)?)))
+        }
     }
 }
+pub use minimum_lock_time::MinimumLockTime;
+
 // There are only two ways of creating this Struct:
 //  - through the HeritageConfigBuilder -> it will create a sorted Vec
 //  - through Deserializing -> the custom Deserializer ensure the Vec is sorted
@@ -546,9 +597,7 @@ impl HeritageConfigBuilder {
     /// Panics if `reference_time` is less than or equal to `LOCK_TIME_THRESHOLD` (500,000,000),
     /// as this would change the semantics of absolute lock time from timestamp to block height.
     pub fn reference_time(mut self, reference_time: u64) -> Self {
-        // No matter what, this should always be greater than LOCK_TIME_THRESHOLD (500_000_000)
-        assert!(reference_time > LOCK_TIME_THRESHOLD as u64, "reference_time cannot be less or equal to {LOCK_TIME_THRESHOLD} because it would change the meaning of absolute_lock_time");
-        self.reference_timestamp = ReferenceTimestamp(reference_time);
+        self.reference_timestamp = ReferenceTimestamp::new(reference_time);
         self
     }
 
@@ -565,20 +614,7 @@ impl HeritageConfigBuilder {
     /// - On Bitcoin mainnet: `minimum_lock_time` is less than 10 days
     /// - On other networks: `minimum_lock_time` is less than 1 day
     pub fn minimum_lock_time(mut self, minimum_lock_time: u16) -> Self {
-        // No matter what, this should always be > 10 days in production
-        if bitcoin_network::get() == Network::Bitcoin {
-            assert!(
-                minimum_lock_time >= 10,
-                "minimum_lock_time cannot be less than 10 days as a safety mesure"
-            );
-        } else {
-            // Else simply ensure it is present, with a minimum of 1 day
-            assert!(
-                minimum_lock_time >= 1,
-                "minimum_lock_time cannot be less than 1 day as a safety mesure"
-            );
-        }
-        self.minimum_lock_time = MinimumLockTime(Days(minimum_lock_time));
+        self.minimum_lock_time = MinimumLockTime::new(Days(minimum_lock_time));
         self
     }
 
@@ -1128,5 +1164,61 @@ mod tests {
         // This test assumes we're not on Bitcoin mainnet
         // If we are on mainnet, the panic message will be different but it will still panic
         HeritageConfigBuilder::default().minimum_lock_time(0);
+    }
+
+    #[test]
+    #[should_panic(expected = "reference_time cannot be less or equal to")]
+    fn reference_time_deser_panics_with_threshold_value() {
+        let h1 = get_test_heritage(TestHeritage::Backup).time_lock(90);
+
+        let VHeritageConfig(IHC::V1(_)): VHeritageConfig = serde_json::from_str(&format!(
+            r#"{{
+                "version": "v1",
+                "heritages":[
+                    {}
+                ],
+                "minimum_lock_time":90,"reference_timestamp":{LOCK_TIME_THRESHOLD}
+            }}"#,
+            serde_json::to_string(&h1).unwrap(),
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "reference_time cannot be less or equal to")]
+    fn reference_time_deser_panics_with_low_value() {
+        let h1 = get_test_heritage(TestHeritage::Backup).time_lock(90);
+
+        let VHeritageConfig(IHC::V1(_)): VHeritageConfig = serde_json::from_str(&format!(
+            r#"{{
+                    "version": "v1",
+                    "heritages":[
+                        {}
+                    ],
+                    "minimum_lock_time":90,"reference_timestamp":400000000
+                }}"#,
+            serde_json::to_string(&h1).unwrap(),
+        ))
+        .unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "minimum_lock_time cannot be less than 1 day")]
+    fn minimum_lock_deser_time_panics_with_zero() {
+        // This test assumes we're not on Bitcoin mainnet
+        // If we are on mainnet, the panic message will be different but it will still panic
+        let h1 = get_test_heritage(TestHeritage::Backup).time_lock(90);
+
+        let VHeritageConfig(IHC::V1(_)): VHeritageConfig = serde_json::from_str(&format!(
+            r#"{{
+                    "version": "v1",
+                    "heritages":[
+                        {}
+                    ],
+                    "minimum_lock_time":0,"reference_timestamp":1702900800
+                }}"#,
+            serde_json::to_string(&h1).unwrap(),
+        ))
+        .unwrap();
     }
 }
