@@ -7,8 +7,10 @@ use crate::{
     bitcoin::{
         absolute::LOCK_TIME_THRESHOLD,
         bip32::{DerivationPath, Fingerprint},
+        Network,
     },
     errors::Error,
+    utils::bitcoin_network,
 };
 
 const SEC_IN_A_DAY: u64 = 24 * 60 * 60;
@@ -310,13 +312,7 @@ impl HeritageConfig {
         else {
             unreachable!("In this version of the software, there is always Some(...) values for an Heir in the SpendConditionTester");
         };
-        // No matter what, this should always be greater than LOCK_TIME_THRESHOLD (500_000_000)
-        assert!(absolute_lock_time > LOCK_TIME_THRESHOLD as u64, "absolute_lock_time cannot be less or equal to {LOCK_TIME_THRESHOLD} because it changes its meaning");
-        // No matter what, this should always be > 1440 blocks = 10 days
-        assert!(
-            rel_lock_time >= 1440,
-            "rel_lock_time cannot be less than 1440 as a safety mesure"
-        );
+
         (rel_lock_time, absolute_lock_time)
     }
 
@@ -520,26 +516,96 @@ pub struct HeritageConfigBuilder {
 }
 
 impl HeritageConfigBuilder {
+    /// Adds a single heritage configuration to the builder.
+    ///
+    /// This method appends a new heritage entry to the list of heritages that will be
+    /// included in the final configuration.
     pub fn add_heritage(mut self, heritage: Heritage) -> Self {
         self.heritages.push(heritage);
         self
     }
+
+    /// Adds multiple heritage configurations from an iterator.
+    ///
+    /// This method is useful when you have a collection of heritage configurations
+    /// that need to be added to the builder at once.
     pub fn expand_heritages(mut self, heritages: impl IntoIterator<Item = Heritage>) -> Self {
         self.heritages
             .append(&mut Vec::from_iter(heritages.into_iter()));
         self
     }
+
+    /// Sets the reference timestamp for the heritage configuration.
+    ///
+    /// The reference timestamp is used as the basis for calculating absolute lock times
+    /// for heritage transactions. It must be greater than the Bitcoin `LOCK_TIME_THRESHOLD`
+    /// (500,000,000) to ensure it's interpreted as a Unix timestamp rather than a block height.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `reference_time` is less than or equal to `LOCK_TIME_THRESHOLD` (500,000,000),
+    /// as this would change the semantics of absolute lock time from timestamp to block height.
     pub fn reference_time(mut self, reference_time: u64) -> Self {
+        // No matter what, this should always be greater than LOCK_TIME_THRESHOLD (500_000_000)
+        assert!(reference_time > LOCK_TIME_THRESHOLD as u64, "reference_time cannot be less or equal to {LOCK_TIME_THRESHOLD} because it would change the meaning of absolute_lock_time");
         self.reference_timestamp = ReferenceTimestamp(reference_time);
         self
     }
+
+    /// Sets the minimum lock time in days for heritage transactions.
+    ///
+    /// The minimum lock time acts as a safety measure to prevent accidental immediate
+    /// inheritance claims. The required minimum varies by network:
+    /// - Bitcoin mainnet: minimum 10 days
+    /// - Test networks: minimum 1 day
+    ///
+    /// # Panics
+    ///
+    /// Panics if:
+    /// - On Bitcoin mainnet: `minimum_lock_time` is less than 10 days
+    /// - On other networks: `minimum_lock_time` is less than 1 day
     pub fn minimum_lock_time(mut self, minimum_lock_time: u16) -> Self {
+        // No matter what, this should always be > 10 days in production
+        if bitcoin_network::get() == Network::Bitcoin {
+            assert!(
+                minimum_lock_time >= 10,
+                "minimum_lock_time cannot be less than 10 days as a safety mesure"
+            );
+        } else {
+            // Else simply ensure it is present, with a minimum of 1 day
+            assert!(
+                minimum_lock_time >= 1,
+                "minimum_lock_time cannot be less than 1 day as a safety mesure"
+            );
+        }
         self.minimum_lock_time = MinimumLockTime(Days(minimum_lock_time));
         self
     }
+
+    /// Builds the final heritage configuration as a version-agnostic type.
+    ///
+    /// This method wraps the V1-specific configuration in the generic `HeritageConfig`
+    /// enum, allowing for future version compatibility.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use btc_heritage::heritage_config::v1::HeritageConfigBuilder;
+    ///
+    /// let config = HeritageConfigBuilder::default()
+    ///     .reference_time(1702900800)
+    ///     .minimum_lock_time(30)
+    ///     .build();
+    /// ```
     pub fn build(self) -> super::HeritageConfig {
         super::HeritageConfig(super::InnerHeritageConfig::V1(self.build_v1()))
     }
+
+    /// Builds the V1-specific heritage configuration.
+    ///
+    /// This method creates the final `HeritageConfig` struct, normalizing the heritage
+    /// list to ensure proper ordering and validation. The normalization process sorts
+    /// heritages by lock time and validates that there are no duplicate configurations.
     pub fn build_v1(self) -> HeritageConfig {
         // Create Heritages from the Vec of Heritage and normalize it
         let mut heritages = Heritages(self.heritages);
@@ -598,9 +664,10 @@ mod tests {
     use crate::heritage_config::FromDescriptorScripts;
     use crate::tests::*;
 
-    use super::super::HeritageConfig as VHeritageConfig;
-    use super::super::InnerHeritageConfig as IHC;
-    use super::HeritageConfig as HeritageConfigV1;
+    use super::{
+        super::{HeritageConfig as VHeritageConfig, InnerHeritageConfig as IHC},
+        HeritageConfig as HeritageConfigV1, HeritageConfigBuilder, LOCK_TIME_THRESHOLD,
+    };
 
     #[test]
     fn heritage_config_always_sorted() {
@@ -1034,5 +1101,32 @@ mod tests {
                 .unwrap();
             assert_eq!(fragment, restored_fragment, "Failed for {fragment}");
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "reference_time cannot be less or equal to")]
+    fn reference_time_panics_with_threshold_value() {
+        HeritageConfigBuilder::default().reference_time(LOCK_TIME_THRESHOLD as u64);
+    }
+
+    #[test]
+    #[should_panic(expected = "reference_time cannot be less or equal to")]
+    fn reference_time_panics_with_low_value() {
+        HeritageConfigBuilder::default().reference_time(400_000_000);
+    }
+
+    #[test]
+    fn reference_time_accepts_valid_timestamp() {
+        // Should not panic with a valid timestamp (greater than threshold)
+        let builder = HeritageConfigBuilder::default().reference_time(1702900800);
+        assert_eq!(builder.reference_timestamp.as_u64(), 1702900800);
+    }
+
+    #[test]
+    #[should_panic(expected = "minimum_lock_time cannot be less than 1 day")]
+    fn minimum_lock_time_panics_with_zero() {
+        // This test assumes we're not on Bitcoin mainnet
+        // If we are on mainnet, the panic message will be different but it will still panic
+        HeritageConfigBuilder::default().minimum_lock_time(0);
     }
 }
