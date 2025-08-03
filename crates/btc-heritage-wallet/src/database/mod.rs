@@ -16,7 +16,6 @@ use utils::prepare_data_dir;
 
 pub use dbitem::{DatabaseItem, DatabaseSingleItem};
 pub use heritage_db::HeritageWalletDatabase;
-pub use utils::blocking_db_operation;
 
 const DEFAULT_TABLE_NAME: &'static str = "heritage";
 const DEFAULT_TABLE: TableDefinition<&str, &[u8]> = TableDefinition::new(DEFAULT_TABLE_NAME);
@@ -538,9 +537,46 @@ impl Database {
             Ok(vec![])
         }
     }
-    // pub async fn list_keys(&self, prefix: Option<&str>) -> Result<Vec<String>> {
-    //     tokio::task::block_in_place(|| self._list_keys(prefix))
-    // }
+    /// Executes a database operation in a blocking context using tokio's blocking thread pool
+    ///
+    /// This function is used to perform database operations that may block the async runtime
+    /// by moving them to a dedicated blocking thread pool. This is essential for maintaining
+    /// async performance when dealing with potentially blocking database operations.
+    ///
+    /// # Parameters
+    ///
+    /// * `f` - A closure that takes a [Database] and returns a result of type `R`
+    ///
+    /// # Returns
+    ///
+    /// Returns the result of the closure execution
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use btc_heritage_wallet::Database;
+    /// # async fn example(db: Database) -> Result<(), Box<dyn std::error::Error>> {
+    /// let result = db.blocking_operation(|db| {
+    ///     // Perform blocking database operation here
+    ///     db.get_item::<String>("some_key")
+    /// }).await;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics if the spawned blocking task fails to execute (which should be rare
+    /// and indicates a serious system issue)
+    pub async fn blocking_operation<
+        R: Send + 'static,
+        F: FnOnce(Database) -> R + Send + 'static,
+    >(
+        self,
+        f: F,
+    ) -> R {
+        tokio::task::spawn_blocking(move || f(self)).await.unwrap()
+    }
 
     fn _read_tnx(&self) -> Result<Option<ReadOnlyTable<&'static str, &'static [u8]>>> {
         Ok(
@@ -591,13 +627,14 @@ impl TokenCache for Database {
                 log::error!("{e}");
                 heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
             })?;
-        blocking_db_operation(self.clone(), move |mut db| {
-            db._update_item(TOKEN_KEY, token_bytes).map_err(|e| {
-                log::error!("{e}");
-                heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
+        self.clone()
+            .blocking_operation(move |mut db| {
+                db._update_item(TOKEN_KEY, token_bytes).map_err(|e| {
+                    log::error!("{e}");
+                    heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
+                })
             })
-        })
-        .await?;
+            .await?;
         Ok(())
     }
 
@@ -607,24 +644,27 @@ impl TokenCache for Database {
         Option<heritage_service_api_client::Tokens>,
         heritage_service_api_client::Error,
     > {
-        blocking_db_operation(self.clone(), move |db| {
-            db.get_item(TOKEN_KEY).map_err(|e| {
-                log::error!("{e}");
-                heritage_service_api_client::Error::TokenCacheReadError(e.to_string())
+        self.clone()
+            .blocking_operation(move |db| {
+                db.get_item(TOKEN_KEY).map_err(|e| {
+                    log::error!("{e}");
+                    heritage_service_api_client::Error::TokenCacheReadError(e.to_string())
+                })
             })
-        })
-        .await
+            .await
     }
 
     async fn clear(&mut self) -> core::result::Result<bool, heritage_service_api_client::Error> {
-        Ok(blocking_db_operation(self.clone(), move |mut db| {
-            db.delete_item::<heritage_service_api_client::Tokens>(TOKEN_KEY)
-                .map_err(|e| {
-                    log::error!("{e}");
-                    heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
-                })
-        })
-        .await?
-        .is_some())
+        Ok(self
+            .clone()
+            .blocking_operation(move |mut db| {
+                db.delete_item::<heritage_service_api_client::Tokens>(TOKEN_KEY)
+                    .map_err(|e| {
+                        log::error!("{e}");
+                        heritage_service_api_client::Error::TokenCacheWriteError(e.to_string())
+                    })
+            })
+            .await?
+            .is_some())
     }
 }

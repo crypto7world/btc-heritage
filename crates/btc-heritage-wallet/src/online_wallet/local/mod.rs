@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    database::{blocking_db_operation, dbitem::impl_db_single_item, HeritageWalletDatabase},
+    database::{dbitem::impl_db_single_item, HeritageWalletDatabase},
     errors::{Error, Result},
     BoundFingerprint, Broadcaster, Database,
 };
@@ -307,7 +307,8 @@ impl LocalHeritageWallet {
     pub async fn init_heritage_wallet(&mut self, db: Database) -> Result<()> {
         let id = self.heritage_wallet_id.clone();
         self.heritage_wallet = Some(Arc::new(Mutex::new(HeritageWallet::new(
-            blocking_db_operation(db, move |db| HeritageWalletDatabase::get(&id, db)).await?,
+            db.blocking_operation(move |db| HeritageWalletDatabase::get(&id, db))
+                .await?,
         ))));
         let wallet_fg = self.wallet_call(|hw| hw.fingerprint()).await?;
         if wallet_fg != self.fingerprint && self.fingerprint.is_some() {
