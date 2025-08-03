@@ -65,14 +65,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     pub fn generate_backup(&self) -> Result<HeritageWalletBackup> {
         log::debug!("HeritageWallet::generate_backup");
+        let obsolete_subwallet_configs = self.database().list_obsolete_subwallet_configs()?;
+        let current_subwallet_config = self
+            .database()
+            .get_subwallet_config(SubwalletConfigId::Current)?;
         Ok(HeritageWalletBackup(
-            self.database()
-                .list_obsolete_subwallet_configs()?
+            obsolete_subwallet_configs
                 .into_iter()
-                .chain(
-                    self.database()
-                        .get_subwallet_config(SubwalletConfigId::Current)?,
-                )
+                .chain(current_subwallet_config)
                 .map(|swc| {
                     // This is to avoid loading the subwallet uselessly
                     // If the subwallet was never used, then it cannot have last_indexes
@@ -194,14 +194,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             return Ok(vec![]);
         };
 
-        let intermediate_results = self
+        let obsolete_subwallet_configs = self.database().list_obsolete_subwallet_configs()?;
+        let current_subwallet_config = self
             .database()
-            .list_obsolete_subwallet_configs()?
+            .get_subwallet_config(SubwalletConfigId::Current)?;
+
+        let intermediate_results = obsolete_subwallet_configs
             .into_iter()
-            .chain(
-                self.database()
-                    .get_subwallet_config(SubwalletConfigId::Current)?,
-            )
+            .chain(current_subwallet_config)
             // Map each subwallet config to a WalletAddress iterator
             .map(|swc| {
                 // Retrieve the derivation path of the account xpub
