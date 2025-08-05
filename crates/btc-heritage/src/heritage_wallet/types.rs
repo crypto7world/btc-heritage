@@ -375,18 +375,18 @@ impl HeritageUtxo {
                         (
                             Some(BlockTime {
                                 height: confirmation_height,
-                                ..
+                                timestamp: confirmation_timestamp,
                             }),
                             Some(BlockTime {
                                 height: current_height,
-                                timestamp: current_timestamp,
+                                ..
                             }),
                         ) => {
                             // Calculate blocks still needed after current height for relative lock to expire
                             let missing_blocks = (confirmation_height + relative_block_lock as u32)
                                 .checked_sub(current_height)
                                 .unwrap_or(0);
-                            (current_timestamp, missing_blocks)
+                            (confirmation_timestamp, missing_blocks)
                         }
                         // UTXO is confirmed but current blockchain state is unknown
                         // Use confirmation time as reference point and do as if it was the present
