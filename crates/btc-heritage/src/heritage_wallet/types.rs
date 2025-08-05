@@ -324,11 +324,90 @@ pub struct HeritageUtxo {
     pub heritage_config: HeritageConfig,
 }
 impl HeritageUtxo {
-    /// Returns the timestamp at which the given [HeirConfig] will be able to spend this [HeritageUtxo].
-    /// If the heir is not present the the [HeritageConfig], the function returns [None].
+    /// Returns the Unix timestamp at which the given [HeirConfig] will be able to spend this [HeritageUtxo].
     ///
-    /// Beware that this MAY be an estimation based on the average Bitcoin network blocktime.
+    /// This method calculates when an heir can claim inheritance by considering both absolute
+    /// and relative time locks defined in the heritage configuration. The calculation takes
+    /// into account:
+    ///
+    /// - **Absolute timelock**: A fixed timestamp when spending becomes possible
+    /// - **Relative timelock**: A number of blocks that must pass after UTXO confirmation
+    /// - **UTXO confirmation status**: Uses current time for unconfirmed UTXOs
+    ///
+    /// The heir can spend the UTXO when **both** conditions are met (whichever is later).
+    ///
+    /// # Parameters
+    ///
+    /// * `heir_config` - The heir's configuration containing their public key information
+    ///
+    /// # Returns
+    ///
+    /// * `Some(timestamp)` - Unix timestamp when the heir can spend this UTXO
+    /// * `None` - If the heir is not present in the [HeritageConfig]
+    ///
+    /// # Note
+    ///
+    /// The returned timestamp is always an **estimation** for relative timelocks, as it uses
+    /// the average Bitcoin block time (approximately 10 minutes) to convert block-based
+    /// delays into time-based estimates. Actual spending availability may vary depending
+    /// on actual block production times.
+    ///
+    /// For unconfirmed UTXOs, the calculation assumes confirmation at the current time,
+    /// which may result in optimistic estimates.
     pub fn estimate_heir_spending_timestamp(&self, heir_config: &HeirConfig) -> Option<u64> {
+        self.get_heir_spending_conditions(heir_config)
+            .map(|sc| sc.0)
+    }
+
+    /// Returns the block height at which the relative timelock expires for the given heir.
+    ///
+    /// This method calculates the specific block height when the relative timelock
+    /// component of the heritage configuration will be satisfied, allowing the heir
+    /// to spend this UTXO (assuming any absolute timelock has also been satisfied).
+    ///
+    /// # Parameters
+    ///
+    /// * `heir_config` - The heir's configuration containing their public key information
+    ///
+    /// # Returns
+    ///
+    /// * `Some(height)` - Block height when the relative lock expires
+    /// * `None` - If the heir is not present in the [HeritageConfig] or the UTXO is unconfirmed
+    ///
+    /// # Note
+    ///
+    /// Returns `None` for unconfirmed UTXOs since relative timelocks require a confirmed
+    /// starting block height to calculate the expiration height.
+    pub fn get_heir_relative_lock_expiration_height(
+        &self,
+        heir_config: &HeirConfig,
+    ) -> Option<u32> {
+        self.get_heir_spending_conditions(heir_config)
+            .map(|sc| sc.1)
+            .flatten()
+    }
+
+    /// Returns the complete spending conditions for the given heir configuration.
+    ///
+    /// This method computes both the estimated spending timestamp and the block height
+    /// at which the relative timelock expires. It considers both absolute and relative
+    /// timelocks defined in the heritage configuration.
+    ///
+    /// # Parameters
+    ///
+    /// * `heir_config` - The heir's configuration containing their public key information
+    ///
+    /// # Returns
+    ///
+    /// * `Some((timestamp, block_height))` - Tuple containing:
+    ///   - `timestamp`: Unix timestamp when spending becomes possible (max of absolute and relative locks);
+    /// it may be an estimate, see [HeritageUtxo::estimate_heir_spending_timestamp]
+    ///   - `block_height`: Optional block height when relative lock expires (None for unconfirmed UTXOs)
+    /// * `None` - If the heir is not present in the [HeritageConfig]
+    pub fn get_heir_spending_conditions(
+        &self,
+        heir_config: &HeirConfig,
+    ) -> Option<(u64, Option<u32>)> {
         self.heritage_config
             .get_heritage_explorer(heir_config)
             .map(|explo| {
@@ -340,17 +419,24 @@ impl HeritageUtxo {
                     .get_relative_block_lock()
                     .expect("an Heir always have a relative_block_lock in v1");
 
-                let confirmation_timestamp =
+                let (confirmation_timestamp, confirmation_height) =
                     if let Some(confirmation_time) = &self.confirmation_time {
-                        confirmation_time.timestamp
+                        (confirmation_time.timestamp, Some(confirmation_time.height))
                     } else {
                         // If the UTXO is not yet confirmed, we do as-if it was confirmed now.
-                        crate::utils::timestamp_now()
+                        (crate::utils::timestamp_now(), None)
                     };
 
                 let relative_lock_ts_estimate = confirmation_timestamp
                     + crate::utils::AVERAGE_BLOCK_TIME_SEC as u64 * relative_block_lock as u64;
-                spend_ts.max(relative_lock_ts_estimate)
+
+                let relative_lock_expiration_height =
+                    confirmation_height.map(|ch| ch + relative_block_lock as u32);
+
+                (
+                    spend_ts.max(relative_lock_ts_estimate),
+                    relative_lock_expiration_height,
+                )
             })
     }
 }
