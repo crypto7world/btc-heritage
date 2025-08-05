@@ -23,6 +23,9 @@ impl Heir {
             key_provider,
         }
     }
+    pub fn strip_key_provider(&mut self) {
+        self.key_provider = AnyKeyProvider::None;
+    }
 }
 crate::database::dbitem::impl_db_item!(Heir, "heir#", "default_heir_name");
 
