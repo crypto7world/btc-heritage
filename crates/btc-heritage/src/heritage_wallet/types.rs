@@ -335,7 +335,11 @@ impl HeritageUtxo {
                 let spend_conditions = explo.get_spend_conditions();
                 let spend_ts = spend_conditions
                     .get_spendable_timestamp()
-                    .expect("an Heir always have a timelock");
+                    .expect("an Heir always have a timelock in v1");
+                let relative_block_lock = spend_conditions
+                    .get_relative_block_lock()
+                    .expect("an Heir always have a relative_block_lock in v1");
+
                 let confirmation_timestamp =
                     if let Some(confirmation_time) = &self.confirmation_time {
                         confirmation_time.timestamp
@@ -343,13 +347,10 @@ impl HeritageUtxo {
                         // If the UTXO is not yet confirmed, we do as-if it was confirmed now.
                         crate::utils::timestamp_now()
                     };
-                if let Some(relative_block_lock) = spend_conditions.get_relative_block_lock() {
-                    let relative_lock_ts_estimate = confirmation_timestamp
-                        + crate::utils::AVERAGE_BLOCK_TIME_SEC as u64 * relative_block_lock as u64;
-                    spend_ts.max(relative_lock_ts_estimate)
-                } else {
-                    spend_ts
-                }
+
+                let relative_lock_ts_estimate = confirmation_timestamp
+                    + crate::utils::AVERAGE_BLOCK_TIME_SEC as u64 * relative_block_lock as u64;
+                spend_ts.max(relative_lock_ts_estimate)
             })
     }
 }
