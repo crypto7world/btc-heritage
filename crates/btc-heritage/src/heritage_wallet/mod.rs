@@ -2452,12 +2452,15 @@ mod tests {
                 && hu.amount.to_sat() == 100_000_000
                 && hu.estimate_heir_spending_timestamp(
                     get_test_heritage(TestHeritage::Backup).get_heir_config(),
+                    None,
                 ) == Some(1763072000)
                 && hu.estimate_heir_spending_timestamp(
                     get_test_heritage(TestHeritage::Wife).get_heir_config(),
+                    None,
                 ) == Some(1766096000)
                 && hu.estimate_heir_spending_timestamp(
                     get_test_heritage(TestHeritage::Brother).get_heir_config(),
+                    None,
                 ) == None
         }));
 
@@ -2468,12 +2471,15 @@ mod tests {
                 && hu.amount.to_sat() == 100_000_000
                 && hu.estimate_heir_spending_timestamp(
                     get_test_heritage(TestHeritage::Backup).get_heir_config(),
+                    None,
                 ) == Some(1760480000)
                 && hu.estimate_heir_spending_timestamp(
                     get_test_heritage(TestHeritage::Wife).get_heir_config(),
+                    None,
                 ) == Some(1768256000)
                 && hu.estimate_heir_spending_timestamp(
                     get_test_heritage(TestHeritage::Brother).get_heir_config(),
+                    None,
                 ) == None
         }));
     }

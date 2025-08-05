@@ -52,6 +52,15 @@ impl LocalWallet {
 
 impl super::HeritageProvider for LocalWallet {
     async fn list_heritages(&self) -> Result<Vec<super::Heritage>> {
+        let last_sync = self
+            .local_heritage_wallet
+            .wallet_call(|wallet| Ok(wallet.get_sync_time()?))
+            .await?;
+        if last_sync.is_none() {
+            // The local wallet has never been synced, do not bother going further
+            return Ok(vec![]);
+        }
+
         let utxos = self
             .local_heritage_wallet
             .wallet_call(|wallet| Ok(wallet.database().list_utxos()?))
@@ -72,7 +81,7 @@ impl super::HeritageProvider for LocalWallet {
                     if hc.fingerprint() == self.fingerprint {
                         // If yes, then the UTXO is spendable by us, we retrieve the estimated maturity
                         let heir_spending_timestamp = utxo
-                            .estimate_heir_spending_timestamp(hc)
+                            .estimate_heir_spending_timestamp(hc, last_sync.clone())
                             .expect("cannot return none as heir_config is present");
                         // And break out of the loop
                         break Some((hc.clone(), heir_spending_timestamp, heirs_count));
@@ -88,7 +97,7 @@ impl super::HeritageProvider for LocalWallet {
             // Then we can push a new Heritage in the results
             if let Some((heir_config, maturity, heir_position)) = spend_info {
                 let next_heir_maturity = heir_config_iter.next().map(|hc| {
-                    utxo.estimate_heir_spending_timestamp(hc)
+                    utxo.estimate_heir_spending_timestamp(hc, last_sync.clone())
                         .expect("cannot return none as heir_config is present")
                 });
 
