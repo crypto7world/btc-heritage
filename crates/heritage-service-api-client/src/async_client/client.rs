@@ -8,9 +8,9 @@ use crate::{
     SubwalletConfigMeta, Synchronization, UnsignedPsbt,
 };
 use btc_heritage::{
-    bitcoin::{psbt::Psbt, Txid},
+    bitcoin::{psbt::Psbt, Network, Txid},
     heritage_wallet::{HeritageUtxo, TransactionSummary, WalletAddress},
-    utils::timestamp_now,
+    utils::{bitcoin_network, timestamp_now},
     BlockInclusionObjective, HeritageConfig, HeritageWalletBackup,
 };
 
@@ -36,10 +36,18 @@ pub struct HeritageServiceConfig {
 }
 impl Default for HeritageServiceConfig {
     fn default() -> Self {
-        Self {
-            service_api_url: Arc::from("https://api.btcherit.com/v1"),
-            auth_url: Arc::from("https://device.crypto7.world/token"),
-            auth_client_id: Arc::from("cda6031ca00d09d66c2b632448eb8fef"),
+        match bitcoin_network::get() {
+            Network::Bitcoin => Self {
+                service_api_url: Arc::from("https://api.btcherit.com/v1"),
+                auth_url: Arc::from("https://device.crypto7.world/token"),
+                auth_client_id: Arc::from("cda6031ca00d09d66c2b632448eb8fef"),
+            },
+
+            _ => Self {
+                service_api_url: Arc::from("https://api.heritage.develop.dev.crypto7.world/v1"),
+                auth_url: Arc::from("https://device.develop.dev.crypto7.world/token"),
+                auth_client_id: Arc::from("3a69c631c97e80c71048434da412e950"),
+            },
         }
     }
 }
