@@ -78,9 +78,9 @@ The 3 crates roles are:
 
 ## Usage
 
-Visit [btcherit.com][heritage-wallet-service], the online service built upon the `btc-heritage` library, to start using the **Heritage wallet** and learn more.
+Visit [btcherit.com][heritage-wallet-service], the online service built upon the `btc-heritage` library, to start using the **Heritage wallet** and learn more. You will need to install the [heritage-cli] to manage your wallet's private keys.
 
-You will need to install the [heritage-cli] to manage your wallet's private keys.
+Or simply use the brand new Heritage GUI, a full-featured desktop application for Heritage Wallets, which can work with the online service or your own Bitcoin node. See [heritage-gui]
 
 The project is in a beta-phase: I use it to manage my own BTC confidently and so can you.
 
@@ -108,12 +108,12 @@ The roadmap is accurate regarding my immediate goals for the project.
 
 - [x] Add on-chain/public TapRoot wallet capabilities to manage an Heritage wallet (wallet with an inheritance configuration you choose)
 - [x] Add off-chain/private TapRoot wallet capabilities, i.e. private key management, the ability to sign transactions
-- [x] Create a new CLI Heritage wallet tool
+- [x] Create a new CLI Heritage wallet tool (see [Heritage CLI][heritage-cli])
 - [x] Add support for hardware wallets:
   - [x] Ledger ([ledger.com](https://www.ledger.com/))
   - [ ] ~~Trezor~~ (unfortunately Taproot script paths not supported currently) ([trezor.io](https://trezor.io/))
 - [x] Capability for the wallet library to use a custom Bitcoin Core or Electrum node instead of the service
-- [ ] Create a GUI Heritage wallet tool (see [btcherit.com][heritage-wallet-service], the online service in the time being)
+- [x] Create a GUI Heritage wallet tool (see [Heritage GUI][heritage-gui])
 - [ ] Add support for MultiSig N-of-M Heir to allow kind-of inheritance sharing
 - [ ] Add privacy features to the Heritage Config renewal (split in multiple Txs, UTXO independence preservation, random temporal repartition)
 - [ ] Add lightning support
@@ -203,6 +203,7 @@ Project Link: [https://github.com/crypto7world/btc-heritage][repo-url]
 
 [heritage-wallet-service]: https://btcherit.com
 [heritage-cli]: https://github.com/crypto7world/heritage-cli
+[heritage-gui]: https://github.com/crypto7world/heritage-gui
 [repo-url]: https://github.com/crypto7world/btc-heritage
 [contributors-shield]: https://img.shields.io/github/contributors/crypto7world/btc-heritage.svg?style=for-the-badge
 [contributors-url]: https://github.com/crypto7world/btc-heritage/graphs/contributors
