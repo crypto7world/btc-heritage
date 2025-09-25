@@ -437,6 +437,19 @@ impl LedgerKey {
             .map(|(account_id, (p, id, hmac))| (*account_id, p.clone(), id.clone(), hmac.clone()))
             .collect()
     }
+
+    /// Clears all wallet policies currently registered with this LedgerKey instance.
+    ///
+    /// This method removes all registered policies from the local cache.
+    ///
+    /// # Returns
+    ///
+    /// The number of policies that were cleared from the registry
+    pub fn clear_registered_policies(&mut self) -> usize {
+        let count = self.registered_policies.len();
+        self.registered_policies.clear();
+        count
+    }
 }
 
 impl super::KeyProvider for LedgerKey {
