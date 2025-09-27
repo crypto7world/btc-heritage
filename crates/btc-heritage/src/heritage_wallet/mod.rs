@@ -24,7 +24,7 @@ use crate::{
     heritage_config::{HeritageConfig, HeritageExplorer, HeritageExplorerTrait},
     miniscript::{Miniscript, Tap},
     subwallet_config::SubwalletConfig,
-    HeirConfig,
+    utils, HeirConfig,
 };
 
 use backup::{HeritageWalletBackup, SubwalletDescriptorBackup};
@@ -1388,6 +1388,24 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .ok_or(Error::MissingCurrentSubwalletConfig)?;
         log::debug!("HeritageWallet::internal_get_new_address - current_subwallet_config={current_subwallet_config:?}");
 
+        // Verify that the current_subwallet_config uses a not-expired Heritage Config
+        let current_heritage_config = current_subwallet_config.heritage_config();
+        match current_heritage_config.version() {
+            crate::HeritageConfigVersion::V1 => {
+                let heritage_config_v1 = current_heritage_config.heritage_config_v1().unwrap();
+                let now = utils::timestamp_now();
+                let reference_ts = heritage_config_v1.reference_timestamp;
+                if heritage_config_v1
+                    .iter_heritages()
+                    .any(|h| reference_ts + h.time_lock < now)
+                {
+                    Err(Error::CannotGenerateNewAddress)
+                } else {
+                    Ok(())
+                }
+            }
+        }?;
+
         log::debug!("HeritageWallet::internal_get_new_address - get_subwallet");
         let subwallet = self.get_subwallet(&current_subwallet_config)?;
 
@@ -1686,7 +1704,8 @@ mod tests {
             WalletSync,
         },
         database::{BatchDatabase, SyncTime},
-        Balance, BlockTime, Error, FeeRate, KeychainKind, LocalUtxo, TransactionDetails,
+        Balance, BlockTime, Error as BdkError, FeeRate, KeychainKind, LocalUtxo,
+        TransactionDetails,
     };
 
     use crate::{
@@ -1698,6 +1717,7 @@ mod tests {
             Amount, BlockHash, OutPoint, Sequence, Transaction, Txid,
         },
         database::{memory::HeritageMemoryDatabase, HeritageDatabase, TransacHeritageOperation},
+        errors::Error,
         heritage_wallet::{
             backup::{HeritageWalletBackup, SubwalletDescriptorBackup},
             get_expected_tx_weight, BlockInclusionObjective, CreatePsbtOptions, HeritageWallet,
@@ -1705,7 +1725,7 @@ mod tests {
         },
         miniscript::{Descriptor, DescriptorPublicKey},
         tests::*,
-        utils::{extract_tx, string_to_address},
+        utils::{extract_tx, string_to_address, testtime::set_timestamp_now},
         HeritageConfig,
     };
 
@@ -1718,18 +1738,18 @@ mod tests {
     }
 
     impl GetHeight for FakeBlockchain {
-        fn get_height(&self) -> Result<u32, Error> {
+        fn get_height(&self) -> Result<u32, BdkError> {
             Ok(self.current_height.height)
         }
     }
     impl GetTx for FakeBlockchain {
-        fn get_tx(&self, _txid: &Txid) -> Result<Option<Transaction>, Error> {
-            Err(Error::Generic("Unimplemented".to_owned()))
+        fn get_tx(&self, _txid: &Txid) -> Result<Option<Transaction>, BdkError> {
+            Err(BdkError::Generic("Unimplemented".to_owned()))
         }
     }
     impl GetBlockHash for FakeBlockchain {
-        fn get_block_hash(&self, _height: u64) -> Result<BlockHash, Error> {
-            Err(Error::Generic("Unimplemented".to_owned()))
+        fn get_block_hash(&self, _height: u64) -> Result<BlockHash, BdkError> {
+            Err(BdkError::Generic("Unimplemented".to_owned()))
         }
     }
     impl WalletSync for FakeBlockchain {
@@ -1737,7 +1757,7 @@ mod tests {
             &self,
             database: &RefCell<D>,
             _progress_update: Box<dyn Progress>,
-        ) -> Result<(), Error> {
+        ) -> Result<(), BdkError> {
             for tx_details in &self.transactions {
                 database.borrow_mut().set_tx(tx_details)?;
                 database.borrow_mut().set_utxo(&LocalUtxo {
@@ -1766,11 +1786,11 @@ mod tests {
             .into()
         }
 
-        fn broadcast(&self, _tx: &Transaction) -> Result<(), Error> {
-            Err(Error::Generic("Unimplemented".to_owned()))
+        fn broadcast(&self, _tx: &Transaction) -> Result<(), BdkError> {
+            Err(BdkError::Generic("Unimplemented".to_owned()))
         }
 
-        fn estimate_fee(&self, _target: usize) -> Result<FeeRate, Error> {
+        fn estimate_fee(&self, _target: usize) -> Result<FeeRate, BdkError> {
             Ok(FeeRate::from_sat_per_vb(10.0))
         }
     }
@@ -1786,7 +1806,7 @@ mod tests {
             &self,
             wallet_name: &str,
             _override_skip_blocks: Option<u32>,
-        ) -> Result<Self::Inner, bdk::Error> {
+        ) -> Result<Self::Inner, BdkError> {
             let mut hashtable: HashMap<String, Vec<TransactionDetails>> = HashMap::new();
             // Wallet TestHeritageConfig::BackupWifeY2
             hashtable.insert("7y7nqca9j84snf2h".to_owned(), vec![
@@ -2020,6 +2040,9 @@ mod tests {
         wallet
             .append_account_xpubs((0..3).into_iter().map(|i| get_test_account_xpub(i)))
             .unwrap();
+
+        // We are at 2024-03-09T16:00:00
+        set_timestamp_now(Some(1710000000));
         // Test the expected sequence of addresses
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))
@@ -2027,12 +2050,16 @@ mod tests {
         wallet.get_new_address().unwrap();
         wallet.get_new_address().unwrap();
 
+        // We are at 2025-03-09T16:00:00
+        set_timestamp_now(Some(1741536000));
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY1))
             .unwrap();
         wallet.get_new_address().unwrap();
         wallet.get_new_address().unwrap();
 
+        // We are at 2026-03-09T16:00:00
+        set_timestamp_now(Some(1773072000));
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeBro))
             .unwrap();
@@ -2155,6 +2182,9 @@ mod tests {
 
     #[test]
     fn update_heritage_config() {
+        // We are at 2024-03-09T16:00:00
+        set_timestamp_now(Some(1710000000));
+
         // Test on an empty wallet
         let wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
         wallet
@@ -2287,6 +2317,9 @@ mod tests {
         wallet
             .append_account_xpubs((0..3).into_iter().map(|i| get_test_account_xpub(i)))
             .unwrap();
+
+        // We are at 2024-03-09T16:00:00
+        set_timestamp_now(Some(1710000000));
         // Test the expected sequence of addresses
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))
@@ -2305,6 +2338,8 @@ mod tests {
                 1,
             )));
 
+        // We are at 2025-03-09T16:00:00
+        set_timestamp_now(Some(1741536000));
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY1))
             .unwrap();
@@ -2322,6 +2357,8 @@ mod tests {
                 1,
             )));
 
+        // We are at 2026-03-09T16:00:00
+        set_timestamp_now(Some(1773072000));
         wallet
             .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeBro))
             .unwrap();
@@ -2338,6 +2375,25 @@ mod tests {
                 TestHeritageConfig::BackupWifeBro,
                 1,
             )));
+    }
+
+    #[test]
+    fn get_new_address_fail_on_expired_heritage_config() {
+        // We are at 2025-09-27T10:00:00
+        set_timestamp_now(Some(1758967200));
+
+        // Test on an empty wallet
+        let wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
+        // Add AccountXPubs
+        wallet
+            .append_account_xpubs((0..3).into_iter().map(|i| get_test_account_xpub(i)))
+            .unwrap();
+        wallet
+            .update_heritage_config(get_test_heritage_config(TestHeritageConfig::BackupWifeY2))
+            .unwrap();
+        assert!(wallet
+            .get_new_address()
+            .is_err_and(|e| matches!(e, Error::CannotGenerateNewAddress)));
     }
 
     #[test]

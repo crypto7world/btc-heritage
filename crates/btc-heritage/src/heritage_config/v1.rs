@@ -122,13 +122,12 @@ impl Heritage {
 }
 
 mod reference_timestamp {
-    use std::marker::PhantomData;
 
-    use super::{Deserialize, Serialize, LOCK_TIME_THRESHOLD, SEC_IN_A_DAY};
+    use super::{Days, Deserialize, Serialize, LOCK_TIME_THRESHOLD, SEC_IN_A_DAY};
 
     #[derive(Debug, Clone, Hash, Copy, Serialize, PartialEq, Eq)]
     #[serde(transparent)]
-    pub struct ReferenceTimestamp(pub(super) u64, PhantomData<()>);
+    pub struct ReferenceTimestamp(pub(super) u64);
     impl Default for ReferenceTimestamp {
         fn default() -> Self {
             // Compute the reference_timestamp by taking the current timestamp and rounding it to today at noon
@@ -144,10 +143,17 @@ mod reference_timestamp {
         pub fn new(reference_time: u64) -> Self {
             // No matter what, this should always be greater than LOCK_TIME_THRESHOLD (500_000_000)
             assert!(reference_time > LOCK_TIME_THRESHOLD as u64, "reference_time cannot be less or equal to {LOCK_TIME_THRESHOLD} because it would change the meaning of absolute_lock_time");
-            Self(reference_time, PhantomData)
+            Self(reference_time)
         }
         pub fn as_u64(&self) -> u64 {
             self.0
+        }
+    }
+    impl std::ops::Add<Days> for ReferenceTimestamp {
+        type Output = u64;
+
+        fn add(self, rhs: Days) -> Self::Output {
+            self.0 + rhs.as_seconds()
         }
     }
     impl<'de> Deserialize<'de> for ReferenceTimestamp {

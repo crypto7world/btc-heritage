@@ -124,7 +124,33 @@ pub fn string_to_address(s: &str) -> Result<Address, Error> {
         .map_err(|_| Error::InvalidAddressString(s.to_owned(), network))?)
 }
 
+#[cfg(test)]
+pub mod testtime {
+    use std::cell::RefCell;
+
+    thread_local! {
+        static FAKE_SYSTEM_TIMESTAMP: RefCell<Option<u64>> =RefCell::new(None);
+    }
+    /// Returns the current timestamp, as the number of seconds since UNIX_EPOCH
+    pub fn set_timestamp_now(ts: Option<u64>) {
+        FAKE_SYSTEM_TIMESTAMP.with_borrow_mut(|fts| *fts = ts);
+    }
+    pub(super) fn timestamp_now() -> u64 {
+        FAKE_SYSTEM_TIMESTAMP.with_borrow(|fts| match *fts {
+            Some(ts) => ts,
+            None => std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        })
+    }
+}
 /// Returns the current timestamp, as the number of seconds since UNIX_EPOCH
+#[cfg(test)]
+pub fn timestamp_now() -> u64 {
+    testtime::timestamp_now()
+}
+#[cfg(not(test))]
 pub fn timestamp_now() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

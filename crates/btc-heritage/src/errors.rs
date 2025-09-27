@@ -25,6 +25,8 @@ pub enum Error {
     InvalidSpendingConfigForHeir,
     #[error("HeritageWallet does not have a Current SubwalletConfig")]
     MissingCurrentSubwalletConfig,
+    #[error("The current HeritageConfig is expired and cannot be used to generate new addresses")]
+    CannotGenerateNewAddress,
     #[error("HeritageWallet was never synchronized")]
     UnsyncedWallet,
     #[error("HeritageWallet does not have any unused AccountXPub")]
