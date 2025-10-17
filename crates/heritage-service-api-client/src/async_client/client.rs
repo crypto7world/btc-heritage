@@ -38,7 +38,7 @@ impl Default for HeritageServiceConfig {
     fn default() -> Self {
         match bitcoin_network::get() {
             Network::Bitcoin => Self {
-                service_api_url: Arc::from("https://api.btcherit.com/v1"),
+                service_api_url: Arc::from("https://api.btc-heritage.com/v1"),
                 auth_url: Arc::from("https://device.crypto7.world/token"),
                 auth_client_id: Arc::from("cda6031ca00d09d66c2b632448eb8fef"),
             },
