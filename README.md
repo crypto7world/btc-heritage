@@ -44,6 +44,7 @@
     <li><a href="#about-the-project">About The Project</a></li>
     <li><a href="#usage">Usage</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#hardware-wallet-support">Hardware Wallet Support</a></li>
     <li><a href="#built-with">Built With</a></li>
     <li><a href="#minimum-supported-rust-version-msrv">Minimum Supported Rust Version (MSRV)</a></li>
     <li><a href="#contributing">Contributing</a></li>
@@ -123,6 +124,32 @@ The roadmap is accurate regarding our immediate goals for the project.
 Also consult the [open issues](https://github.com/crypto7world/btc-heritage/issues) for other proposed features and known issues.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
+
+## Hardware Wallet Support
+
+Heritage GUI supports hardware wallets for secure private key management. Below is the current compatibility status:
+
+### Supported Devices
+
+| Device | For Wallet | For Heir | Notes |
+|--------|------------|----------|-------|
+| **Ledger** | ✅ Supported | ❌ Not Supported | Fully supported as the Key Provider for an Heritage Wallet. For now, it _**cannot**_ be used as the Key Provider for an heir because of privacy/design issues rising from Ledger asking to validate **all** the TapScripts, not only the heir's one |
+
+### Unsupported Devices
+
+| Device | Status | Reason |
+|--------|--------|--------|
+| **Trezor** | ❌ Not Supported | Does not support Taproot wallets using TapScript at the moment |
+
+### Request Support for Your Device
+
+Don't see your hardware wallet listed? We welcome requests for additional hardware wallet support!
+
+**[Request Hardware Wallet Support](https://github.com/crypto7world/btc-heritage/issues/new?assignees=&labels=enhancement%2Chardware-wallet&projects=&template=hardware-wallet-support.md&title=%5BHardware+Wallet%5D+Support+for+%5BDEVICE+NAME%5D)**
+
+Please include a link to the official product page and any technical specifications that you know off about Bitcoin/Taproot support when submitting your request.
+
+<p align="right">(<a href="#top">↑ back to top</a>)</p>
 
 ## Built With
 
