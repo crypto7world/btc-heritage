@@ -19,9 +19,14 @@ use self::paginate::{ContinuationToken, Paginated};
 
 type Result<T> = core::result::Result<T, DatabaseError>;
 
+/// Identifier for a database partition or subdatabase
+///
+/// The Database of a HeritageWallet is partitionned so each partition/subdatabase can serve
+/// as a database for a BDK Wallet.
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SubdatabaseId(String);
 impl SubdatabaseId {
+    /// Creates a new SubdatabaseId from any type that can be converted to a string
     pub fn from<T: ToString>(value: T) -> Self {
         Self(value.to_string())
     }
@@ -32,51 +37,109 @@ impl Display for SubdatabaseId {
     }
 }
 
+/// Trait for databases that can be partitioned into subdatabases
+///
+/// This allows a single HeritageWallet database instance to store data for the multiple
+/// BDK wallets it contains (one for each Heritage Configuration).
 pub trait PartitionableDatabase {
+    /// The type of subdatabase returned by this partitionable database
     type SubDatabase: BatchDatabase;
+    /// Retrieves or creates a subdatabase with the given identifier
+    ///
+    /// # Errors
+    ///
+    /// Returns a database error if the subdatabase cannot be created or accessed.
     fn get_subdatabase(&self, subdatabase_id: SubdatabaseId) -> Result<Self::SubDatabase>;
 }
 
-// Operations that can be run in a single transaction to ensure their consistency
+/// Operations that can be run in a single transaction to ensure data consistency
+///
+/// This trait groups operations that must be executed atomically to maintain
+/// database integrity, particularly when updating wallet configurations and
+/// managing account extended public keys.
 pub trait TransacHeritageOperation {
-    /// Put a new `SubwalletConfig` at `SubwalletConfigId::Id`.
-    /// The function **MUST** ensure that the new value do not override
-    /// a previously stored value
+    /// Stores a new SubwalletConfig at the specified index
+    ///
+    /// The function **MUST** ensure that the new value does not override
+    /// a previously stored value to prevent accidental data loss.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a SubwalletConfig already exists at the given index
+    /// or if the database operation fails.
     fn put_subwallet_config(
         &mut self,
         index: SubwalletConfigId,
         subwallet_config: &SubwalletConfig,
     ) -> Result<()>;
 
-    /// Safely and atomicaly update the `SubwalletConfig` at `SubwalletConfigId::Current`.
-    /// The function ensure that `new_subwallet_config` is put in the database only if
-    /// `old_subwallet_config` matches the currently stored value
+    /// Safely and atomically updates the current SubwalletConfig
+    ///
+    /// This function ensures that `new_subwallet_config` is stored only if
+    /// `old_subwallet_config` matches the currently stored value, providing
+    /// optimistic concurrency control.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DatabaseError::UnexpectedCurrentSubwalletConfig`] if the stored
+    /// value doesn't match `old_subwallet_config`, or other database errors.
     fn safe_update_current_subwallet_config(
         &mut self,
         new_subwallet_config: &SubwalletConfig,
         old_subwallet_config: Option<&SubwalletConfig>,
     ) -> Result<()>;
 
-    /// Delete the unused `AccountXPub` after verifying that it is still there.
-    /// If it is not in the Database, the function return an Error because it could mean
-    /// that a concurrent operation took place
+    /// Deletes an unused AccountXPub after verifying it exists
+    ///
+    /// This function first verifies the AccountXPub is present in the database
+    /// before deletion to detect potential concurrent operations.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DatabaseError::AccountXPubInexistant`] if the AccountXPub
+    /// is not found in the database, which may indicate a concurrent operation.
     fn delete_unused_account_xpub(&mut self, account_xpub: &AccountXPub) -> Result<()>;
 }
 
+/// Main database trait for heritage wallet operations
+///
+/// This trait combines partitioning capabilities with transactional operations
+/// and provides all the necessary methods for managing heritage wallet data,
+/// including subwallet configurations, account keys, UTXOs, and transaction summaries.
 pub trait HeritageDatabase: PartitionableDatabase + TransacHeritageOperation {
+    /// Retrieves a SubwalletConfig by its index
+    ///
+    /// # Returns
+    ///
+    /// `Some(SubwalletConfig)` if found, `None` if no config exists at the given index.
     fn get_subwallet_config(&self, index: SubwalletConfigId) -> Result<Option<SubwalletConfig>>;
+
+    /// Lists all SubwalletConfigs that are no longer current but still stored
+    ///
+    /// These are historical configurations that may still be needed for
+    /// transaction history or recovery purposes.
     fn list_obsolete_subwallet_configs(&self) -> Result<Vec<SubwalletConfig>>;
 
-    /// Return an unused [AccountXPub], if any
-    /// Should return the first one available in the AccountXPubId order
+    /// Returns an unused AccountXPub, if any available
+    ///
+    /// Should return the first available AccountXPub in AccountXPubId order
+    /// to ensure deterministic behavior.
+    ///
+    /// # Returns
+    ///
+    /// `Some(AccountXPub)` if an unused key is available, `None` otherwise.
     fn get_unused_account_xpub(&self) -> Result<Option<AccountXPub>>;
 
-    /// Return all the [AccountXPub] affected to the `HeritageWalet`
-    /// that have not been used yet
+    /// Returns all unused [AccountXPub]s assigned to the HeritageWallet
+    ///
+    /// These are AccountXPubs that have been added to the wallet but not yet
+    /// used to create any SubwalletConfig.
     fn list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>>;
 
-    /// Return all the [AccountXPub] affected to the `HeritageWalet`
-    /// that have already been used by a [SubwalletConfig].
+    /// Returns all [AccountXPub]s that have already been used
+    ///
+    /// These AccountXPubs have been used to create [SubwalletConfig]s and
+    /// should not be reused to avoid address reuse and potential fund loss.
     fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>>;
 
     /// Add new, available [AccountXPub] to the [HeritageWallet](crate::HeritageWallet).
@@ -96,78 +159,122 @@ pub trait HeritageDatabase: PartitionableDatabase + TransacHeritageOperation {
     /// and publicly usable with the feature `database-tests`
     fn add_unused_account_xpubs(&mut self, account_xpubs: &Vec<AccountXPub>) -> Result<()>;
 
-    /// Add new [HeritageUtxo] in the database, overriding existing ones if any.
+    /// Adds new [HeritageUtxo]s to the database
+    ///
+    /// Existing UTXOs with the same [OutPoint] will be overridden.
     fn add_utxos(&mut self, utxos: &Vec<HeritageUtxo>) -> Result<()>;
-    /// Delete the [HeritageUtxo] in the database for the given list of [OutPoint]. If an
-    /// [HeritageUtxo] does not exist in the database for any given [OutPoint],
-    /// it will be processed as a success.
+
+    /// Deletes [HeritageUtxo]s for the given [OutPoint]s
+    ///
+    /// If a UTXO doesn't exist for any given OutPoint, the operation
+    /// will still succeed (idempotent deletion).
     fn delete_utxos(&mut self, outpoints: &Vec<OutPoint>) -> Result<()>;
-    /// Returns the list of the [HeritageUtxo] from the database.
+
+    /// Returns all [HeritageUtxo]s from the database
     fn list_utxos(&self) -> Result<Vec<HeritageUtxo>>;
-    /// Paginate the list of the [HeritageUtxo] from the database with the given `page_size`. The caller __SHOULD NOT__
-    /// consider that retrieving a page of less than `page_size` elements means there is no more page to retrieve. The
-    /// absence of [ContinuationToken] inside the [Paginated] struct is the sole indicator that the page is the last.
+    /// Paginates the list of [HeritageUtxo]s from the database
+    ///
+    /// The caller **SHOULD NOT** assume that a page with fewer than `page_size`
+    /// elements indicates the last page. Only the absence of a [ContinuationToken]
+    /// in the returned [Paginated] struct indicates the final page.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_size` - Maximum number of UTXOs to return per page
+    /// * `continuation_token` - Token from previous page, or None for first page
     fn paginate_utxos(
         &self,
         page_size: usize,
         continuation_token: Option<ContinuationToken>,
     ) -> Result<Paginated<HeritageUtxo>>;
 
-    /// Add new [TransactionSummary] in the database, overriding existing ones if any.
+    /// Adds new TransactionSummaries ([TransactionSummary]) to the database
+    ///
+    /// Existing summaries with the same key will be overridden.
     fn add_transaction_summaries(
         &mut self,
         transaction_summaries: &Vec<TransactionSummary>,
     ) -> Result<()>;
-    /// Delete the [TransactionSummary] in the database for the given list of ([Txid], [Option<BlockTime>]). If a
-    /// [TransactionSummary] does not exist in the database for any given ([Txid], [Option<BlockTime>]),
-    /// it will be processed as a success.
+
+    /// Deletes TransactionSummaries ([TransactionSummary]) for the given keys
+    ///
+    /// Keys are tuples of ([Txid], [Option<BlockTime>]). If a summary doesn't exist
+    /// for any given key, the operation will still succeed (idempotent deletion).
     fn delete_transaction_summaries(
         &mut self,
         key_to_delete: &Vec<(Txid, Option<BlockTime>)>,
     ) -> Result<()>;
-    /// Returns the list of the [TransactionSummary] from the database. They are guaranteed to be ordered
-    /// by their [BlockTime] from newest to oldest. If two [TransactionSummary] share the same [BlockTime]
-    /// no guarantee is made about their order.
-    fn list_transaction_summaries(&self) -> Result<Vec<TransactionSummary>>;
-    /// Paginate the list of the [TransactionSummary] from the database with the given `page_size`. The caller __SHOULD NOT__
-    /// consider that retrieving a page of less than `page_size` elements means there is no more page to retrieve. The
-    /// absence of [ContinuationToken] inside the [Paginated] struct is the sole indicator that the page is the last.
+    /// Returns all TransactionSummaries ([TransactionSummary]) ordered by [BlockTime]
     ///
-    /// [TransactionSummary] are guaranteed to be ordered by their [BlockTime] from newest to oldest. If two [TransactionSummary] share the same [BlockTime]
-    /// no guarantee is made about their order.
+    /// Summaries are guaranteed to be ordered from newest to oldest by BlockTime.
+    /// If two summaries share the same BlockTime, their relative order is undefined.
+    fn list_transaction_summaries(&self) -> Result<Vec<TransactionSummary>>;
+    /// Paginates the list of TransactionSummaries ([TransactionSummary]) from the database
+    ///
+    /// The caller **SHOULD NOT** assume that a page with fewer than `page_size`
+    /// elements indicates the last page. Only the absence of a [ContinuationToken]
+    /// in the returned [Paginated] struct indicates the final page.
+    ///
+    /// Summaries are guaranteed to be ordered from newest to oldest by [BlockTime].
+    /// If two summaries share the same BlockTime, their relative order is undefined.
+    ///
+    /// # Arguments
+    ///
+    /// * `page_size` - Maximum number of summaries to return per page
+    /// * `continuation_token` - Token from previous page, or None for first page
     fn paginate_transaction_summaries(
         &self,
         page_size: usize,
         continuation_token: Option<ContinuationToken>,
     ) -> Result<Paginated<TransactionSummary>>;
 
-    /// Retrieve the [HeritageWalletBalance] from the database
+    /// Retrieves the current wallet balance ([HeritageWalletBalance]) from the database
     fn get_balance(&self) -> Result<Option<HeritageWalletBalance>>;
-    /// Set the [HeritageWalletBalance] in the database
+
+    /// Stores the wallet balance ([HeritageWalletBalance]) in the database
     fn set_balance(&mut self, new_balance: &HeritageWalletBalance) -> Result<()>;
 
-    /// Retrieve the applicable [FeeRate] from the database
+    /// Retrieves the current fee rate ([FeeRate]) setting from the database
     fn get_fee_rate(&self) -> Result<Option<FeeRate>>;
-    /// Set the [FeeRate] in the database
+
+    /// Stores the fee rate ([FeeRate]) setting in the database
     fn set_fee_rate(&mut self, new_fee_rate: &FeeRate) -> Result<()>;
 
-    /// Retrieve the target number of block for transaction inclusion from the database
-    /// as a [BlockInclusionObjective] struct.
-    /// This is used to query the appropriate [FeeRate] from BitcoinCore
+    /// Retrieves the target block inclusion objective ([BlockInclusionObjective]) from the database
+    ///
+    /// This value is used to query the appropriate fee rate from Bitcoin Core
+    /// based on how many blocks the user wants to wait for confirmation.
     fn get_block_inclusion_objective(&self) -> Result<Option<BlockInclusionObjective>>;
-    /// Set the [BlockInclusionObjective] in the database
-    /// This is used to query the appropriate [FeeRate] from BitcoinCore
+
+    /// Stores the block inclusion objective ([BlockInclusionObjective]) in the database
+    ///
+    /// This is used to query the appropriate fee rate from Bitcoin Core
+    /// when creating transactions.
     fn set_block_inclusion_objective(
         &mut self,
         new_objective: BlockInclusionObjective,
     ) -> Result<()>;
 }
 
+/// Trait for databases that support transactional heritage operations
+///
+/// This trait extends HeritageDatabase with transaction support, allowing
+/// multiple operations to be grouped and executed atomically.
 pub trait TransacHeritageDatabase: HeritageDatabase {
+    /// The transaction type that can accumulate operations
     type Transac: TransacHeritageOperation;
-    /// Create a new transaction container
+
+    /// Creates a new transaction container
+    ///
+    /// Operations can be added to the transaction before committing.
     fn begin_transac(&self) -> Self::Transac;
-    /// Consume and apply a transaction of operations
+
+    /// Consumes and applies all operations in the transaction atomically
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any operation in the transaction fails,
+    /// in which case the entire transaction is rolled back.
     fn commit_transac(&mut self, transac: Self::Transac) -> Result<()>;
 }
 

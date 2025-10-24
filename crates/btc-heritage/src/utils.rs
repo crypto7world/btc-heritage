@@ -13,6 +13,15 @@ use serde_json::json;
 /// The Bitcoin network targets 10 minutes
 pub const AVERAGE_BLOCK_TIME_SEC: u32 = 60 * 10;
 
+/// Converts bytes to a lowercase hexadecimal string representation
+///
+/// # Examples
+///
+/// ```
+/// # use btc_heritage::utils::bytes_to_hex_string;
+/// let bytes = [0xde, 0xad, 0xbe, 0xef];
+/// assert_eq!(bytes_to_hex_string(&bytes), "deadbeef");
+/// ```
 pub fn bytes_to_hex_string<B: AsRef<[u8]>>(bytes: B) -> String {
     let bytes = bytes.as_ref();
     let mut s = String::with_capacity(2 * bytes.len());
@@ -113,6 +122,29 @@ pub mod bitcoin_network {
     }
 }
 
+/// Parses a string into a Bitcoin address for the current network
+///
+/// This function validates that the address string is properly formatted and
+/// matches the currently configured Bitcoin network.
+///
+/// # Errors
+///
+/// Returns [`Error::InvalidAddressString`] if the string cannot be parsed as
+/// a valid Bitcoin address or if the address is for a different network than
+/// the currently configured one.
+///
+/// # Examples
+///
+/// ```
+/// # use btc_heritage::utils::{string_to_address, bitcoin_network};
+/// # use btc_heritage::bitcoin::Network;
+/// // Set the Network to testnet
+/// bitcoin_network::set(Network::Testnet);
+/// // Testnet address (tb1) is ok
+/// assert!(string_to_address("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx").is_ok());
+/// // Mainnet address (bc1) is not
+/// assert!(string_to_address("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx").is_err());
+/// ```
 pub fn string_to_address(s: &str) -> Result<Address, Error> {
     let network = bitcoin_network::get();
     Ok(Address::from_str(s)
@@ -131,10 +163,15 @@ pub mod testtime {
     thread_local! {
         static FAKE_SYSTEM_TIMESTAMP: RefCell<Option<u64>> =RefCell::new(None);
     }
-    /// Returns the current timestamp, as the number of seconds since UNIX_EPOCH
+    /// Sets a fake timestamp for testing purposes
+    ///
+    /// When `Some(timestamp)` is provided, subsequent calls to [`timestamp_now()`]
+    /// will return this fixed value. When `None` is provided, the real system
+    /// time will be used.
     pub fn set_timestamp_now(ts: Option<u64>) {
         FAKE_SYSTEM_TIMESTAMP.with_borrow_mut(|fts| *fts = ts);
     }
+    /// Returns the current timestamp, or the fake timestamp if one was set
     pub(super) fn timestamp_now() -> u64 {
         FAKE_SYSTEM_TIMESTAMP.with_borrow(|fts| match *fts {
             Some(ts) => ts,
@@ -146,10 +183,13 @@ pub mod testtime {
     }
 }
 /// Returns the current timestamp, as the number of seconds since UNIX_EPOCH
+///
+/// In test builds, this may return a fake timestamp set by [`testtime::set_timestamp_now()`].
 #[cfg(test)]
 pub fn timestamp_now() -> u64 {
     testtime::timestamp_now()
 }
+/// Returns the current timestamp, as the number of seconds since UNIX_EPOCH
 #[cfg(not(test))]
 pub fn timestamp_now() -> u64 {
     std::time::SystemTime::now()
@@ -158,6 +198,17 @@ pub fn timestamp_now() -> u64 {
         .as_secs()
 }
 
+/// Extracts a signed transaction from a finalized PSBT
+///
+/// This function finalizes the PSBT and extracts the complete signed transaction.
+/// All inputs must be properly signed and finalized for this to succeed.
+///
+/// # Errors
+///
+/// Returns [`Error::UnfinalizablePsbt`] if:
+/// - The PSBT cannot be finalized (missing signatures, invalid signatures, etc.)
+/// - The PSBT has malformed structure (mismatched input counts)
+/// - Not all inputs are fully signed
 pub fn extract_tx(psbt: PartiallySignedTransaction) -> Result<Transaction, Error> {
     log::debug!("extract_tx - psbt: {}", json!(psbt));
     let psbt = psbt.finalize(&Secp256k1::new()).map_err(|(psbt, errors)| {
@@ -197,12 +248,28 @@ pub fn extract_tx(psbt: PartiallySignedTransaction) -> Result<Transaction, Error
 }
 
 type BlockHeight = Option<u32>;
-/// Sort a [Vec] of Transaction-like objects that have
-/// parents information using the provided functions that
-/// for any T can extract a [BlockHeight], a [Txid] and a HashSet of parents
+
+/// Sorts a vector of transaction-like objects with dependency ordering
 ///
-/// `extract_txid_and_bh` is separate from `extract_parents` because we expect
-/// that `extract_txid_and_bh` is virtually free whereas `extract_parents` could be more costly
+/// This function sorts transactions so they are in chronological order (oldest to newest)
+/// with proper dependency ordering. Transactions in older blocks come first, and within
+/// the same block, transactions are ordered so that dependencies come before dependents.
+///
+/// The sorting algorithm considers:
+/// 1. Block height (confirmed transactions before unconfirmed)
+/// 2. Transaction dependencies (parents before children)
+/// 3. Out-of-block dependencies (transactions with external dependencies first)
+/// 4. Transaction ID as final tiebreaker
+///
+/// # Arguments
+///
+/// * `v` - Mutable reference to the vector to sort in-place
+/// * `extract_txid_and_bh` - Function to extract [Txid] and [BlockHeight]
+/// * `extract_parents` - Function to extract parent [Txid]s
+///
+/// The `extract_txid_and_bh` function is separate from `extract_parents` because
+/// extracting the txid and block height is expected to be virtually free, whereas
+/// `extract_parents` could be more computationally expensive.
 pub fn sort_transactions_with_parents<T, F, P>(
     v: &mut Vec<T>,
     extract_txid_and_bh: F,
@@ -375,5 +442,225 @@ mod tests {
         assert!(extract_tx(get_test_unsigned_psbt(TestPsbt::BrotherFuture)).is_err());
         assert!(extract_tx(get_test_unsigned_psbt(TestPsbt::BackupPresent)).is_err());
         assert!(extract_tx(get_test_unsigned_psbt(TestPsbt::WifePresent)).is_err());
+    }
+
+    mod sort_transactions_tests {
+        use super::*;
+        use std::collections::HashSet;
+
+        /// Mock transaction type for testing
+        #[derive(Debug, Clone, PartialEq)]
+        struct MockTx {
+            txid: Txid,
+            block_height: Option<u32>,
+            parents: HashSet<Txid>,
+        }
+
+        impl MockTx {
+            fn new(txid_str: &str, block_height: Option<u32>, parents: Vec<&str>) -> Self {
+                let txid = Txid::from_str(txid_str).unwrap();
+                let parents = parents
+                    .into_iter()
+                    .map(|p| Txid::from_str(p).unwrap())
+                    .collect();
+                Self {
+                    txid,
+                    block_height,
+                    parents,
+                }
+            }
+
+            fn with_no_parents(txid_str: &str, block_height: Option<u32>) -> Self {
+                Self::new(txid_str, block_height, vec![])
+            }
+        }
+
+        // Helper txids for testing
+        const TX_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        const TX_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        const TX_C: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+        const TX_D: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+        const TX_E: &str = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        const TX_F: &str = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+        fn extract_txid_and_bh(tx: &MockTx) -> (Txid, Option<u32>) {
+            (tx.txid, tx.block_height)
+        }
+
+        fn extract_parents(tx: &MockTx) -> HashSet<Txid> {
+            tx.parents.clone()
+        }
+
+        #[test]
+        fn test_sort_by_block_height_confirmed_first() {
+            let mut txs = vec![
+                MockTx::with_no_parents(TX_A, None),      // Unconfirmed
+                MockTx::with_no_parents(TX_C, Some(50)),  // Block 50
+                MockTx::with_no_parents(TX_B, Some(150)), // Block 150
+                MockTx::with_no_parents(TX_D, Some(100)), // Block 100
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            // Should be sorted by block height: 50, 100, 150, None (unconfirmed last)
+            assert_eq!(txs[0].block_height, Some(50));
+            assert_eq!(txs[1].block_height, Some(100));
+            assert_eq!(txs[2].block_height, Some(150));
+            assert_eq!(txs[3].block_height, None);
+        }
+
+        #[test]
+        fn test_sort_by_dependencies_within_same_block() {
+            let mut txs = vec![
+                MockTx::new(TX_B, Some(100), vec![TX_A]), // B depends on A
+                MockTx::with_no_parents(TX_A, Some(100)), // A has no dependencies
+                MockTx::new(TX_C, Some(100), vec![TX_B]), // C depends on B
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            // Should be sorted by dependency: A -> B -> C
+            assert_eq!(txs[0].txid, Txid::from_str(TX_A).unwrap());
+            assert_eq!(txs[1].txid, Txid::from_str(TX_B).unwrap());
+            assert_eq!(txs[2].txid, Txid::from_str(TX_C).unwrap());
+        }
+
+        #[test]
+        fn test_sort_complex_dependencies_same_block() {
+            let mut txs = vec![
+                MockTx::new(TX_A, Some(100), vec![TX_B, TX_C]), // A depends on B and C
+                MockTx::new(TX_B, Some(100), vec![TX_D]),       // B depends on D
+                MockTx::new(TX_C, Some(100), vec![TX_D]),       // C depends on D
+                MockTx::with_no_parents(TX_D, Some(100)),       // D has no dependencies
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            // D should come first, then B and C (because txid_b < txid_c),
+            // then A which depends on both B and C
+            assert_eq!(txs[0].txid, Txid::from_str(TX_D).unwrap());
+            assert_eq!(txs[1].txid, Txid::from_str(TX_B).unwrap());
+            assert_eq!(txs[2].txid, Txid::from_str(TX_C).unwrap());
+            assert_eq!(txs[3].txid, Txid::from_str(TX_A).unwrap());
+        }
+
+        #[test]
+        fn test_sort_mixed_block_heights_with_dependencies() {
+            let mut txs = vec![
+                MockTx::new(TX_C, Some(200), vec![TX_B]), // C in block 200, depends on B
+                MockTx::with_no_parents(TX_A, Some(100)), // A in block 100
+                MockTx::new(TX_B, Some(150), vec![TX_A]), // B in block 150, depends on A
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            // Should be sorted by block height regardless of dependencies across blocks
+            assert_eq!(txs[0].block_height, Some(100)); // TX_A
+            assert_eq!(txs[1].block_height, Some(150)); // TX_B
+            assert_eq!(txs[2].block_height, Some(200)); // TX_C
+        }
+
+        #[test]
+        fn test_sort_unconfirmed_with_dependencies() {
+            let mut txs = vec![
+                MockTx::new(TX_B, None, vec![TX_C]), // B unconfirmed, depends on C
+                MockTx::with_no_parents(TX_C, None), // C unconfirmed, no deps
+                MockTx::new(TX_A, None, vec![TX_B]), // A unconfirmed, depends on B
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            // Should be sorted by dependency even when unconfirmed: C -> B -> A
+            assert_eq!(txs[0].txid, Txid::from_str(TX_C).unwrap());
+            assert_eq!(txs[1].txid, Txid::from_str(TX_B).unwrap());
+            assert_eq!(txs[2].txid, Txid::from_str(TX_A).unwrap());
+        }
+
+        #[test]
+        fn test_sort_out_of_block_dependencies_priority() {
+            let mut txs = vec![
+                MockTx::with_no_parents(TX_A, Some(100)), // A has no dependencies
+                MockTx::new(TX_B, Some(100), vec![TX_C]), // B depends on TX_C
+                MockTx::with_no_parents(TX_C, Some(50)),  // C is out of block 100
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            assert!(txs[0].block_height == Some(50));
+            assert!(txs[1].block_height == Some(100));
+            assert!(txs[2].block_height == Some(100));
+
+            // Within block 100: B (external deps) should come first, then A, then C
+            let block100_txs = &txs[1..3];
+            // B should come first because it has out-of-block dependencies
+            assert_eq!(block100_txs[0].txid, Txid::from_str(TX_B).unwrap()); // External deps first
+            assert_eq!(block100_txs[1].txid, Txid::from_str(TX_A).unwrap()); // Then A
+        }
+
+        #[test]
+        fn test_sort_txid_as_final_tiebreaker() {
+            let mut txs = vec![
+                MockTx::with_no_parents(TX_B, Some(100)), // B comes after A lexicographically
+                MockTx::with_no_parents(TX_A, Some(100)), // A comes before F lexicographically
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            // Should be sorted by txid as final tiebreaker: A before B
+            assert_eq!(txs[0].txid, Txid::from_str(TX_A).unwrap());
+            assert_eq!(txs[1].txid, Txid::from_str(TX_B).unwrap());
+        }
+
+        #[test]
+        fn test_sort_empty_vector() {
+            let mut txs: Vec<MockTx> = vec![];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            assert!(txs.is_empty());
+        }
+
+        #[test]
+        fn test_sort_single_transaction() {
+            let mut txs = vec![MockTx::with_no_parents(TX_A, Some(100))];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            assert_eq!(txs.len(), 1);
+            assert_eq!(txs[0].txid, Txid::from_str(TX_A).unwrap());
+        }
+
+        #[test]
+        fn test_sort_cross_block_and_intra_block_dependencies() {
+            let mut txs = vec![
+                MockTx::new(TX_E, Some(200), vec![TX_D]), // E in block 200, depends on D
+                MockTx::new(TX_D, Some(200), vec![TX_C]), // D in block 200, depends on C (different block)
+                MockTx::new(TX_C, Some(100), vec![TX_A]), // C in block 100, depends on A
+                MockTx::new(TX_B, Some(100), vec![TX_F]), // B in block 100, external dep
+                MockTx::with_no_parents(TX_A, Some(100)), // A in block 100, no deps
+                MockTx::with_no_parents(TX_F, Some(50)),  // F is out of block 100
+            ];
+
+            sort_transactions_with_parents(&mut txs, extract_txid_and_bh, extract_parents);
+
+            // Block 50 should come before block 100 which comes before block 200
+            assert!(txs[0].block_height == Some(50));
+            assert!(txs[1].block_height == Some(100));
+            assert!(txs[2].block_height == Some(100));
+            assert!(txs[3].block_height == Some(100));
+            assert!(txs[4].block_height == Some(200));
+            assert!(txs[5].block_height == Some(200));
+
+            // Within block 100: B (external deps) should come first, then A, then C
+            let block100_txs = &txs[1..4];
+            assert_eq!(block100_txs[0].txid, Txid::from_str(TX_B).unwrap()); // External deps first
+            assert_eq!(block100_txs[1].txid, Txid::from_str(TX_A).unwrap()); // Then A
+            assert_eq!(block100_txs[2].txid, Txid::from_str(TX_C).unwrap()); // Then C (depends on A)
+
+            // Within block 200: D then E (E depends on D)
+            let block200_txs = &txs[4..6];
+            assert_eq!(block200_txs[0].txid, Txid::from_str(TX_D).unwrap());
+            assert_eq!(block200_txs[1].txid, Txid::from_str(TX_E).unwrap());
+        }
     }
 }

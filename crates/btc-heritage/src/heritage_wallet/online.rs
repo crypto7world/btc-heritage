@@ -18,6 +18,10 @@ use crate::{
     utils::sort_transactions_with_parents,
 };
 
+/// Electrum blockchain interface wrapper
+///
+/// This module provides blockchain connectivity through Electrum servers,
+/// with custom implementations to handle edge cases and network-specific behavior.
 pub mod electrum_blockchain_wrapper {
     use std::{cell::RefCell, collections::HashSet, ops::Deref};
 
@@ -33,9 +37,17 @@ pub mod electrum_blockchain_wrapper {
         Error,
     };
 
-    // This is to overwrite the implementation of estimate_fee in BDK 0.29
-    // It fails with a panic! (thank you guys) when the BlockChain cannot estimate the fee, which is quite current on testnet.
-    // Every other necessary traits are just implemented as passthrough to ElectrumBlockchain
+    /// Wrapper around BDK's ElectrumBlockchain with improved error handling
+    ///
+    /// This wrapper fixes issues with BDK 0.29's fee estimation that can panic
+    /// when the blockchain cannot estimate fees (common on testnet). All other
+    /// blockchain operations are passed through to the underlying implementation.
+    ///
+    /// # Key Improvements
+    ///
+    /// - **Robust fee estimation**: Gracefully handles fee estimation failures
+    /// - **Testnet compatibility**: Works reliably on networks with sparse blocks
+    /// - **Error recovery**: Converts panics to proper error handling
     pub struct ElectrumBlockchain(BdkElectrumBlockchain);
     impl Deref for ElectrumBlockchain {
         type Target = BdkElectrumBlockchain;
@@ -100,6 +112,39 @@ pub mod electrum_blockchain_wrapper {
     }
 }
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
+    /// Synchronizes the heritage wallet with the blockchain
+    ///
+    /// This method connects to the blockchain via the provided factory and synchronizes
+    /// all subwallets (current and obsolete) with the latest blockchain state. It updates:
+    ///
+    /// - UTXO sets for all subwallets
+    /// - Transaction history and summaries
+    /// - Balance information (separated by current/obsolete configurations)
+    /// - Fee rate estimates from the network
+    ///
+    /// The synchronization process walks through subwallets chronologically to maintain
+    /// proper transaction ordering and cache consistency for efficient processing.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Blockchain connection fails
+    /// - Database operations fail during sync
+    /// - Subwallet synchronization encounters errors
+    /// - Fee rate updates fail
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use btc_heritage::{HeritageWallet, database::memory::HeritageMemoryDatabase};
+    /// # use bdk::blockchain::ElectrumBlockchainFactory;
+    /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
+    /// let blockchain_factory = ElectrumBlockchainFactory::default();
+    /// wallet.sync(&blockchain_factory)?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn sync<T: BlockchainFactory>(&self, blockchain_factory: &T) -> Result<()> {
         log::debug!("HeritageWallet::sync");
         // This cache will serve to build the TransactionSummary list

@@ -20,13 +20,21 @@ use crate::{
     HeirConfig, HeritageConfig,
 };
 
+/// Balance information for a heritage wallet, split between current and obsolete configurations
+///
+/// A heritage wallet may contain UTXOs from different heritage configurations over time.
+/// This structure tracks balances separately to provide visibility into which funds are
+/// tied to the current configuration versus previous configurations.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq)]
 pub struct HeritageWalletBalance {
+    /// Balance tied to the current heritage configuration
     uptodate_balance: Balance,
+    /// Balance tied to previous heritage configurations that are no longer current
     obsolete_balance: Balance,
 }
 
 impl HeritageWalletBalance {
+    /// Creates a new heritage wallet balance
     pub fn new(uptodate_balance: Balance, obsolete_balance: Balance) -> Self {
         Self {
             uptodate_balance,
@@ -56,6 +64,10 @@ impl HeritageWalletBalance {
     }
 }
 
+/// A transaction recipient with an address and amount
+///
+/// Represents a destination for bitcoin payments, combining a bitcoin address
+/// with the amount to be sent to that address.
 #[derive(Debug, Clone)]
 pub struct Recipient(pub(crate) Address, pub(crate) Amount);
 impl From<(Address, Amount)> for Recipient {
@@ -81,17 +93,47 @@ impl TryFrom<(String, Amount)> for Recipient {
     }
 }
 
+/// Configuration for how to spend UTXOs in a transaction
+///
+/// Defines the spending behavior when creating transactions, either by draining
+/// all available funds to a single address or distributing to multiple recipients.
 #[derive(Debug, Clone)]
 pub enum SpendingConfig {
+    /// Drain all available funds to a single address
     DrainTo(Address),
+    /// Send specific amounts to multiple recipients
     Recipients(Vec<Recipient>),
 }
 impl SpendingConfig {
+    /// Creates a drain-to spending configuration from an address string
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the address string cannot be parsed as a valid bitcoin address
+    /// for the configured network.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage::utils::bitcoin_network;
+    /// # use btc_heritage::bitcoin;
+    /// # use bitcoin::Network;
+    /// # use btc_heritage::heritage_wallet::SpendingConfig;
+    /// // Set the Network to Testnet
+    /// bitcoin_network::set(Network::Testnet);
+    ///
+    /// // This is OK
+    /// assert!(SpendingConfig::drain_to_address_str("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx").is_ok());
+    ///
+    /// // This is not
+    /// assert!(SpendingConfig::drain_to_address_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx").is_err());
+    /// ```
     pub fn drain_to_address_str(addr: &str) -> crate::errors::Result<SpendingConfig> {
         Ok(SpendingConfig::DrainTo(crate::utils::string_to_address(
             addr,
         )?))
     }
+    /// Creates a drain-to spending configuration from an address
     pub fn drain_to_address(addr: Address) -> SpendingConfig {
         SpendingConfig::DrainTo(addr)
     }
@@ -114,57 +156,112 @@ impl TryFrom<Vec<(String, Amount)>> for SpendingConfig {
     }
 }
 
-/// The policy to compute the fee of a new transaction
+/// Policy for computing transaction fees
+///
+/// Defines how transaction fees should be calculated when creating PSBTs.
+/// Fees can either be set to an absolute amount or calculated based on
+/// transaction size using a fee rate.
 #[derive(Debug, Clone)]
 pub enum FeePolicy {
-    /// The new transaction will have the exact fee amount
+    /// Use an exact fee amount regardless of transaction size
+    ///
+    /// The transaction will have exactly this fee amount, which may result
+    /// in a higher or lower fee rate depending on the final transaction size.
     Absolute(Amount),
-    /// The new transaction will use the given fee rate to compute the fee
+    /// Calculate fee based on transaction size and the given fee rate
+    ///
+    /// The final fee amount will be computed as: fee_rate × transaction_weight
     FeeRate(FeeRate),
 }
 
-/// The UTXO selection mode
+/// UTXO selection strategy for transaction creation
+///
+/// Controls which UTXOs (Unspent Transaction Outputs) should be considered
+/// or excluded when building transactions. This allows fine-grained control
+/// over coin selection for privacy, fee optimization, or other purposes.
 #[derive(Debug, Clone, Default)]
 pub enum UtxoSelection {
-    /// Default behavior,
-    /// includes all the 'previous' UTXOs (bound to non-current Heritage Configs),
-    /// plus the 'current' UTXOs needed to match the requested amount, if any are necessary
+    /// Default behavior: include previous UTXOs plus current UTXOs as needed
+    ///
+    /// Includes all UTXOs from obsolete heritage configurations plus any UTXOs
+    /// from the current configuration needed to satisfy the transaction amount.
+    /// This maximizes the use of "stale" UTXOs while minimizing current UTXO usage.
     #[default]
     IncludePrevious,
-    /// Like the default behavior, plus always include the given UTXOs
+    /// Include specific UTXOs in addition to the default selection
+    ///
+    /// Behaves like `IncludePrevious` but guarantees the specified UTXOs
+    /// are included in the transaction, regardless of whether they're needed
+    /// to meet the amount requirement.
     Include(Vec<OutPoint>),
-    /// Like the default behavior, but always exclude the given UTXOs
+    /// Exclude specific UTXOs from the default selection
+    ///
+    /// Behaves like `IncludePrevious` but never uses the specified UTXOs,
+    /// even if they would otherwise be selected by the algorithm.
     Exclude(HashSet<OutPoint>),
-    /// Combinaison of Include and Exclude: like the default behavior, but include and exclude the given UTXOs
+    /// Combination of include and exclude lists
+    ///
+    /// Like the default behavior, but with explicit inclusion and exclusion
+    /// of specific UTXOs. Included UTXOs are guaranteed to be used, excluded
+    /// UTXOs are guaranteed not to be used.
     IncludeExclude {
+        /// UTXOs that must be included in the transaction
         include: Vec<OutPoint>,
+        /// UTXOs that must not be included in the transaction
         exclude: HashSet<OutPoint>,
     },
-    /// Use all the given UTXOs, and only the given UTXOs
+    /// Use only and all the specified UTXOs, ignore all others
+    ///
+    /// Only the given UTXOs will be considered for the transaction.
+    /// If these UTXOs don't contain sufficient funds, the transaction
+    /// creation will fail.
     UseOnly(HashSet<OutPoint>),
 }
 
-/// Options used to customize the behavior of [super::HeritageWallet::create_psbt]
+/// Options for customizing PSBT creation behavior
+///
+/// Provides fine-grained control over transaction creation including fee policies,
+/// UTXO selection strategies, time assumptions, and transaction flags.
 #[derive(Debug, Clone, Default)]
 pub struct CreatePsbtOptions {
-    /// Override the fee computation process, either with a given fee-rate in sat/vB or an absolute fee amount in sat.
+    /// Fee calculation policy for the transaction
+    ///
+    /// If `None`, uses the wallet's default fee rate based on current
+    /// network conditions and block inclusion objective.
     pub fee_policy: Option<FeePolicy>,
-    /// Mainly used for tests, it allow tricking the PSBT creation process into believing the blockchain is past a certain time
-    /// instead of taking the last sync time as the "present"
+    /// Override the current blockchain time for heritage condition evaluation
+    ///
+    /// Primarily used for testing, this allows simulating future blockchain
+    /// states to test time-locked heritage conditions. If `None`, uses the
+    /// wallet's last synchronization time as "present".
     pub assume_blocktime: Option<BlockTime>,
-    /// The UTXO Selection algorithm, see [UtxoSelection], defaults to [UtxoSelection::IncludePrevious]
+    /// UTXO selection strategy for the transaction
+    ///
+    /// Controls which UTXOs are considered when building the transaction.
+    /// Defaults to [`UtxoSelection::IncludePrevious`].
     pub utxo_selection: UtxoSelection,
-    /// Signal the the Transaction should not have the Replace By Fee opt-in flag
-    /// Defaults to false, meaning the transaction will allow RBF.
-    /// Note that since BitcoinCore v28, full-RBF is the node default configuration, so this
-    /// parameter will likely have no impact whatsoever
+    /// Disable Replace-By-Fee (RBF) signaling for this transaction
+    ///
+    /// When `true`, the transaction will not signal RBF support (sequence numbers
+    /// will be set to 0xfffffffe). When `false` (default), RBF is enabled.
+    ///
+    /// **Note**: Since Bitcoin Core v28, full-RBF is the default node configuration,
+    /// making this flag largely ineffective for actual replacement prevention.
     pub disable_rbf: bool,
 }
 
-/// An [HeritageWallet] configuration used to query the appropriate [crate::bitcoin::FeeRate]
-/// from BitcoinCore RPC. It represents the number of blocks we are willing to wait before a
-/// transaction is included in the blockchain. Per https://developer.bitcoin.org/reference/rpc/estimatesmartfee.html
-/// it must be between 1 and 1008.
+/// Block inclusion target for fee estimation
+///
+/// Represents the number of blocks within which we want a transaction to be included
+/// in the blockchain. This value is used when querying fee estimates from Bitcoin Core RPC.
+///
+/// Lower values (1-6 blocks) result in higher fee rates for faster confirmation.
+/// Higher values (100+ blocks) result in lower fee rates but slower confirmation.
+///
+/// # Valid Range
+///
+/// Must be between 1 and 1008 blocks (per Bitcoin Core's `estimatesmartfee` RPC).
+/// Values outside this range will be clamped to the valid range.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq, PartialOrd, Ord)]
 #[serde(transparent)]
 pub struct BlockInclusionObjective(pub(crate) u16);
@@ -180,13 +277,9 @@ impl Default for BlockInclusionObjective {
 }
 impl From<u16> for BlockInclusionObjective {
     /// Create a [BlockInclusionObjective] from a [u16]
-    ///
-    /// # Panics
-    /// Panics if the [u16] is less than 1 or more than 1008
+    /// The result is clamped to ensure its validity
     fn from(value: u16) -> Self {
-        let bio: u16 = value.into();
-        assert!(Self::MIN.0 <= bio && bio <= Self::MAX.0);
-        Self(bio)
+        Self(value).clamp(Self::MIN, Self::MAX)
     }
 }
 impl From<BlockInclusionObjective> for u16 {
@@ -243,15 +336,28 @@ impl FromStr for BlockInclusionObjective {
     }
 }
 
+/// Identifier for a specific subwallet configuration
+///
+/// Used to reference either the current active configuration or a specific
+/// historical configuration by its unique identifier.
 #[derive(Debug, Clone, Copy)]
 pub enum SubwalletConfigId {
+    /// Reference to the current active subwallet configuration
     Current,
+    /// Reference to a specific subwallet configuration by ID
     Id(SubwalletId),
 }
 
-/// Wrapper around an [Address<NetworkChecked>] that automatically check the address
-/// using the `BITCOIN_NETWORK` environment variable.
-/// If the environment variable is absent, assume [crate::bitcoin::Network::Bitcoin]
+/// A Bitcoin address that has been validated against the configured network
+///
+/// This is a wrapper around [`Address<NetworkChecked>`] that automatically validates
+/// addresses using the `BITCOIN_NETWORK` environment variable. If the environment
+/// variable is not set, it defaults to [`bitcoin::Network::Bitcoin`].
+///
+/// The address validation ensures that:
+/// - The address format is valid for the configured network
+/// - Mainnet addresses aren't used on testnet and vice versa
+/// - The address can be safely used for transactions
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(into = "String", try_from = "String")]
 pub struct CheckedAddress(Address<NetworkChecked>);
@@ -306,6 +412,11 @@ impl Display for CheckedAddress {
     }
 }
 
+/// A UTXO (Unspent Transaction Output) in a heritage wallet
+///
+/// Represents a spendable output that belongs to the heritage wallet, containing
+/// all the information needed to spend it including the heritage configuration
+/// that controls its spending conditions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(any(test, feature = "database-tests"), derive(Eq, PartialEq))]
 pub struct HeritageUtxo {
@@ -418,9 +529,15 @@ impl HeritageUtxo {
     }
 }
 
+/// Summary totals for transaction inputs or outputs
+///
+/// Aggregates the count and total amount for either inputs or outputs
+/// in a transaction summary.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionSummaryIOTotals {
+    /// Number of inputs or outputs
     pub count: usize,
+    /// Total amount of all inputs or outputs
     #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
     pub amount: Amount,
 }
@@ -446,37 +563,73 @@ impl TransactionSummaryIOTotals {
     }
 }
 
+/// Information about a transaction input or output owned by the wallet
+///
+/// Represents either an input being spent from or an output being received by
+/// addresses controlled by the heritage wallet.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionSummaryOwnedIO {
+    /// The outpoint being spent (for inputs) or created (for outputs)
     pub outpoint: OutPoint,
+    /// The address associated with this input/output
     pub address: CheckedAddress,
+    /// The amount being spent or received
     #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
     pub amount: Amount,
 }
 
-/// A wallet transaction
+/// Summary of a wallet transaction with owned inputs and outputs
+///
+/// Provides a comprehensive view of a transaction that involves the heritage wallet,
+/// including which inputs and outputs belong to the wallet, fee information,
+/// and confirmation status. This is used for transaction history and analysis.
+///
+/// The summary distinguishes between:
+/// - **Owned** inputs/outputs: Those belonging to addresses controlled by this wallet
+/// - **Total** inputs/outputs: All inputs/outputs in the transaction, including external ones
+///
+/// This distinction allows users to understand both their involvement in the transaction
+/// and the transaction's overall structure.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TransactionSummary {
-    /// Transaction id
+    /// Unique transaction identifier
     pub txid: Txid,
-    /// If the transaction is confirmed, contains height and Unix timestamp of the block containing the
-    /// transaction, unconfirmed transaction contains `None`.
+    /// Confirmation status and timestamp
+    ///
+    /// Contains block height and Unix timestamp if confirmed, `None` if still pending.
     #[serde(default, flatten, skip_serializing_if = "Option::is_none")]
     pub confirmation_time: Option<BlockTime>,
-    /// The owned inputs addresses and amounts of this transaction
+    /// Inputs owned by this wallet that were spent in this transaction
+    ///
+    /// Each entry represents a UTXO that was previously controlled by this wallet
+    /// and was consumed as an input in this transaction.
     pub owned_inputs: Vec<TransactionSummaryOwnedIO>,
-    /// The total count and total amounts of this transaction inputs
+    /// Total count and amount of all inputs in this transaction
+    ///
+    /// Includes both owned and external inputs for complete transaction context.
     pub inputs_totals: TransactionSummaryIOTotals,
-    /// The owned outputs addresses and amounts of this transaction
+    /// Outputs owned by this wallet that were created by this transaction
+    ///
+    /// Each entry represents a new UTXO that this wallet can spend, created
+    /// as an output of this transaction.
     pub owned_outputs: Vec<TransactionSummaryOwnedIO>,
-    /// The total count and total amounts of this transaction outputs
+    /// Total count and amount of all outputs in this transaction
+    ///
+    /// Includes both owned and external outputs for complete transaction context.
     pub outputs_totals: TransactionSummaryIOTotals,
-    /// Fee value (sats)
+    /// Transaction fee paid in satoshis
+    ///
+    /// Calculated as the difference between total input and output amounts.
     #[serde(with = "crate::bitcoin::amount::serde::as_sat")]
     pub fee: Amount,
-    /// Fee rate (sat/kWU)
+    /// Fee rate in satoshis per thousand weight units (sat/kWU)
+    ///
+    /// Calculated as: fee / (transaction_weight / 1000)
     pub fee_rate: FeeRate,
-    /// The previous [Txid] of the same block on which this transaction depends. For ordering purposes
+    /// Transaction dependencies within the same block
+    ///
+    /// Contains TXIDs of transactions in the same block that this transaction
+    /// depends on, used for proper transaction ordering in the wallet history (CLI/GUI/).
     pub parent_txids: HashSet<Txid>,
 }
 
@@ -491,7 +644,15 @@ pub struct TransactionSummary {
 //     pub last_change_index: Option<u32>,
 // }
 
-/// A [Address<NetworkChecked>] with [(Fingerprint, DerivationPath)] informations
+/// A bitcoin address with its HD wallet derivation information
+///
+/// Combines a bitcoin address with the key fingerprint and derivation path
+/// that was used to generate it, enabling wallet backup and recovery.
+/// The address is automatically validated against the configured network.
+///
+/// # Format
+///
+/// When serialized to string, uses the format: `[<fingerprint>/<derivation_path>]<address>`
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq)]
 #[serde(into = "String", try_from = "String")]
 pub struct WalletAddress {
@@ -499,10 +660,26 @@ pub struct WalletAddress {
     pub(crate) address: Address<NetworkChecked>,
 }
 impl WalletAddress {
+    /// Returns the key origin information (fingerprint and derivation path)
+    ///
+    /// The fingerprint identifies the master key, and the derivation path
+    /// shows how to derive the specific key used for this address.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use btc_heritage::heritage_wallet::WalletAddress;
+    /// # let wallet_address: WalletAddress = todo!();
+    /// let (fingerprint, derivation_path) = wallet_address.origin();
+    /// println!("Key fingerprint: {}", fingerprint);
+    /// println!("Derivation path: {}", derivation_path);
+    /// ```
     pub fn origin(&self) -> &(Fingerprint, DerivationPath) {
         &self.origin
     }
-    pub fn address(&self) -> &Address {
+
+    /// Returns the bitcoin address
+    pub fn address(&self) -> &Address<NetworkChecked> {
         &self.address
     }
 }

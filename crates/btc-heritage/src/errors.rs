@@ -7,8 +7,13 @@ use crate::{
     BlockInclusionObjective,
 };
 
+/// Convenience type alias for Results using this crate's Error type
 pub type Result<T> = core::result::Result<T, Error>;
 
+/// Main error type for the heritage wallet library
+///
+/// This enum encompasses all possible errors that can occur during heritage wallet
+/// operations, from address validation to PSBT creation and blockchain interaction.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{0} is not a valid wallet address")]
@@ -63,6 +68,9 @@ pub enum Error {
     Unknown(String),
 }
 
+/// Database-specific errors for heritage wallet operations
+///
+/// These errors occur during transactional database operations.
 #[derive(Debug, Error)]
 pub enum DatabaseError {
     #[error("SubwalletConfig already present in DB at index={0:?}")]
@@ -75,12 +83,19 @@ pub enum DatabaseError {
     Generic(String),
 }
 
+/// Errors that can occur when parsing block inclusion objective values
+///
+/// Block inclusion objectives must be valid integers within the acceptable
+/// range for Bitcoin Core's fee estimation (1-1008 blocks).
 #[derive(Debug, Error)]
 pub enum ParseBlockInclusionObjectiveError {
     #[error("Value could not be parsed as an 16-bits unsigned integer")]
+    /// The provided value could not be parsed as a valid integer
     InvalidInt,
     #[error("Value is less than {}", BlockInclusionObjective::MIN)]
+    /// The provided value is below the minimum allowed (1 block)
     ValueTooLow,
     #[error("Value is more than {}", BlockInclusionObjective::MAX)]
+    /// The provided value is above the maximum allowed (1008 blocks)
     ValueTooHigh,
 }

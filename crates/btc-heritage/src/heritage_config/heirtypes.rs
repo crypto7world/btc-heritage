@@ -120,10 +120,22 @@ impl Display for SingleHeirPubkey {
     }
 }
 
+/// Configuration for an heir in a heritage wallet
+///
+/// Defines the cryptographic identity of an heir who can inherit funds
+/// from the heritage wallet. Heirs can be specified either as:
+///
+/// - A single concrete public key at a specific derivation path (deprecated)
+/// - An extended public key that can derive multiple addresses
+///
+/// The heir configuration determines how the heir's spending conditions
+/// are encoded in the wallet's Taproot scripts.
 #[derive(Debug, Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd, Clone)]
 #[serde(tag = "type", content = "value", rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum HeirConfig {
+    /// Deprecated: A single public key at a specific derivation path
     SingleHeirPubkey(SingleHeirPubkey),
+    /// An extended public key that can derive multiple addresses
     HeirXPubkey(AccountXPub),
     // SingleHeirPubKeyHash(KeyHash),
 }
@@ -152,6 +164,19 @@ impl core::hash::Hash for HeirConfig {
 }
 
 impl HeirConfig {
+    /// Returns the miniscript descriptor segment for this heir
+    ///
+    /// Generates the miniscript expression that represents this heir's descriptor
+    /// public key in a spending condition. For extended public keys, the `xpub_child_index` parameter
+    /// specifies which child key to derive (i.e. external or change keychain).
+    ///
+    /// # Arguments
+    ///
+    /// * `xpub_child_index` - Child key index for extended public keys
+    ///
+    /// # Returns
+    ///
+    /// A miniscript expression string like `v:pk(key)` that can be used in Taproot scripts.
     pub fn descriptor_segment(&self, xpub_child_index: Option<u32>) -> String {
         match self {
             HeirConfig::SingleHeirPubkey(xpub) => format!("v:pk({xpub})"),
@@ -164,6 +189,19 @@ impl HeirConfig {
                // }
         }
     }
+    /// Returns a concrete script segment with derived keys
+    ///
+    /// Similar to [`descriptor_segment`](Self::descriptor_segment) but resolves extended public keys
+    /// to concrete public keys using the provided derivation path.
+    ///
+    /// # Arguments
+    ///
+    /// * `origins` - Iterator of (fingerprint, derivation_path) pairs for key resolution
+    ///
+    /// # Panics
+    ///
+    /// Panics if the origins don't contain a matching entry for extended public keys
+    /// or if multiple matching origins are found.
     pub fn concrete_script_segment<'a>(
         &self,
         origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
@@ -204,6 +242,10 @@ impl HeirConfig {
         }
     }
 
+    /// Returns the master key fingerprint for this heir config
+    ///
+    /// The fingerprint uniquely identifies the master key from which
+    /// this heir's key is derived.
     pub fn fingerprint(&self) -> Fingerprint {
         match self {
             HeirConfig::SingleHeirPubkey(xpub) => xpub.0.master_fingerprint(),
@@ -212,7 +254,9 @@ impl HeirConfig {
     }
 }
 
-/// Extract an HeirConfig key from the key fragment of a script
+/// Returns a regex pattern for extracting heir public keys from miniscript fragments
+///
+/// Matches the `v:pk(key)` pattern used in heritage miniscripts and captures the key part.
 fn re_heirconfig_key() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| regex::Regex::new(r"^v:pk\((?<key>.+?)\)$").unwrap())

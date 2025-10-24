@@ -1,3 +1,27 @@
+//! Bitcoin Heritage Wallet Library
+//!
+//! This crate provides a Bitcoin wallet implementation with inheritance features,
+//! allowing users to configure time-locked spending conditions where designated
+//! heirs can inherit funds after specified time periods.
+//!
+//! The library uses Taproot's script tree functionality to encode inheritance
+//! rules directly into Bitcoin addresses, enabling trustless inheritance without
+//! requiring third-party custodians.
+//!
+//! # Core Components
+//!
+//! - [`HeritageWallet`] - Main wallet interface for managing heritage funds accross all the historical Heritage Configurations
+//! - [`HeritageConfig`] - Configuration defining inheritance rules and conditions
+//! - [`AccountXPub`] - BIP86 account extended public keys for Taproot addresses
+//! - [`SubwalletConfig`] - Individual wallet configurations with specific inheritance rules
+//!
+//! # Features
+//!
+//! - **Time-locked inheritance**: Heirs can claim funds after configurable time delays
+//! - **Multiple heirs**: Support for complex inheritance hierarchies with different maturity times
+//! - **Taproot integration**: Uses Bitcoin's latest script capabilities for efficiency and privacy
+//! - **BDK integration**: Built on the Bitcoin Development Kit for robust wallet functionality
+
 pub mod account_xpub;
 pub mod database;
 pub mod errors;
@@ -20,7 +44,16 @@ pub use bdk::miniscript;
 #[cfg(feature = "online")]
 pub use bdk::{bitcoincore_rpc, electrum_client};
 
-// Publicly exposed BDK types
+/// Re-exported BDK types for convenience
+///
+/// This module re-exports commonly used types from the Bitcoin Development Kit (BDK)
+/// to provide a consistent API surface and avoid version conflicts.
+///
+/// It also isolate BDK dependency in order to ease a future removal of
+/// the crate. BDK is awesome and was very helpful, but it was not built
+/// for the usecase of the Heritage Wallet, so we end-up forced to hack and bend
+/// it quite a lot. At some point, having our own full-wallet implementation built
+/// directly on rust-bitcoin and miniscript would be better.
 pub mod bdk_types {
     pub use bdk::{
         database::{BatchDatabase, BatchOperations, Database, SyncTime},

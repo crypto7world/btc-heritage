@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::bitcoin::psbt::PartiallySignedTransaction;
 
+/// UNIX Timestamp marking when a subwallet was first used
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 struct SubwalletFirstUseTime(u64);
@@ -22,9 +23,15 @@ impl Default for SubwalletFirstUseTime {
         Self(utils::timestamp_now())
     }
 }
-
+/// Unique identifier for a subwallet, derived from the account XPub ID
 pub type SubwalletId = u32;
 
+/// Configuration for a heritage subwallet containing descriptors and metadata
+///
+/// A SubwalletConfig represents a specific inheritance configuration combining
+/// an account extended public key with heritage rules. It contains the Bitcoin
+/// descriptors needed to generate addresses and track funds, along with metadata
+/// about when the subwallet was first used.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SubwalletConfig {
     ext_descriptor: Descriptor<DescriptorPublicKey>,
@@ -44,6 +51,9 @@ impl SubwalletConfig {
     pub const DEFAULT_EXTERNAL_INDEX: u32 = 0;
     pub const DEFAULT_CHANGE_INDEX: u32 = 1;
 
+    /// Creates a new SubwalletConfig with default derivation indexes
+    ///
+    /// Uses the default external index (0) and change index (1) for descriptor generation.
     pub fn new(account_xpub: AccountXPub, heritage_config: HeritageConfig) -> Self {
         log::debug!(
             "SubwalletConfig::new - \
@@ -57,6 +67,11 @@ impl SubwalletConfig {
         )
     }
 
+    /// Creates a new SubwalletConfig with custom derivation indexes
+    ///
+    /// Allows specifying custom indexes for external and change descriptors.
+    /// This is useful for creating multiple subwallets from the same account XPub
+    /// or for restoring wallets with non-standard derivation paths.
     pub fn new_with_custom_indexes(
         account_xpub: AccountXPub,
         heritage_config: HeritageConfig,
@@ -89,6 +104,15 @@ impl SubwalletConfig {
         }
     }
 
+    /// Creates Bitcoin descriptors for external and change addresses
+    ///
+    /// Generates Taproot descriptors combining the account XPub with the heritage
+    /// configuration's spending conditions. The descriptors can be used to derive
+    /// addresses and create transactions.
+    ///
+    /// # Returns
+    ///
+    /// A tuple of (external_descriptor, change_descriptor) for receiving and change addresses.
     pub fn create_descriptors(
         account_xpub: &AccountXPub,
         heritage_config: &HeritageConfig,
@@ -115,6 +139,12 @@ impl SubwalletConfig {
         )
     }
 
+    /// Creates a BDK wallet instance for this subwallet configuration
+    ///
+    /// # Panics
+    ///
+    /// Panics if the descriptors are inconsistent with previous database values
+    /// or if the network configuration is invalid.
     pub fn get_subwallet<DB: BatchDatabase>(&self, subdatabase: DB) -> Wallet<DB> {
         Wallet::new(
             self.ext_descriptor.clone(),
@@ -125,14 +155,26 @@ impl SubwalletConfig {
         .expect("failed because descriptors checksums are inconsistent with previous DB values")
     }
 
+    /// Returns the unique identifier for this subwallet
     pub fn subwallet_id(&self) -> SubwalletId {
         self.account_xpub.descriptor_id()
     }
 
+    /// Returns the timestamp when this subwallet was first used, if any
+    ///
+    /// Returns `None` if the subwallet has never been used for transactions.
     pub fn subwallet_firstuse_time(&self) -> Option<u64> {
         self.subwallet_firstuse_time.map(|e| e.0)
     }
 
+    /// Marks this subwallet as having been used for the first time
+    ///
+    /// Sets the first use timestamp to the current time. This can only be done once.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::SubwalletConfigAlreadyMarkedUsed`] if the subwallet
+    /// has already been marked as used.
     pub fn mark_subwallet_firstuse(&mut self) -> Result<()> {
         if self.subwallet_firstuse_time.is_some() {
             log::error!("Subwallet has already been used");
@@ -142,24 +184,30 @@ impl SubwalletConfig {
         Ok(())
     }
 
+    /// Returns a reference to the account extended public key
     pub fn account_xpub(&self) -> &AccountXPub {
         &self.account_xpub
     }
 
+    /// Returns a reference to the heritage configuration
     pub fn heritage_config(&self) -> &HeritageConfig {
         &self.heritage_config
     }
 
+    /// Returns a reference to the external (receiving) address descriptor
     pub fn ext_descriptor(&self) -> &Descriptor<DescriptorPublicKey> {
         &self.ext_descriptor
     }
 
+    /// Returns a reference to the change address descriptor
     pub fn change_descriptor(&self) -> &Descriptor<DescriptorPublicKey> {
         &self.change_descriptor
     }
 
-    /// Consume the [SubwalletConfig] in order to retrieve its
-    /// [AccountXPub] and [HeritageConfig] without having to clone anything
+    /// Consumes the SubwalletConfig to retrieve its [AccountXPub] and [HeritageConfig]
+    ///
+    /// This method allows extracting the core components without cloning,
+    /// which can be more efficient when the SubwalletConfig is no longer needed.
     pub fn into_parts(self) -> (AccountXPub, HeritageConfig) {
         (self.account_xpub, self.heritage_config)
     }
@@ -174,7 +222,9 @@ impl SubwalletConfig {
     }
 }
 
-/// Match a whole Taproot descriptor and allow to retrieve the key and, if present, the scripts
+/// Returns a regex pattern for matching Taproot descriptors
+///
+/// The pattern extracts the key and script components from a complete Taproot descriptor.
 fn re_descriptor() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
@@ -183,6 +233,7 @@ fn re_descriptor() -> &'static regex::Regex {
     })
 }
 /// Match an [AccountXPub] string and allow to separate the origin/key and the final derivation
+/// Returns a regex pattern for matching account extended public keys in descriptors
 fn re_account_xpub() -> &'static regex::Regex {
     static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {

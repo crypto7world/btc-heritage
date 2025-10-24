@@ -20,6 +20,9 @@ serde_json = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+bdk = { workspace = true, features = ['electrum', 'rpc'] }
+
 [features]
 default = []
 online = ["bdk/electrum", "bdk/rpc"]

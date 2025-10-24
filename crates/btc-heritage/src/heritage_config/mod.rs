@@ -15,26 +15,49 @@ use crate::{
 pub mod heirtypes;
 pub mod v1;
 
+/// Conditions that must be met before an heir can spend heritage funds
+///
+/// This struct encapsulates the temporal constraints on when heritage funds
+/// become spendable by an heir, including absolute time locks and relative
+/// block height locks.
 #[derive(Debug, Clone)]
 pub struct SpendConditions {
     spendable_timestamp: Option<u64>,
     relative_block_lock: Option<u16>,
 }
 impl SpendConditions {
+    /// Checks if the spending conditions are satisfied at the current time
     pub fn can_spend_now(&self) -> bool {
         let now = crate::utils::timestamp_now();
         self.can_spend_at(now)
     }
 
+    /// Checks if the spending conditions are satisfied at the given timestamp
+    ///
+    /// # Arguments
+    ///
+    /// * `ts` - Unix timestamp in seconds to check against
     pub fn can_spend_at(&self, ts: u64) -> bool {
         ts >= self.spendable_timestamp.unwrap_or(0)
     }
+    /// Returns the relative block lock if one is set
+    ///
+    /// The relative block lock specifies how many blocks must pass after inclusion
+    /// in the blockchain before the given Heritage UTXO can be spent.
+    ///
+    /// If `None`, there is no relative block lock restriction.
     pub fn get_relative_block_lock(&self) -> Option<u16> {
         self.relative_block_lock
     }
+    /// Returns the absolute timestamp when spending becomes allowed
+    ///
+    /// If `None`, there is no absolute time restriction.
     pub fn get_spendable_timestamp(&self) -> Option<u64> {
         self.spendable_timestamp
     }
+    /// Creates spending conditions for the wallet owner
+    ///
+    /// Owners have no spending restrictions and can spend immediately.
     pub fn for_owner() -> Self {
         SpendConditions {
             spendable_timestamp: None,
@@ -43,6 +66,12 @@ impl SpendConditions {
     }
 }
 
+/// Configuration defining inheritance rules and heir spending conditions
+///
+/// A HeritageConfig specifies how and when heirs can inherit funds from a Bitcoin wallet.
+/// It contains multiple heritage entries, each with different maturity times and spending
+/// conditions. The config is versioned to allow for future upgrades while maintaining
+/// backward compatibility.
 #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct HeritageConfig(InnerHeritageConfig);
@@ -53,6 +82,7 @@ enum InnerHeritageConfig {
     V1(v1::HeritageConfig),
 }
 
+/// Version identifier for HeritageConfig formats
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HeritageConfigVersion {
     V1 = 1,
@@ -69,24 +99,27 @@ impl FromStr for HeritageConfigVersion {
 }
 
 impl HeritageConfig {
-    /// Return a builder for the default [HeritageConfig] version
+    /// Returns a builder for the default HeritageConfig version
+    ///
+    /// Currently defaults to V1. This is the recommended way to create
+    /// new HeritageConfig instances.
     pub fn builder() -> v1::HeritageConfigBuilder {
         HeritageConfig::builder_v1()
     }
 
-    /// Return a builder for [HeritageConfig::V1]
+    /// Returns a builder specifically for HeritageConfig V1
     pub fn builder_v1() -> v1::HeritageConfigBuilder {
         v1::HeritageConfig::builder()
     }
 
-    /// Return the version
+    /// Returns the version of this HeritageConfig
     pub fn version(&self) -> HeritageConfigVersion {
         match self.0 {
             InnerHeritageConfig::V1(_) => HeritageConfigVersion::V1,
         }
     }
 
-    /// Return `true` if this is an [HeritageConfig::V1]
+    /// Returns `true` if this is a V1 HeritageConfig
     pub fn is_v1(&self) -> bool {
         #[allow(unreachable_patterns)]
         match self.0 {
@@ -95,10 +128,11 @@ impl HeritageConfig {
         }
     }
 
-    /// Borrow the specific, inner, [v1::HeritageConfig] encapsulated in this [HeritageConfig]
+    /// Returns a reference to the inner V1 HeritageConfig
     ///
     /// # Errors
-    /// Return an error if the inner object is not V1
+    ///
+    /// Returns [`Error::InvalidHeritageConfigVersion`] if the inner config is not V1
     pub fn heritage_config_v1(&self) -> Result<&v1::HeritageConfig> {
         #[allow(unreachable_patterns)]
         match &self.0 {
@@ -107,11 +141,12 @@ impl HeritageConfig {
         }
     }
 
-    /// Returns the miniscript expression representing the TapTree generated
-    /// by this [HeritageConfig], if any.
-    /// If present, the index will be used to derive a child for every xpub present in this [HeritageConfig],
-    /// i.e. for every [HeirConfig::HeirXPubkey]. For other HeirConfig, it has no effect.
-    /// The only case where this returns [None] is if there is no heir in this [HeritageConfig].
+    /// Returns the miniscript expression representing the TapTree for this HeritageConfig
+    ///
+    /// If an index is provided, it will be used to derive child keys for every extended
+    /// public key ([HeirConfig::HeirXPubkey]) in the config.
+    ///
+    /// Returns `None` only if there are no heirs in this HeritageConfig.
     pub fn descriptor_taptree_miniscript_expression_for_child(
         &self,
         index: Option<u32>,
@@ -123,17 +158,22 @@ impl HeritageConfig {
         }
     }
 
-    /// Returns an iterator over references to the [HeirConfig]s present in the [HeritageConfig].
+    /// Returns an iterator over references to the [HeirConfig]s in this HeritageConfig
     ///
-    /// For a V1 HeritageConfig, the order is guaranteed to be from the lowest maturity to the highest one.
+    /// For V1 HeritageConfigs, the order is guaranteed to be from the lowest
+    /// maturity time to the highest.
     pub fn iter_heir_configs(&self) -> impl Iterator<Item = &HeirConfig> {
         match &self.0 {
             InnerHeritageConfig::V1(hc) => hc.iter_heritages().map(|h| h.get_heir_config()),
         }
     }
 
-    /// Returns a type with [HeritageExplorer] for the given [HeirConfig] if it can be found in the [HeritageConfig].
-    /// If no Heritage could be matched, the function returns [None].
+    /// Returns a [HeritageExplorer] for the given [HeirConfig] if found
+    ///
+    /// The HeritageExplorer provides methods to examine the specific heritage
+    /// entry and its spending conditions.
+    ///
+    /// Returns `None` if no matching heritage could be found.
     pub fn get_heritage_explorer(&self, heir_config: &HeirConfig) -> Option<HeritageExplorer> {
         match &self.0 {
             InnerHeritageConfig::V1(hc) => hc
@@ -143,9 +183,17 @@ impl HeritageConfig {
     }
 }
 
-/// Trait providing a way to recover an Heritage structure (HeritageConfig, Subwallet, etc...) from
-/// a Descriptor string with miniscript
+/// Trait for reconstructing heritage structures from descriptor miniscripts
+///
+/// This trait provides a way to recover heritage structures (HeritageConfig, Subwallet, etc.)
+/// from a descriptor string containing miniscript expressions.
 pub trait FromDescriptorScripts {
+    /// Reconstructs the structure from descriptor miniscript strings
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the scripts cannot be parsed or don't represent
+    /// a valid structure of this type.
     fn from_descriptor_scripts(scripts: &str) -> Result<Self>
     where
         Self: Sized;
@@ -161,29 +209,35 @@ impl FromDescriptorScripts for HeritageConfig {
     }
 }
 
-/// This trait is for objects that can be returned by an [HeritageConfig] and
-/// allow to explore caracteritics of a specific Heir. Usefull at the
-/// PSBT creation stage
+/// Trait for exploring characteristics of a specific heir's heritage
+///
+/// Objects implementing this trait are returned by HeritageConfig and allow
+/// examination of heir-specific properties. This is particularly useful
+/// during PSBT creation.
 pub trait HeritageExplorerTrait {
-    /// Indicate the index of this Heir miniscript in the miniscript TapTree of the
-    /// [HeritageConfig]. Used to compute the policy index when creating a PSBT
+    /// Returns the index of this heir's miniscript in the TapTree
+    ///
+    /// This index is used to compute the policy index when creating a PSBT.
     fn get_miniscript_index(&self) -> usize;
 
-    /// Retrieve the [SpendConditions] for the Heritage, allowing
-    /// to verify the minimum timestamp and block height at which
-    /// they can spend a given input
+    /// Returns the spending conditions for this heritage
+    ///
+    /// The SpendConditions allow verification of the minimum timestamp
+    /// and block height at which the heir can spend a given input.
     fn get_spend_conditions(&self) -> SpendConditions;
 
-    /// Verify if the given [Fingerprint] is part of the Heritage being explored
+    /// Checks if the given [Fingerprint] is part of this heritage
     fn has_fingerprint(&self, fingerprint: Fingerprint) -> bool;
 
-    /// Get the actual Bitcoin lock script for the Heritage in this [HeritageConfig].
-    /// If `origins` are provided, they will be used to transform eXtended Public Keys into
-    /// Single Public Keys.
+    /// Returns the Bitcoin script corresponding to this heritage for insertion
+    /// into the TapScript MAST.
+    ///
+    /// If origins are provided, they will be used to transform extended public
+    /// keys into single public keys.
     ///
     /// # Panics
-    /// Panics if the provided `origins` were not covering every XPub or were not
-    /// compatible
+    ///
+    /// Panics if the provided origins don't cover every XPub or are incompatible.
     fn get_script<'a>(
         &self,
         origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
@@ -191,13 +245,14 @@ pub trait HeritageExplorerTrait {
         self.get_miniscript(origins).encode()
     }
 
-    /// Get the [Miniscript] object for the Heritage in this [HeritageConfig].
-    /// If `origins` are provided, they will be used to transform eXtended Public Keys into
-    /// Single Public Keys.
+    /// Returns the [Miniscript] object of the TapScript section corresponding to this heritage
+    ///
+    /// If origins are provided, they will be used to transform extended public
+    /// keys into single public keys.
     ///
     /// # Panics
-    /// Panics if the provided `origins` were not covering every XPub or were not
-    /// compatible
+    ///
+    /// Panics if the provided origins don't cover every XPub or are incompatible.
     fn get_miniscript<'a>(
         &self,
         origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
@@ -206,13 +261,14 @@ pub trait HeritageExplorerTrait {
             .expect("we provide the miniscript so it should be valid")
     }
 
-    /// Get the miniscript expression for the Heritage in this [HeritageConfig].
-    /// If `origins` are provided, they will be used to transform eXtended Public Keys into
-    /// Single Public Keys.
+    /// Returns the [Miniscript] expression string of the TapScript section corresponding to this heritage
+    ///
+    /// If origins are provided, they will be used to transform extended public
+    /// keys into single public keys.
     ///
     /// # Panics
-    /// Panics if the provided `origins` were not covering every XPub or were not
-    /// compatible
+    ///
+    /// Panics if the provided origins don't cover every XPub or are incompatible.
     fn get_miniscript_expression<'a>(
         &self,
         origins: impl Iterator<Item = (&'a Fingerprint, &'a DerivationPath)>,
@@ -224,6 +280,10 @@ enum InnerHeritageExplorer<'a> {
     V1(v1::HeritageExplorer<'a>),
 }
 
+/// Concrete implementation of HeritageExplorerTrait
+///
+/// This struct wraps version-specific heritage explorer implementations
+/// and provides a unified interface for examining heritage properties.
 #[derive(Debug)]
 pub struct HeritageExplorer<'a>(InnerHeritageExplorer<'a>);
 impl<'a> HeritageExplorerTrait for HeritageExplorer<'a> {

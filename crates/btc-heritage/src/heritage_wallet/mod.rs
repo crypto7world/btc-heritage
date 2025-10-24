@@ -36,33 +36,67 @@ use bdk::{
 
 pub use types::*;
 
+/// Represents who is spending from the heritage wallet
 #[derive(Debug, Clone)]
 enum Spender {
+    /// The owner of the wallet
     Owner,
+    /// The heir with the given [HeirConfig]
     Heir(HeirConfig),
 }
 
+/// A Bitcoin wallet that supports backup/inheritance functionality
+///
+/// This wallet allows the owner to set up inheritance rules where heirs can claim
+/// funds after certain conditions are met (typically time-based). The wallet manages
+/// multiple subwallets with different heritage configurations.
 pub struct HeritageWallet<D: TransacHeritageDatabase> {
+    /// The underlying database storing wallet state and configurations
     database: RefCell<D>,
 }
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
+    /// Creates a new heritage wallet with the given database
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use btc_heritage::HeritageWallet;
+    /// # use btc_heritage::database::memory::HeritageMemoryDatabase;
+    /// let database = HeritageMemoryDatabase::new();
+    /// let wallet = HeritageWallet::new(database);
+    /// ```
     pub fn new(database: D) -> Self {
         log::debug!("HeritageWallet::new");
         Self {
             database: RefCell::new(database),
         }
     }
-    /// Return an immutable reference to the internal database
+    /// Returns an immutable reference to the internal database (for read operations)
     pub fn database(&self) -> impl core::ops::Deref<Target = D> + '_ {
         self.database.borrow()
     }
+    /// Returns a mutable reference to the internal database (internal, for writes operation)
     fn database_mut(&self) -> impl core::ops::DerefMut<Target = D> + '_ {
         self.database.borrow_mut()
     }
 }
 
 impl<D: TransacHeritageDatabase> HeritageWallet<D> {
+    /// Generates a complete backup of the heritage wallet
+    ///
+    /// The backup includes all subwallet configurations (both current and obsolete)
+    /// along with their usage information like last used address indexes.
+    ///
+    /// Internally this uses Bitcoin Descriptors (BIP 380) to represent the subwallets, potentially allowing other wallet software
+    /// to use this backup.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Database access fails
+    /// - Subwallet loading fails for used subwallets
+    /// - Address index retrieval fails
     pub fn generate_backup(&self) -> Result<HeritageWalletBackup> {
         log::debug!("HeritageWallet::generate_backup");
         let obsolete_subwallet_configs = self.database().list_obsolete_subwallet_configs()?;
@@ -105,6 +139,40 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         ))
     }
 
+    /// Restores the wallet from a backup
+    ///
+    /// This will restore all subwallet configurations and reset address indexes
+    /// to match the backup state. The operation is performed in a database transaction
+    /// to ensure consistency.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The backup is invalid (fingerprint mismatch, malformed data)
+    /// - Database transaction fails
+    /// - Address index reset fails
+    /// - Subwallet creation fails
+    ///
+    /// # Notes
+    ///
+    /// Heritage Wallet backups are designed to use only BIP standards for maximum compatibility
+    /// with other wallet software. However, this means that some original configuration details
+    /// may be lost during the backup/restore process.
+    ///
+    /// For example, Heritage Configuration V1 uses a reference date and relative lock times
+    /// for each heir. During backup, only the computed absolute timestamp (reference date +
+    /// relative lock time) is stored in the TapScript generated for each heir.
+    /// When restoring, the wallet cannot distinguish between different combinations that yield the same result:
+    /// - Original: reference date Jan 1, 2025 + 1 year lock = heir locked until Jan 1, 2026
+    /// - Alternative: reference date Jan 1, 2024 + 2 year lock = heir locked until Jan 1, 2026
+    ///
+    /// In such cases, the Heritage Wallet will make assumptions (i.e., assume the first heir
+    /// was locked for 1 year) to reconstruct a valid configuration.
+    ///
+    /// **Important**: This limitation is purely cosmetic and affects only the displayed
+    /// configuration in CLI/GUI interfaces. The actual Bitcoin addresses, transaction
+    /// capabilities, and blockchain-level functionality remain completely unchanged.
+    /// Address recovery and regeneration will work exactly as expected.
     pub fn restore_backup(&self, backup: HeritageWalletBackup) -> Result<()> {
         log::debug!("HeritageWallet::restore_backup - backup={backup:?}");
         if backup.0.len() == 0 {
@@ -187,6 +255,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(())
     }
 
+    /// Lists all addresses that belong to this wallet
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Database access fails
+    /// - Subwallet loading fails
+    /// - Address enumeration fails
     pub fn list_wallet_addresses(&self) -> Result<Vec<WalletAddress>> {
         log::debug!("HeritageWallet::list_wallet_addresses");
         let Some(fingerprint) = self.fingerprint()? else {
@@ -279,6 +355,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .collect())
     }
 
+    /// Lists all account extended public keys ([AccountXPub]) that have been used
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database access fails
     pub fn list_used_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWallet::list_used_account_xpubs");
         let res = self.database().list_used_account_xpubs()?;
@@ -286,6 +367,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
+    /// Lists all account extended public keys ([AccountXPub]) that have not been used yet
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database access fails
     pub fn list_unused_account_xpubs(&self) -> Result<Vec<AccountXPub>> {
         log::debug!("HeritageWallet::list_unused_account_xpubs");
         let res = self.database().list_unused_account_xpubs()?;
@@ -293,9 +379,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
-    /// Returns the fingerprint of the Heritage Wallet master key
-    /// if the wallet already has Account Xpubs
-    /// Else return None
+    /// Returns the master key fingerprint for this wallet
+    ///
+    /// Returns `None` if no account xpubs have been added to the wallet yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Database access fails
     pub fn fingerprint(&self) -> Result<Option<Fingerprint>> {
         log::debug!("HeritageWallet::fingerprint");
         let res = self
@@ -322,6 +413,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
+    /// Returns the last synchronization timestamp
+    ///
+    /// This indicates when the wallet was last synchronized with the blockchain.
+    /// Returns `None` if the wallet has never been synchronized.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database access fails
     pub fn get_sync_time(&self) -> Result<Option<BlockTime>> {
         if let Some(current_subwalletconfig) = self
             .database()
@@ -369,16 +468,18 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         }
     }
 
-    /// Verify if a ScriptPubKey belong to one of the wallets resulting from all the [HeritageConfig]
-    /// of this [HeritageWallet].
+    /// Checks if a script belongs to any subwallet (current or obsolete)
     ///
-    /// Note that if there is no current [HeritageConfig] the function will not look further
-    /// as the database integrity should ensure that the only situation where there is
-    /// no "current" [HeritageConfig] is if there is no [HeritageConfig] at all.
+    /// This function searches through all subwallet configurations to determine
+    /// if the given script belongs to this heritage wallet. It first checks the
+    /// current subwallet, then searches through obsolete ones in reverse order.
     ///
     /// # Errors
     ///
-    /// This function will return an error if there are problems with the database.
+    /// Returns an error if:
+    /// - Database access fails
+    /// - Subwallet loading fails
+    /// - Script checking fails
     pub fn is_mine(&self, script: &Script) -> Result<bool> {
         if let Some(current_subwalletconfig) = self
             .database()
@@ -407,22 +508,16 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(false)
     }
 
-    /// Try to add new [AccountXPub] to this [HeritageWallet].
+    /// Adds new account extended public keys to this heritage wallet
     ///
-    /// Note that the ID of an [AccountXPub] is determined by the 3rd node of the derivation path,
-    /// usually called "account", irrespective of the fingerprint. It means that if you try to add
-    /// an [AccountXPub] with the same ID (3rd node of the derivation path) than an existing one but
-    /// another fingerprint, the API will consider those [AccountXPub] are the same. If the existing
-    /// [AccountXPub] has already been used, the new one will be discarded, else the new one will replace
-    /// the existing one.
-    ///
-    /// While this does not prevent the usage of [AccountXPub] of mixed origin (different
-    /// fingerprints) as long as the 3rd node of the derivation paths are all unique, you
-    /// are strongly discouraged to do this. A different fingerprint means a different root
-    /// master key and, ultimatly, a different wallet.
+    /// Account XPubs are identified by the 3rd node of their derivation path (the "account" level).
     ///
     /// # Errors
-    /// This function will return an error if there are problems with the database.
+    ///
+    /// Returns an error if:
+    /// - database operations fail
+    /// - account xpubs do not all have the same fingerprint
+    /// - account xpubs the same fingerprint as the Heritage Wallet.
     pub fn append_account_xpubs(
         &self,
         account_xpubs: impl IntoIterator<Item = AccountXPub>,
@@ -454,6 +549,19 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .map_err(Into::into)
     }
 
+    /// Updates the heritage configuration for the wallet
+    ///
+    /// This creates a new subwallet configuration with the updated heritage settings.
+    /// The old configuration is marked as obsolete but kept for historical purposes unless
+    /// it was not used to generate any address, in which case it is simply discarded and
+    /// replaced by the new one.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No account xpubs are available
+    /// - Subwallet configuration creation fails
+    /// - Database transaction fails
     pub fn update_heritage_config(&self, new_heritage_config: HeritageConfig) -> Result<()> {
         log::debug!(
             "HeritageWallet::update_heritage_config - new_heritage_config={new_heritage_config:?}"
@@ -525,6 +633,13 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         }
     }
 
+    /// Returns the current heritage configuration
+    ///
+    /// Returns `None` if no heritage configuration has been set yet.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database access fails
     pub fn get_current_heritage_config(&self) -> Result<Option<HeritageConfig>> {
         log::debug!("HeritageWallet::get_current_heritage_config");
         // Get the current subwallet_config
@@ -537,6 +652,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
+    /// Lists all obsolete heritage configurations
+    ///
+    /// These are configurations that were previously active but have been
+    /// replaced by newer ones.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database access fails
     pub fn list_obsolete_heritage_configs(&self) -> Result<Vec<HeritageConfig>> {
         log::debug!("HeritageWallet::list_obsolete_heritage_configs");
         // Get the obsolete subwallet_configs
@@ -551,6 +674,17 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
+    /// Returns the current balance of the wallet
+    ///
+    /// The balance includes both up-to-date and obsolete balances from
+    /// all subwallets.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Database access fails
+    /// - Subwallet loading fails
+    /// - Balance calculation fails
     pub fn get_balance(&self) -> Result<HeritageWalletBalance> {
         log::debug!("HeritageWallet::get_balance");
         let res = self.database().get_balance()?.unwrap_or_default();
@@ -558,6 +692,14 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(res)
     }
 
+    /// Generates a new receiving address for the current subwallet
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No current subwallet configuration exists
+    /// - The heritage configuration has expired
+    /// - Address generation fails
     pub fn get_new_address(&self) -> Result<WalletAddress> {
         log::info!("HeritageWallet::get_new_address - Called for a new Bitcoin address");
         let address = self.internal_get_new_address(KeychainKind::External)?;
@@ -566,6 +708,13 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         Ok(address)
     }
 
+    /// Returns the current block inclusion objective
+    ///
+    /// This represents the target number of blocks for transaction confirmation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database access fails
     pub fn get_block_inclusion_objective(&self) -> Result<BlockInclusionObjective> {
         Ok(self
             .database()
@@ -573,12 +722,27 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
             .unwrap_or_default())
     }
 
+    /// Sets the block inclusion objective
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if database access fails
     pub fn set_block_inclusion_objective(&self, new_bio: BlockInclusionObjective) -> Result<()> {
         self.database_mut()
             .set_block_inclusion_objective(new_bio)
             .map_err(|e| DatabaseError::Generic(e.to_string()).into())
     }
 
+    /// Creates a PSBT (Partially Signed Bitcoin Transaction) for the owner to spend funds
+    ///
+    /// The owner can spend funds at any time without waiting for heritage conditions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No current subwallet configuration exists
+    /// - PSBT creation fails
+    /// - Insufficient funds for the transaction
     pub fn create_owner_psbt(
         &self,
         spending_config: SpendingConfig,
@@ -591,6 +755,17 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
         self.create_psbt(Spender::Owner, spending_config, options)
     }
 
+    /// Creates a PSBT for an heir to claim their inheritance
+    ///
+    /// The heir can only spend funds if the heritage conditions are met
+    /// (typically after a certain time period).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - No current subwallet configuration exists
+    /// - Heritage conditions are not yet met
+    /// - PSBT creation fails
     pub fn create_heir_psbt(
         &self,
         heir_config: HeirConfig,
@@ -1470,20 +1645,31 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     }
 }
 
-/// Take a mutable reference to a [Input] and make sure that it does not contains superfluous
-/// informations that are not needed by the intended spender.
-/// The idea is to remove from the [Input] all the scripts and key paths that are
-/// not relevant for the spender.
-/// It also enhence privacy, because Heirs will not be able to know who are
-/// the other Heirs from the Psbt. At most, an Heir can infere how many Heirs were
-/// before him by looking at the number of merkle_branches necessary for them to
-/// create their transaction because of the way we create the MAST
-/// (see comments in [HeritageConfig]::descriptor_segment())
+/// Minimizes a PSBT input for a specific spender type (owner or heir)
 ///
-/// This function SHOULD become largelly useless once [bdk] starts using miniscript v11.0
-/// because it introduces a clean way to generate a minimized Psbt from the get-go, as well
-/// as a feature to better compute the weight of the future transaction (currently, [bdk] uses
-/// the worst-case weight, meaning eveybody pays the fee as if they were the last Heir, not ideal)
+/// This function removes unnecessary witness data and key origins from a PSBT input
+/// to better predict the transaction size (and fees). For owner spending, it clears all tap scripts
+/// and retains only the internal key. For heir spending, it filters keys and scripts
+/// based on the heritage explorer's requirements.
+///
+/// This optimization is particularly important because BDK tends to create PSBTs with
+/// worst-case weight assumptions, causing all spenders to pay fees as if they were
+/// the most expensive spender type.
+///
+/// This also enhences privacy, as each heir will only be able to see the scripts relevant to them.
+/// At most, they may be able to infer their position in the Heritage schedule by looking at the
+/// number of Merkle node necessary for them to compute the MAST
+/// (see [HeritageConfig::descriptor_segment]).
+///
+/// # Arguments
+///
+/// * `psbt_input` - The PSBT input to minimize
+/// * `heritage_explorer` - None for owner spending, Some for heir spending
+///
+/// # Note
+///
+/// This function should become largely obsolete once BDK adopts miniscript v11.0,
+/// which provides better PSBT minimization and weight calculation capabilities.
 fn minimize_psbt_input_for_spender(
     psbt_input: &mut Input,
     heritage_explorer: Option<&HeritageExplorer>,
@@ -1520,39 +1706,41 @@ fn minimize_psbt_input_for_spender(
     }
 }
 
-/// Take a mutable reference to a [Psbt] and compute the exact expected weight of the final transaction.
-/// It is possible to do so relatively easily since:
-/// 1. the [Psbt] is for a Taproot SegWit TX
-/// 2. We already minimized each [Input] down to a single spend-path so that we can easily see if it is
-/// a key-path or script-path and in the later case, we know what will be the size of the control block
-/// by infering the depth of the script in the MAST.
+/// Adjusts a PSBT output amount to account for accurate fee calculation
 ///
-/// After that, we use the given [FeeRate] to compute the Fee and adjust the amount of the
-/// [bdk::bitcoin::psbt::Output] pointed by `adjustable_output_index`.
+/// This function computes the exact expected weight of the final transaction and adjusts
+/// the specified output amount to ensure the correct fee is paid. This is necessary because
+/// BDK's fee calculation has several inaccuracies:
 ///
-/// This function MAY become largelly useless once [bdk] starts using miniscript v11.0
-/// because it introduces a clean way to generate a minimized Psbt from the get-go, as well
-/// as a feature to better compute the weight of the future transaction (currently, [bdk] uses
-/// the worst-case weight, meaning eveybody pays the fee as if they were the last Heir, not ideal)
+/// 1. Uses incorrect `TXIN_BASE_WEIGHT` (misses 1 byte for signature length field)
+/// 2. Assumes worst-case witness stack size for all spending scenarios
+/// 3. Overestimates key-path spend weights and often script-path spend weights
 ///
-/// But on the other hand, bdk is really doing kind-of a shitty job computing the WU of the future TX:
-/// 1. It uses a wrong [bdk::wallet::coin_selection::TXIN_BASE_WEIGHT] because it forget that the absence of signature
-/// must still be signaled by setting sig_length to 0, which consumme 1 byte / 4 WU. The weight of the TX is thus
-/// underestimated by 4WU/input
-/// 2. On the other hand, it uses the obsolete [Tr::max_satisfaction_weight] which compensate that
-/// 3. On the other other hand, it always assume a witness_stack size of the worst-case scenario, meaning it uses the size
-/// the witness stack would have by spending the deepest/longest script in the MAST. In case of a Key-path spend
-/// it ugely overestimates the TX weight, in case of script-path spend, it depends on the script we actually intend to
-/// use but tend to overestimate also.
+/// The accurate calculation is possible because:
+/// - All transactions are Taproot SegWit
+/// - PSBT inputs are minimized to single spend-paths
+/// - Control block sizes can be inferred from MAST depth
 ///
-/// All in all, that makes the TX weight often wrong and thus the Fee too.
+/// # Arguments
+///
+/// * `psbt` - The PSBT to adjust (must have minimized inputs)
+/// * `fee_rate` - The desired fee rate
+/// * `adjustable_output_index` - Index of output whose amount will be adjusted (typically the change output)
 ///
 /// # Returns
-/// Return an i64 telling the amount of adjustment made to the adjustable_output
+///
+/// The amount of adjustment made to the adjustable output (can be negative)
 ///
 /// # Panics
-/// Panics if the [Psbt] contains [Input] that are not Taproot, or if the Psbt Inputs where
-/// not minimized (see [minimize_psbt_input_for_spender])
+///
+/// Panics if:
+/// - The PSBT contains non-Taproot inputs
+/// - PSBT inputs haven't been minimized via [`minimize_psbt_input_for_spender`]
+/// - The adjustable output index is invalid
+///
+/// # Note
+///
+/// May become obsolete once BDK adopts miniscript v11.0 with improved weight calculation.
 fn adjust_with_real_fee(
     psbt: &mut Psbt,
     fee_rate: &BdkFeeRate,
@@ -1616,6 +1804,24 @@ fn adjust_with_real_fee(
     }
 }
 
+/// Computes the expected weight of a transaction from a minimized PSBT
+///
+/// This function provides accurate weight calculation for Taproot transactions by
+/// analyzing the minimized PSBT inputs to determine whether each input uses key-path
+/// or script-path spending, and calculating the exact witness sizes.
+///
+/// # Arguments
+///
+/// * `psbt` - A PSBT with minimized inputs (via [`minimize_psbt_input_for_spender`])
+///
+/// # Returns
+///
+/// The expected weight of the final transaction
+///
+/// # Panics
+///
+/// Panics if the PSBT contains non-Taproot inputs or inputs that haven't been
+/// properly minimized.
 pub fn get_expected_tx_weight(psbt: &Psbt) -> Weight {
     log::debug!("get_expected_tx_weight - psbt={psbt}");
     // Put some barriers so we do not misuses this
@@ -1686,8 +1892,14 @@ pub fn get_expected_tx_weight(psbt: &Psbt) -> Weight {
     expected_weight
 }
 
-// Helper function to calculate witness size
-// copied from <rust-miniscript 10.0.0>/src/utils.rs
+/// Returns the byte length of a variable-length integer encoding
+///
+/// Bitcoin uses variable-length integers (varints) to encode values efficiently.
+/// This function returns how many bytes are needed to encode a given value.
+///
+/// # Note
+///
+/// Copied from <rust-miniscript 10.0.0>/src/utils.rs
 fn varint_len(n: usize) -> usize {
     bdk::bitcoin::VarInt(n as u64).len()
 }
@@ -1810,17 +2022,77 @@ mod tests {
             let mut hashtable: HashMap<String, Vec<TransactionDetails>> = HashMap::new();
             // Wallet TestHeritageConfig::BackupWifeY2
             hashtable.insert("7y7nqca9j84snf2h".to_owned(), vec![
-                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"51208bdbdb2969eeb7ec8efd20f7bc64961a760313404e900109a1ba19afb8b0292c"}]},"txid":"344dbc396e3c6945f46a67faab275141bb0fdd63f8a46362ba27e4753400d9c2","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":842520,"timestamp":1715552000}}"#).unwrap(),
-                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"51204eff92d75cc954964dfe21755cf3063abbe19aa0e6fcacf429af996fc0f65beb"}]},"txid":"d2f3bd44fb6ad0c32833ea943d718e806245e632302f25720811fea167c13507","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":904440,"timestamp":1752704000}}"#).unwrap(),
+                serde_json::from_str(r#"{
+                    "transaction":{
+                        "version":1,
+                        "lock_time":0,
+                        "input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],
+                        "output":[{"value":100000000,"script_pubkey":"51208bdbdb2969eeb7ec8efd20f7bc64961a760313404e900109a1ba19afb8b0292c"}]
+                    },
+                    "txid":"344dbc396e3c6945f46a67faab275141bb0fdd63f8a46362ba27e4753400d9c2",
+                    "received":100000000,
+                    "sent":0,
+                    "fee":0,
+                    "confirmation_time":{"height":842520,"timestamp":1715552000}
+                }"#).unwrap(),
+                serde_json::from_str(r#"{
+                    "transaction":{
+                        "version":1,
+                        "lock_time":0,
+                        "input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],
+                        "output":[{"value":100000000,"script_pubkey":"51204eff92d75cc954964dfe21755cf3063abbe19aa0e6fcacf429af996fc0f65beb"}]
+                    },
+                    "txid":"d2f3bd44fb6ad0c32833ea943d718e806245e632302f25720811fea167c13507",
+                    "received":100000000,
+                    "sent":0,
+                    "fee":0,
+                    "confirmation_time":{"height":904440,"timestamp":1752704000}
+                }"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeY1
             hashtable.insert("0hqx0prur5t9us5w".to_owned(), vec![
-                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120a6d2ae7fb6a453f32d1d32ffdfc31f3303a7704bcf16ff4ebabe0e26686ec687"}]},"txid":"2f0a77d510db56dda3b43692d4658a92f523193a3b854d2387681f2fd0f5d920","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":895080,"timestamp":1747088000}}"#).unwrap(),
-                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120f0c155ea564bd2fc6d45f654a68d2734b762a947d93c4cf6e2fdda0260ee89d9"}]},"txid":"3854db1cb2253a270e49a093a6ddb92fa79efd8b295568e08448e4de678fc08b","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":897960,"timestamp":1748816000}}"#).unwrap(),
+                serde_json::from_str(r#"{
+                    "transaction":{
+                        "version":1,
+                        "lock_time":0,
+                        "input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],
+                        "output":[{"value":100000000,"script_pubkey":"5120a6d2ae7fb6a453f32d1d32ffdfc31f3303a7704bcf16ff4ebabe0e26686ec687"}]
+                    },
+                    "txid":"2f0a77d510db56dda3b43692d4658a92f523193a3b854d2387681f2fd0f5d920",
+                    "received":100000000,
+                    "sent":0,
+                    "fee":0,
+                    "confirmation_time":{"height":895080,"timestamp":1747088000}
+                }"#).unwrap(),
+                serde_json::from_str(r#"{
+                    "transaction":{
+                        "version":1,
+                        "lock_time":0,
+                        "input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],
+                        "output":[{"value":100000000,"script_pubkey":"5120f0c155ea564bd2fc6d45f654a68d2734b762a947d93c4cf6e2fdda0260ee89d9"}]
+                    },
+                    "txid":"3854db1cb2253a270e49a093a6ddb92fa79efd8b295568e08448e4de678fc08b",
+                    "received":100000000,
+                    "sent":0,
+                    "fee":0,
+                    "confirmation_time":{"height":897960,"timestamp":1748816000}
+                }"#).unwrap(),
             ]);
             // Wallet TestHeritageConfig::BackupWifeBro
             hashtable.insert("9lwn0wm9mh7ydv64".to_owned(), vec![
-                serde_json::from_str(r#"{"transaction":{"version":1,"lock_time":0,"input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],"output":[{"value":100000000,"script_pubkey":"5120d1756b2e88a51fc63f156ef0ba3a3cfd126206bfb96347f1b4ccb15f9b75e14f"}]},"txid":"6ed1563a936196211f2f76447c478533df8f3efc43933f4c3405b9a760b31204","received":100000000,"sent":0,"fee":0,"confirmation_time":{"height":923160,"timestamp":1763936000}}"#).unwrap(),
+                serde_json::from_str(r#"{
+                    "transaction":{
+                        "version":1,
+                        "lock_time":0,
+                        "input":[{"previous_output":"0000000000000000000000000000000000000000000000000000000000000000:4294967295","script_sig":"","sequence":4294967295,"witness":[]}],
+                        "output":[{"value":100000000,"script_pubkey":"5120d1756b2e88a51fc63f156ef0ba3a3cfd126206bfb96347f1b4ccb15f9b75e14f"}]
+                    },
+                    "txid":"6ed1563a936196211f2f76447c478533df8f3efc43933f4c3405b9a760b31204",
+                    "received":100000000,
+                    "sent":0,
+                    "fee":0,
+                    "confirmation_time":{"height":923160,"timestamp":1763936000}
+                }"#).unwrap(),
             ]);
 
             Ok(FakeBlockchain {

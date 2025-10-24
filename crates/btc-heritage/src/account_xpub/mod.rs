@@ -15,7 +15,17 @@ use crate::{
     utils,
 };
 
+/// Unique identifier for an AccountXPub, derived from the hardened account index of the Derivation Path
 pub type AccountXPubId = u32;
+
+/// A BIP86 account extended public key for Taproot addresses
+///
+/// This struct wraps a [`DescriptorPublicKey`] and enforces that it follows the BIP86
+/// derivation path format: `m/86'/{coin_type}'/{account}'/*` where `coin_type` is 0
+/// for mainnet and 1 for testnet/regtest/signet.
+///
+/// The AccountXPub can be used to derive child keys for external and change key chains
+/// and ultimately generating Taproot addresses.
 #[derive(Debug, Clone, Hash, Serialize, Eq, PartialEq, Ord, PartialOrd)]
 #[serde(into = "String")]
 pub struct AccountXPub(DescriptorPublicKey);
@@ -45,7 +55,33 @@ impl<'de> Deserialize<'de> for AccountXPub {
 }
 
 impl AccountXPub {
-    /// Return the ID, which is the last number from the [bdk::bitcoin::bip32::DerivationPath] (the hardened account_id)
+    /// Returns the account ID extracted from the derivation path
+    ///
+    /// The ID is the hardened account index from the BIP86 derivation path
+    /// `m/86'/{coin_type}'/{account}'/*`. For example, an AccountXPub with
+    /// derivation path `m/86'/1'/5'/*` would return `5`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the derivation path doesn't match the expected BIP86 format
+    /// or if multipath extended keys are used (not supported).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use btc_heritage::utils::bitcoin_network;
+    /// # use btc_heritage::bitcoin;
+    /// # use bitcoin::Network;
+    /// // Set the Network to Testnet
+    /// bitcoin_network::set(Network::Testnet);
+    ///
+    /// // Create an account xpub
+    /// use btc_heritage::AccountXPub;
+    /// let axpub = AccountXPub::try_from("[73c5da0a/86'/1'/12']tpubDDfvzhdVV4unsoKt5aE6dcsNsfeWbTgmLZPi8LQDYU2xixrYemMfWJ3BaVneH3u7DBQePdTwhpybaKRU95pi6PMUtLPBJLVQRpzEnjfjZzX/*").unwrap();
+    ///
+    /// // As the account is 12, that's what is returned
+    /// assert_eq!(axpub.descriptor_id(), 12);
+    /// ```
     pub fn descriptor_id(&self) -> AccountXPubId {
         let derivation_path = self
             .0
@@ -59,10 +95,15 @@ impl AccountXPub {
         }
     }
 
+    /// Returns a reference to the underlying descriptor public key
     pub fn descriptor_public_key(&self) -> &DescriptorPublicKey {
         &self.0
     }
 
+    /// Creates a child descriptor public key for the specified derivation index
+    ///
+    /// This generates a descriptor that can be used to derive addresses at the
+    /// specified index within this account.
     pub fn child_descriptor_public_key(&self, index: u32) -> DescriptorPublicKey {
         log::debug!("AccountXPub::child_descriptor_public_key - index={index}");
         let (fingerprint, derivation_path, account_xpub_key) = match &self.0 {
@@ -104,6 +145,16 @@ impl From<AccountXPub> for String {
 impl TryFrom<DescriptorPublicKey> for AccountXPub {
     type Error = Error;
 
+    /// Converts a descriptor public key into an AccountXPub
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidDescriptorPublicKey`] if:
+    /// - The descriptor is not an XPub variant
+    /// - The descriptor lacks origin information
+    /// - The descriptor has a derivation path after the key
+    /// - The derivation path doesn't follow BIP86 format `m/86'/{coin_type}'/{account}'/*`
+    /// - The descriptor doesn't have a wildcard for address generation
     fn try_from(descriptor: DescriptorPublicKey) -> Result<Self, Self::Error> {
         // If the DescriptorPublicKey is not XPub, bail
         if let DescriptorPublicKey::XPub(xpub) = &descriptor {
@@ -153,6 +204,14 @@ impl TryFrom<DescriptorPublicKey> for AccountXPub {
 impl core::str::FromStr for AccountXPub {
     type Err = Error;
 
+    /// Parses a string into an AccountXPub
+    ///
+    /// The string should be a valid descriptor public key following BIP86 format.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidDescriptorPublicKey`] if the string cannot be
+    /// parsed as a valid descriptor public key or doesn't meet AccountXPub requirements.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let descriptor = s.parse::<DescriptorPublicKey>().map_err(|e| {
             log::error!("Error parsing DescriptorPublicKey string: {e:#}");
@@ -165,6 +224,12 @@ impl core::str::FromStr for AccountXPub {
 impl TryFrom<&str> for AccountXPub {
     type Error = Error;
 
+    /// Converts a string slice into an AccountXPub
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidDescriptorPublicKey`] if the string cannot be
+    /// parsed as a valid AccountXPub.
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         value.parse()
     }
@@ -173,6 +238,12 @@ impl TryFrom<&str> for AccountXPub {
 impl TryFrom<String> for AccountXPub {
     type Error = Error;
 
+    /// Converts a String into an AccountXPub
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidDescriptorPublicKey`] if the string cannot be
+    /// parsed as a valid AccountXPub.
     fn try_from(value: String) -> Result<Self, Self::Error> {
         value.parse()
     }
