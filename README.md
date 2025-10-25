@@ -115,7 +115,7 @@ The roadmap is accurate regarding our immediate goals for the project.
   - [ ] ~~Trezor~~ (unfortunately Taproot script paths not supported currently) ([trezor.io](https://trezor.io/))
 - [x] Capability for the wallet library to use a custom Bitcoin Core or Electrum node instead of the service
 - [x] Create a GUI Heritage wallet tool (see [Heritage GUI][heritage-gui])
-- [ ] Add support for MultiSig N-of-M Heir to allow kind-of inheritance sharing
+- [ ] Add support for `MultiSig N-of-M` heritage configuration to allow kind-of inheritance sharing between heirs instead of the "first heir takes all" approach
 - [ ] Add privacy features to the Heritage Config renewal (split in multiple Txs, UTXO independence preservation, random temporal repartition)
 - [ ] Add Lightning Network support to provide a wallet usable day-to-day
 - [ ] Create Mobile version of the Wallet GUI
