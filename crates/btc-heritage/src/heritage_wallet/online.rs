@@ -137,10 +137,11 @@ impl<D: TransacHeritageDatabase> HeritageWallet<D> {
     ///
     /// ```no_run
     /// # use btc_heritage::{HeritageWallet, database::memory::HeritageMemoryDatabase};
-    /// # use bdk::blockchain::ElectrumBlockchainFactory;
+    /// # use bdk::{electrum_client, blockchain::{ElectrumBlockchain}};
+    /// # use std::sync::Arc;
     /// # fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let wallet = HeritageWallet::new(HeritageMemoryDatabase::new());
-    /// let blockchain_factory = ElectrumBlockchainFactory::default();
+    /// let blockchain_factory = Arc::new(ElectrumBlockchain::from(electrum_client::Client::new("tcp://127.0.O.1/").unwrap()));
     /// wallet.sync(&blockchain_factory)?;
     /// # Ok(())
     /// # }
