@@ -147,7 +147,7 @@ impl HeritageServiceClient {
                         return Ok(());
                     } else {
                         log::error!("Invalid response from the device token API: {body}");
-                        return Err(Error::Generic(format!(
+                        return Err(Error::generic(format!(
                             "Invalid response from the device token API: {body}"
                         )));
                     }
@@ -172,8 +172,28 @@ impl HeritageServiceClient {
         }
     }
 
-    pub async fn logout(&self) {
+    pub async fn logout(&self) -> Result<()> {
+        log::debug!("HeritageServiceClient::logout");
+        if let Some(tokens) = self.tokens.write().await.as_mut() {
+            let revokation_url = format!(
+                "{}/revoke",
+                self.config
+                    .auth_url
+                    .strip_suffix("/token")
+                    .ok_or(Error::generic(
+                        "Invalid auth_url: is not the OAUTH token endpoint"
+                    ))?
+            );
+            log::debug!("Initiating Token revokation flow (revokation_url: {revokation_url})");
+            let req = self.client.post(revokation_url).form(&[
+                ("client_id", self.config.auth_client_id.as_ref()),
+                ("token", tokens.refresh_token.as_ref()),
+            ]);
+            // We don't care about the body, as it is empty on 200 OK.
+            _ = req_builder_to_body(req).await?;
+        }
         self.set_tokens(None).await;
+        Ok(())
     }
 
     pub async fn persist_tokens_in_cache<T: TokenCache>(&self, cache: &mut T) -> Result<()> {

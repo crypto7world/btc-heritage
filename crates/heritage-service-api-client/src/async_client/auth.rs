@@ -88,7 +88,7 @@ impl TryFrom<TokenResponse> for Tokens {
             access_token: Token(token_resp.access_token.into()),
             refresh_token: token_resp
                 .refresh_token
-                .ok_or_else(|| Error::Generic("Missing refresh token".to_owned()))?
+                .ok_or_else(|| Error::generic("Missing refresh token"))?
                 .into(),
             expiration_ts: timestamp_now() + token_resp.expires_in as u64,
         })

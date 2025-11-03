@@ -33,3 +33,9 @@ pub enum Error {
     #[error("Generic error: {0}")]
     Generic(String),
 }
+
+impl Error {
+    pub fn generic(s: impl Into<String>) -> Self {
+        Self::Generic(s.into())
+    }
+}
