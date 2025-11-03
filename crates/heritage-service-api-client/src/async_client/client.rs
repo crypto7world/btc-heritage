@@ -1,7 +1,7 @@
 pub use super::auth::Tokens;
 use super::{DeviceAuthorizationResponse, TokenCache};
 use crate::{
-    auth::{DeviceFlowError, TokenResponse},
+    auth::{TokenEndpointError, TokenResponse},
     errors::{Error, Result},
     types::{AccountXPubWithStatus, HeritageWalletMeta, NewTx},
     Heir, HeirContact, HeirCreate, HeirUpdate, Heritage, HeritageWalletMetaCreate, NewTxDrainTo,
@@ -15,7 +15,7 @@ use btc_heritage::{
 };
 
 use reqwest::{Client, Method};
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::json;
 use std::{
     collections::{BTreeSet, HashMap},
@@ -68,7 +68,7 @@ impl From<HeritageServiceConfig> for HeritageServiceClient {
     }
 }
 
-async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<String> {
+async fn exec_req(req: reqwest::RequestBuilder) -> Result<(reqwest::StatusCode, String)> {
     log::debug!("req={req:?}");
     let res = req.send().await?;
     log::debug!("res={res:?}");
@@ -86,6 +86,10 @@ async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<String> {
         Error::UnretrievableBodyResponse
     })?;
     log::debug!("body_str={body_str}");
+    Ok((status_code, body_str))
+}
+async fn exec_auth_req<T: DeserializeOwned>(req: reqwest::RequestBuilder) -> Result<Option<T>> {
+    let (status_code, body_str) = exec_req(req).await?;
     if status_code.is_client_error() || status_code.is_server_error() {
         log::debug!(
             "{} {}: {body_str}",
@@ -93,13 +97,17 @@ async fn req_builder_to_body(req: reqwest::RequestBuilder) -> Result<String> {
             status_code.canonical_reason().unwrap_or("UNKNOWN")
         );
         let mut error_body: HashMap<String, String> = serde_json::from_str(&body_str)?;
-        let error_message = error_body.remove("message").unwrap_or(body_str);
-        Err(Error::ApiErrorResponse {
+        let error = error_body.remove("error").unwrap_or(body_str);
+        Err(Error::AuthenticationErrorResponse {
             code: status_code.as_u16(),
-            message: error_message,
+            error,
         })
     } else {
-        Ok(body_str)
+        Ok(if body_str.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_str(&body_str)?)
+        })
     }
 }
 
@@ -116,9 +124,10 @@ impl HeritageServiceClient {
             ("client_id", self.config.auth_client_id.as_ref()),
             ("scope", "openid profile email"),
         ]);
-        let body = req_builder_to_body(req).await?;
 
-        let device_auth_response: DeviceAuthorizationResponse = serde_json::from_str(&body)?;
+        let device_auth_response: DeviceAuthorizationResponse = exec_auth_req(req).await?.ok_or(
+            Error::generic("Received empty body when initiating device flow"),
+        )?;
         let auth_expiration_ts = timestamp_now() + device_auth_response.expires_in as u64;
         let device_code = device_auth_response.device_code.clone();
         let sleep_interval = device_auth_response.interval as u64;
@@ -138,43 +147,42 @@ impl HeritageServiceClient {
                 ("client_id", self.config.auth_client_id.as_ref()),
             ]);
 
-            match req_builder_to_body(req).await {
-                Ok(body) => {
-                    log::debug!("Got a 2XX response from the device token API");
-                    if let Ok(token_resp) = serde_json::from_str::<TokenResponse>(&body) {
-                        log::debug!("Got tokens!");
-                        self.set_tokens(Some(Tokens::try_from(token_resp)?)).await;
-                        return Ok(());
-                    } else {
-                        log::error!("Invalid response from the device token API: {body}");
-                        return Err(Error::generic(format!(
-                            "Invalid response from the device token API: {body}"
-                        )));
-                    }
+            match exec_auth_req::<TokenResponse>(req).await {
+                Ok(Some(token_resp)) => {
+                    log::debug!("Got tokens!");
+                    self.set_tokens(Some(Tokens::try_from(token_resp)?)).await;
+                    return Ok(());
                 }
-                Err(Error::ApiErrorResponse { code, message }) if code == 400 => {
-                    log::debug!("Got a 400 response from the device token API: {message}");
-                    match serde_json::from_str::<DeviceFlowError>(&message)? {
-                        DeviceFlowError::AccessDenied => return Err(Error::AuthenticationDenied),
-                        DeviceFlowError::ExpiredToken => {
+                Ok(None) => {
+                    return Err(Error::generic(
+                        "Received empty body when pulling for tokens",
+                    ));
+                }
+                Err(Error::AuthenticationErrorResponse { code, error }) if code == 400 => {
+                    match error.parse()? {
+                        TokenEndpointError::AccessDenied => {
+                            return Err(Error::AuthenticationDenied)
+                        }
+                        TokenEndpointError::ExpiredToken => {
                             return Err(Error::AuthenticationProcessExpired)
                         }
-                        DeviceFlowError::AuthorizationPending => {
+                        TokenEndpointError::AuthorizationPending => {
                             log::debug!("No tokens available yet. Retrying.")
                         }
-                        DeviceFlowError::SlowDown => log::warn!(
-                            "Got a slow_down response from the token endpoint, it should not happen."
-                        ),
+                        TokenEndpointError::SlowDown => log::warn!(
+                        "Got a slow_down response from the token endpoint, it should not happen."
+                    ),
+                        _ => return Err(Error::AuthenticationErrorResponse { code, error }),
                     }
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => return Err(error),
             }
         }
     }
 
     pub async fn logout(&self) -> Result<()> {
         log::debug!("HeritageServiceClient::logout");
-        if let Some(tokens) = self.tokens.write().await.as_mut() {
+        if let Some(tokens) = self.tokens.read().await.as_ref() {
             let revokation_url = format!(
                 "{}/revoke",
                 self.config
@@ -190,7 +198,7 @@ impl HeritageServiceClient {
                 ("token", tokens.refresh_token.as_ref()),
             ]);
             // We don't care about the body, as it is empty on 200 OK.
-            _ = req_builder_to_body(req).await?;
+            exec_auth_req::<()>(req).await?;
         }
         self.set_tokens(None).await;
         Ok(())
@@ -236,7 +244,8 @@ impl HeritageServiceClient {
     async fn refresh_tokens(&self) -> Result<()> {
         log::debug!("HeritageServiceClient::refresh_tokens");
 
-        if let Some(tokens) = self.tokens.write().await.as_mut() {
+        let mut mutex_guard = self.tokens.write().await;
+        if let Some(tokens) = mutex_guard.as_mut() {
             if tokens.need_refresh() {
                 log::debug!("Initiating Token refresh flow");
                 let req = self.client.post(self.config.auth_url.as_ref()).form(&[
@@ -244,13 +253,28 @@ impl HeritageServiceClient {
                     ("grant_type", "refresh_token"),
                     ("refresh_token", tokens.refresh_token.as_ref()),
                 ]);
-                let body = req_builder_to_body(req).await?;
-                let token_resp = serde_json::from_str::<TokenResponse>(&body)?;
-
-                tokens.update_from_refresh_response(token_resp);
+                match exec_auth_req(req).await {
+                    Ok(Some(token_resp)) => {
+                        tokens.update_from_refresh_response(token_resp);
+                    }
+                    Ok(None) => {
+                        return Err(Error::generic("Received empty body when refreshing tokens"));
+                    }
+                    Err(Error::AuthenticationErrorResponse { code, error })
+                        if code == 400
+                            && matches!(error.parse()?, TokenEndpointError::InvalidGrant) =>
+                    {
+                        log::warn!(
+                            "The refresh token is no longer valid, clearing tokens from the client"
+                        );
+                        // Set the tokens to None
+                        // Use the writeMutexGuard instead of droping it and calling set_tokens
+                        *mutex_guard = None;
+                    }
+                    Err(error) => return Err(error),
+                }
             }
         }
-
         Ok(())
     }
 
@@ -271,9 +295,17 @@ impl HeritageServiceClient {
                 // Force drop the read guard
                 drop(read_guard);
                 self.refresh_tokens().await?;
-                req.bearer_auth(&self.tokens.read().await.as_ref().unwrap().id_token.0)
+                req.bearer_auth(
+                    &self
+                        .tokens
+                        .read()
+                        .await
+                        .as_ref()
+                        .ok_or(Error::Unauthenticated)?
+                        .id_token,
+                )
             } else {
-                req.bearer_auth(&tokens.id_token.0)
+                req.bearer_auth(&tokens.id_token)
             }
         };
 
@@ -285,10 +317,25 @@ impl HeritageServiceClient {
             }
             None => req,
         };
-        let body = req_builder_to_body(req).await?;
-        match body.as_str() {
-            "" => Ok(serde_json::Value::Null),
-            _ => Ok(serde_json::from_str(&body)?),
+        let (status_code, body_str) = exec_req(req).await?;
+        if status_code.is_client_error() || status_code.is_server_error() {
+            log::debug!(
+                "{} {}: {body_str}",
+                status_code.as_u16(),
+                status_code.canonical_reason().unwrap_or("UNKNOWN")
+            );
+            let mut error_body: HashMap<String, String> = serde_json::from_str(&body_str)?;
+            let message = error_body.remove("message").unwrap_or(body_str);
+            Err(Error::ApiErrorResponse {
+                code: status_code.as_u16(),
+                message,
+            })
+        } else {
+            Ok(if body_str.is_empty() {
+                serde_json::Value::Null
+            } else {
+                serde_json::from_str(&body_str)?
+            })
         }
     }
 

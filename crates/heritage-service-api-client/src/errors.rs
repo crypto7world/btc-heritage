@@ -30,6 +30,8 @@ pub enum Error {
     TokenCacheWriteError(String),
     #[error("Heritage API responded with error {code}: {message}")]
     ApiErrorResponse { code: u16, message: String },
+    #[error("Auth endpoint responded with error {code}: {error}")]
+    AuthenticationErrorResponse { code: u16, error: String },
     #[error("Generic error: {0}")]
     Generic(String),
 }

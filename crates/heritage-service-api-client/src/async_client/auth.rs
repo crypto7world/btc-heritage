@@ -24,6 +24,11 @@ impl Token {
         serde_json::from_slice(&token_data).expect("between the 2 dots always valid JSON")
     }
 }
+impl core::fmt::Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct DeviceAuthorizationResponse {
@@ -43,13 +48,35 @@ pub(crate) struct TokenResponse {
     expires_in: u32,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "error", rename_all = "snake_case")]
-pub(crate) enum DeviceFlowError {
+#[derive(Debug)]
+pub(crate) enum TokenEndpointError {
+    InvalidRequest,
+    InvalidClient,
+    InvalidGrant,
+    UnauthorizedClient,
+    UnsupportedGrantType,
     AccessDenied,
     ExpiredToken,
     AuthorizationPending,
     SlowDown,
+}
+impl core::str::FromStr for TokenEndpointError {
+    type Err = Error;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "invalid_request" => Ok(Self::InvalidRequest),
+            "invalid_client" => Ok(Self::InvalidClient),
+            "invalid_grant" => Ok(Self::InvalidGrant),
+            "unauthorized_client" => Ok(Self::UnauthorizedClient),
+            "unsupported_grant_type" => Ok(Self::UnsupportedGrantType),
+            "access_denied" => Ok(Self::AccessDenied),
+            "expired_token" => Ok(Self::ExpiredToken),
+            "authorization_pending" => Ok(Self::AuthorizationPending),
+            "slow_down" => Ok(Self::SlowDown),
+            s => Err(Error::generic(format!("Unknown TokenEndpointError: {s}"))),
+        }
+    }
 }
 
 /// A trait providing methods for the OAuth tokens to be cached and retrieved
