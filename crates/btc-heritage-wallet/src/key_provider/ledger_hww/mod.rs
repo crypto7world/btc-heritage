@@ -4,7 +4,7 @@
 //! It handles device communication, policy registration, and signing operations while maintaining
 //! compatibility with the heritage wallet system.
 
-use core::{fmt::Debug, ops::Deref, str::FromStr};
+use core::{fmt::Debug, str::FromStr};
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
@@ -163,7 +163,7 @@ impl Transport for TransportHID {
 /// This struct provides a high-level interface for interacting with Ledger hardware
 /// wallets, wrapping the underlying BitcoinClient and providing async operations.
 /// It uses Arc for shared ownership and thread-safe cloning.
-pub struct LedgerClient(Arc<BitcoinClient<TransportHID>>);
+pub struct LedgerClient(Arc<tokio::sync::Mutex<Option<BitcoinClient<TransportHID>>>>);
 
 impl Debug for LedgerClient {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -187,10 +187,54 @@ impl LedgerClient {
     ///
     /// Returns an error if no Ledger device is found or if the HID API fails to initialize
     fn new() -> Result<Self> {
-        Ok(Self(Arc::new(BitcoinClient::new(TransportHID::new(
-            TransportNativeHID::new(&HidApi::new().expect("unable to get HIDAPI"))
-                .map_err(|e| Error::LedgerClientError(e.to_string()))?,
+        Ok(Self(Arc::new(tokio::sync::Mutex::new(Some(
+            BitcoinClient::new(TransportHID::new(
+                TransportNativeHID::new(&HidApi::new().expect("unable to get HIDAPI"))
+                    .map_err(|e| Error::LedgerClientError(e.to_string()))?,
+            )),
         )))))
+    }
+
+    /// Executes a function with the underlying Ledger Bitcoin client,
+    /// ensuring non-concurrency for all the duration of the call.
+    ///
+    /// As the Ledger Bitcoin client operation is inherently blocking, this
+    /// method will use spawn_blocking to run the passed closure.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - A function that takes a Ledger Bitcoin client and returns a result
+    ///
+    /// # Returns
+    ///
+    /// The result of the function execution
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the underlying methods execution returns an error
+    pub async fn client_call<
+        R: Send + 'static,
+        F: FnOnce(
+                &BitcoinClient<TransportHID>,
+            ) -> core::result::Result<
+                R,
+                ledger_bitcoin_client::error::BitcoinClientError<crate::errors::Error>,
+            > + Send
+            + 'static,
+    >(
+        &self,
+        f: F,
+    ) -> Result<R> {
+        let mut guard = self.0.lock().await;
+        let client = guard.take().unwrap();
+        let (client, res) = tokio::task::spawn_blocking(move || {
+            let res = f(&client);
+            (client, res)
+        })
+        .await
+        .unwrap();
+        guard.replace(client);
+        Ok(res?)
     }
 
     /// Retrieves the master fingerprint from the Ledger device.
@@ -207,16 +251,14 @@ impl LedgerClient {
     /// Returns an error if the device communication fails or if the fingerprint
     /// cannot be retrieved
     pub async fn fingerprint(&self) -> Result<Fingerprint> {
-        let ledger_client = self.clone();
+        let fingerprint = self
+            .client_call(|client| client.get_master_fingerprint())
+            .await
+            .map(|fg| {
+                // Convert between different rust-bitcoin versions used by BDK and ledger_bitcoin_client
+                Fingerprint::from(fg.as_bytes())
+            })?;
 
-        let fingerprint =
-            tokio::task::spawn_blocking(move || ledger_client.get_master_fingerprint())
-                .await
-                .unwrap()
-                .map(|fg| {
-                    // Convert between different rust-bitcoin versions used by BDK and ledger_bitcoin_client
-                    Fingerprint::from(fg.as_bytes())
-                })?;
         log::debug!("LedgerClient::fingerprint => {fingerprint}");
         Ok(fingerprint)
     }
@@ -238,11 +280,8 @@ impl LedgerClient {
     /// - An unsupported or unknown Bitcoin application is running
     /// - The device is not available
     pub async fn network(&self) -> Result<Network> {
-        let ledger_client = self.clone();
-        let (name, version, flags) =
-            tokio::task::spawn_blocking(move || ledger_client.get_version())
-                .await
-                .unwrap()?;
+        let (name, version, flags) = self.client_call(|client| client.get_version()).await?;
+
         log::debug!(
             "LedgerClient::get_version => name: {name}, version: {version}, flags: {flags:?}"
         );
@@ -251,17 +290,6 @@ impl LedgerClient {
             "Bitcoin Test" => Ok(Network::Testnet),
             _ => Err(Error::WrongLedgerApplication),
         }
-    }
-}
-
-impl Deref for LedgerClient {
-    type Target = BitcoinClient<TransportHID>;
-
-    /// Provides direct access to the underlying BitcoinClient.
-    ///
-    /// This allows the LedgerClient to be used wherever a BitcoinClient is expected.
-    fn deref(&self) -> &Self::Target {
-        &self.0.deref()
     }
 }
 
@@ -332,7 +360,7 @@ impl LedgerKey {
     pub(crate) async fn ledger_call<
         R: Send + 'static,
         F: FnOnce(
-                LedgerClient,
+                &BitcoinClient<TransportHID>,
             ) -> core::result::Result<
                 R,
                 ledger_bitcoin_client::error::BitcoinClientError<crate::errors::Error>,
@@ -350,9 +378,7 @@ impl LedgerKey {
         }
 
         // Execute the function in a blocking task to avoid blocking the async runtime
-        Ok(tokio::task::spawn_blocking(move || f(client))
-            .await
-            .unwrap()?)
+        Ok(client.client_call(f).await?)
     }
 
     /// Registers a list of wallet policies with the Ledger device.
